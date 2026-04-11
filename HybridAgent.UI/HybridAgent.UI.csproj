@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\HybridAgent\HybridAgent.csproj" />
+    <ProjectReference Include="..\HybridAgent\HybridAgent.Core.csproj" />
   </ItemGroup>
 
 </Project>
