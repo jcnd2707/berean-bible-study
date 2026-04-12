@@ -10,6 +10,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HybridAgent\HybridAgent.Core.csproj" />
+    <!-- SignalR client only — no reference to Common.Core needed in WPF -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="8.0.25" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
   </ItemGroup>
 
 </Project>

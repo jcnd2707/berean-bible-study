@@ -8,33 +8,30 @@
         WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
-
-        <!-- ── Colours ────────────────────────────────────────────────── -->
-        <SolidColorBrush x:Key="BgDeep"      Color="#0D0D0F"/>
-        <SolidColorBrush x:Key="BgPanel"     Color="#13131A"/>
-        <SolidColorBrush x:Key="BgCard"      Color="#1A1A26"/>
-        <SolidColorBrush x:Key="BgInput"     Color="#111118"/>
-        <SolidColorBrush x:Key="Border"      Color="#2A2A3E"/>
-        <SolidColorBrush x:Key="Accent"      Color="#5B8DEF"/>
-        <SolidColorBrush x:Key="AccentGlow"  Color="#3A6BD4"/>
-        <SolidColorBrush x:Key="TxtPrimary"  Color="#E8E8F0"/>
+        <SolidColorBrush x:Key="BgDeep"       Color="#0D0D0F"/>
+        <SolidColorBrush x:Key="BgPanel"      Color="#13131A"/>
+        <SolidColorBrush x:Key="BgCard"       Color="#1A1A26"/>
+        <SolidColorBrush x:Key="BgInput"      Color="#111118"/>
+        <SolidColorBrush x:Key="Border"       Color="#2A2A3E"/>
+        <SolidColorBrush x:Key="Accent"       Color="#5B8DEF"/>
+        <SolidColorBrush x:Key="AccentGlow"   Color="#3A6BD4"/>
+        <SolidColorBrush x:Key="TxtPrimary"   Color="#E8E8F0"/>
         <SolidColorBrush x:Key="TxtSecondary" Color="#7878A0"/>
-        <SolidColorBrush x:Key="TxtMuted"    Color="#44445A"/>
-        <SolidColorBrush x:Key="Green"       Color="#4ADE80"/>
-        <SolidColorBrush x:Key="Yellow"      Color="#FBBF24"/>
-        <SolidColorBrush x:Key="Red"         Color="#F87171"/>
-        <SolidColorBrush x:Key="UserBubble"  Color="#1E2540"/>
-        <SolidColorBrush x:Key="AgentBubble" Color="#161620"/>
+        <SolidColorBrush x:Key="TxtMuted"     Color="#44445A"/>
+        <SolidColorBrush x:Key="Green"        Color="#4ADE80"/>
+        <SolidColorBrush x:Key="Yellow"       Color="#FBBF24"/>
+        <SolidColorBrush x:Key="Red"          Color="#F87171"/>
+        <SolidColorBrush x:Key="UserBubble"   Color="#1E2540"/>
+        <SolidColorBrush x:Key="AgentBubble"  Color="#161620"/>
 
-        <!-- ── Agent radio button style ──────────────────────────────── -->
         <Style x:Key="AgentButton" TargetType="RadioButton">
-            <Setter Property="Foreground"       Value="{StaticResource TxtSecondary}"/>
-            <Setter Property="Background"       Value="Transparent"/>
-            <Setter Property="BorderBrush"      Value="{StaticResource Border}"/>
-            <Setter Property="BorderThickness"  Value="1"/>
-            <Setter Property="Padding"          Value="14,10"/>
-            <Setter Property="Margin"           Value="0,0,0,6"/>
-            <Setter Property="Cursor"           Value="Hand"/>
+            <Setter Property="Foreground"      Value="{StaticResource TxtSecondary}"/>
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="BorderBrush"     Value="{StaticResource Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"         Value="14,10"/>
+            <Setter Property="Margin"          Value="0,0,0,6"/>
+            <Setter Property="Cursor"          Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
@@ -42,19 +39,18 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Root" Property="Background"    Value="#1E2540"/>
-                                <Setter TargetName="Root" Property="BorderBrush"   Value="{StaticResource Accent}"/>
-                                <Setter Property="Foreground"                       Value="{StaticResource TxtPrimary}"/>
+                                <Setter TargetName="Root" Property="Background"  Value="#1E2540"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                <Setter Property="Foreground"                    Value="{StaticResource TxtPrimary}"/>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background"    Value="#1A1A2E"/>
-                                <Setter TargetName="Root" Property="BorderBrush"   Value="#3A3A60"/>
+                                <Setter TargetName="Root" Property="Background"  Value="#1A1A2E"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="#3A3A60"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -62,7 +58,6 @@
             </Setter>
         </Style>
 
-        <!-- ── Icon button (Verdict / Reset) ─────────────────────────── -->
         <Style x:Key="ActionButton" TargetType="Button">
             <Setter Property="Foreground"      Value="{StaticResource TxtSecondary}"/>
             <Setter Property="Background"      Value="Transparent"/>
@@ -79,8 +74,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="5"
-                                Padding="{TemplateBinding Padding}">
+                                CornerRadius="5" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -102,7 +96,6 @@
             </Setter>
         </Style>
 
-        <!-- ── Send button ────────────────────────────────────────────── -->
         <Style x:Key="SendButton" TargetType="Button">
             <Setter Property="Foreground"      Value="#FFFFFF"/>
             <Setter Property="Background"      Value="{StaticResource Accent}"/>
@@ -116,8 +109,7 @@
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Root"
                                 Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -137,15 +129,13 @@
             </Setter>
         </Style>
 
-        <!-- ── ScrollBar ──────────────────────────────────────────────── -->
         <Style TargetType="ScrollBar">
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Width" Value="6"/>
+            <Setter Property="Width"      Value="6"/>
         </Style>
         <Style TargetType="ScrollViewer">
             <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
         </Style>
-
     </Window.Resources>
 
     <Grid>
@@ -154,9 +144,7 @@
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- ══════════════════════════════════════════════════════════════
-             LEFT SIDEBAR
-        ═══════════════════════════════════════════════════════════════ -->
+        <!-- SIDEBAR -->
         <Border Grid.Column="0"
                 Background="{StaticResource BgPanel}"
                 BorderBrush="{StaticResource Border}"
@@ -164,24 +152,16 @@
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <!-- logo -->
                     <RowDefinition Height="Auto"/>
-                    <!-- section label -->
                     <RowDefinition Height="Auto"/>
-                    <!-- agent buttons -->
                     <RowDefinition Height="Auto"/>
-                    <!-- divider -->
                     <RowDefinition Height="Auto"/>
-                    <!-- status -->
                     <RowDefinition Height="*"/>
-                    <!-- spacer -->
                     <RowDefinition Height="Auto"/>
-                    <!-- action buttons -->
                     <RowDefinition Height="Auto"/>
-                    <!-- bottom padding -->
                 </Grid.RowDefinitions>
 
-                <!-- Logo / Title -->
+                <!-- Logo -->
                 <Border Grid.Row="0" Padding="20,22,20,18"
                         BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
                     <StackPanel>
@@ -194,16 +174,12 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Section label -->
-                <TextBlock Grid.Row="1"
-                           Text="SELECT AGENT"
+                <TextBlock Grid.Row="1" Text="SELECT AGENT"
                            Foreground="{StaticResource TxtMuted}"
-                           FontSize="9" 
-                           Margin="20,16,20,8"/>
+                           FontSize="9" Margin="20,16,20,8"/>
 
-                <!-- Agent selection -->
+                <!-- Agent radio buttons -->
                 <StackPanel Grid.Row="2" Margin="12,0,12,0">
-
                     <RadioButton x:Name="RbCar" Style="{StaticResource AgentButton}"
                                  IsChecked="True" GroupName="Agent"
                                  Checked="AgentRadio_Checked">
@@ -213,7 +189,6 @@
                                        Foreground="{StaticResource TxtMuted}" Margin="22,2,0,0"/>
                         </StackPanel>
                     </RadioButton>
-
                     <RadioButton x:Name="RbBible" Style="{StaticResource AgentButton}"
                                  GroupName="Agent" Checked="AgentRadio_Checked">
                         <StackPanel>
@@ -222,7 +197,6 @@
                                        Foreground="{StaticResource TxtMuted}" Margin="22,2,0,0"/>
                         </StackPanel>
                     </RadioButton>
-
                     <RadioButton x:Name="RbCSharp" Style="{StaticResource AgentButton}"
                                  GroupName="Agent" Checked="AgentRadio_Checked">
                         <StackPanel>
@@ -231,19 +205,16 @@
                                        Foreground="{StaticResource TxtMuted}" Margin="22,2,0,0"/>
                         </StackPanel>
                     </RadioButton>
-
                 </StackPanel>
 
                 <!-- Divider -->
                 <Border Grid.Row="3" Height="1"
-                        Background="{StaticResource Border}"
-                        Margin="12,16,12,16"/>
+                        Background="{StaticResource Border}" Margin="12,16,12,16"/>
 
                 <!-- Status panel -->
-                <StackPanel Grid.Row="4" Margin="20,0,20,0" x:Name="StatusPanel">
-                    <TextBlock Text="STATUS" FontSize="9" 
+                <StackPanel Grid.Row="4" Margin="20,0,20,0">
+                    <TextBlock Text="STATUS" FontSize="9"
                                Foreground="{StaticResource TxtMuted}" Margin="0,0,0,10"/>
-
                     <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -256,7 +227,6 @@
                                    FontSize="11" TextAlignment="Right"
                                    TextTrimming="CharacterEllipsis"/>
                     </Grid>
-
                     <Grid Margin="0,0,0,6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
@@ -264,17 +234,15 @@
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="Cloud" Foreground="{StaticResource TxtMuted}" FontSize="11"/>
                         <TextBlock x:Name="TxtCloudStatus" Grid.Column="1"
-                                   Text="checking..."
+                                   Text="checking…"
                                    FontSize="11" TextAlignment="Right"/>
                     </Grid>
-
-                    <!-- Init status -->
                     <Border x:Name="InitBadge"
                             Background="#1A2010" BorderBrush="#2E4A1A"
                             BorderThickness="1" CornerRadius="4"
                             Padding="8,5" Margin="0,10,0,0">
                         <TextBlock x:Name="TxtInitStatus"
-                                   Text="⬤  Initializing..."
+                                   Text="⬤  Connecting…"
                                    Foreground="{StaticResource Yellow}"
                                    FontSize="11"/>
                     </Border>
@@ -291,67 +259,53 @@
                     <Button x:Name="BtnReset"
                             Style="{StaticResource ActionButton}"
                             Content="↺  Reset conversation"
-                            Height="36"
-                            IsEnabled="False"
+                            Height="36" IsEnabled="False"
                             Click="BtnReset_Click"/>
                 </StackPanel>
 
-                <!-- Bottom padding -->
                 <Border Grid.Row="7" Height="16"/>
-
             </Grid>
         </Border>
 
-        <!-- ══════════════════════════════════════════════════════════════
-             MAIN CHAT AREA
-        ═══════════════════════════════════════════════════════════════ -->
+        <!-- MAIN CHAT AREA -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <!-- header bar -->
                 <RowDefinition Height="*"/>
-                <!-- messages -->
                 <RowDefinition Height="Auto"/>
-                <!-- input area -->
             </Grid.RowDefinitions>
 
-            <!-- Top header bar -->
+            <!-- Header bar -->
             <Border Grid.Row="0"
                     Background="{StaticResource BgPanel}"
                     BorderBrush="{StaticResource Border}"
-                    BorderThickness="0,0,0,1"
-                    Padding="24,14">
+                    BorderThickness="0,0,0,1" Padding="24,14">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock x:Name="TxtAgentTitle"
-                                   Text="Car Diagnostics"
+                        <TextBlock x:Name="TxtAgentTitle" Text="Car Diagnostics"
                                    Foreground="{StaticResource TxtPrimary}"
                                    FontSize="15" FontWeight="SemiBold"/>
                         <Border x:Name="ModelBadge"
                                 Background="#1A1A30" BorderBrush="{StaticResource Border}"
                                 BorderThickness="1" CornerRadius="4"
                                 Padding="8,3" Margin="12,0,0,0">
-                            <TextBlock x:Name="TxtModelBadge"
-                                       Text="llama3.2:3b"
-                                       Foreground="{StaticResource Accent}"
-                                       FontSize="11"/>
+                            <TextBlock x:Name="TxtModelBadge" Text="llama3.2:3b"
+                                       Foreground="{StaticResource Accent}" FontSize="11"/>
                         </Border>
                     </StackPanel>
-                    <TextBlock Grid.Column="1"
-                               x:Name="TxtMessageCount"
+                    <TextBlock Grid.Column="1" x:Name="TxtMessageCount"
                                Text="0 messages"
                                Foreground="{StaticResource TxtMuted}"
                                FontSize="11" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
 
-            <!-- Messages scroll area -->
-            <ScrollViewer Grid.Row="1"
-                          x:Name="ChatScrollViewer"
+            <!-- Messages -->
+            <ScrollViewer Grid.Row="1" x:Name="ChatScrollViewer"
                           Background="{StaticResource BgDeep}"
                           Padding="0,8,0,8">
                 <StackPanel x:Name="ChatPanel" Margin="24,0"/>
@@ -361,28 +315,23 @@
             <Border Grid.Row="2"
                     Background="{StaticResource BgPanel}"
                     BorderBrush="{StaticResource Border}"
-                    BorderThickness="0,1,0,0"
-                    Padding="16,14">
+                    BorderThickness="0,1,0,0" Padding="16,14">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-
                     <Border Background="{StaticResource BgInput}"
                             BorderBrush="{StaticResource Border}"
-                            BorderThickness="1" CornerRadius="7"
-                            Padding="14,0">
+                            BorderThickness="1" CornerRadius="7" Padding="14,0">
                         <TextBox x:Name="InputBox"
-                                 Background="Transparent"
-                                 BorderThickness="0"
+                                 Background="Transparent" BorderThickness="0"
                                  Foreground="{StaticResource TxtPrimary}"
                                  CaretBrush="{StaticResource Accent}"
                                  FontFamily="Consolas" FontSize="13"
                                  VerticalAlignment="Center"
                                  MinHeight="42" MaxHeight="120"
-                                 TextWrapping="Wrap"
-                                 AcceptsReturn="False"
+                                 TextWrapping="Wrap" AcceptsReturn="False"
                                  IsEnabled="False"
                                  KeyDown="InputBox_KeyDown">
                             <TextBox.Resources>
@@ -392,18 +341,13 @@
                             </TextBox.Resources>
                         </TextBox>
                     </Border>
-
-                    <Button x:Name="BtnSend"
-                            Grid.Column="1"
+                    <Button x:Name="BtnSend" Grid.Column="1"
                             Style="{StaticResource SendButton}"
-                            Content="Send →"
-                            Width="90" Height="42"
-                            Margin="10,0,0,0"
-                            IsEnabled="False"
+                            Content="Send →" Width="90" Height="42"
+                            Margin="10,0,0,0" IsEnabled="False"
                             Click="BtnSend_Click"/>
                 </Grid>
             </Border>
-
         </Grid>
     </Grid>
 </Window>

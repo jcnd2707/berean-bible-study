@@ -8,21 +8,23 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using HybridAgent;
-using HybridAgent.Core;
-using HybridAgent.Core.Agents;
-using HybridAgent.Core.Models;
-using Microsoft.Extensions.Logging;
+using HybridAgent.Core.Services;
+using Microsoft.AspNetCore.SignalR.Client;
 
 namespace HybridAgent
 {
     public partial class MainWindow : Window
     {
-        // ── State ─────────────────────────────────────────────────────────
-        private HybridPipeline? _pipeline;
-        private AgentConfig? _config;
+        // ── Hub client (replaces direct _pipeline calls) ───────────────────
+        private readonly ChatHubClient _hub = new("http://localhost:5050/hubs/chat");
+
+        // ── UI state ───────────────────────────────────────────────────────
         private bool _busy;
         private int _messageCount;
+
+        // ── Streaming state ────────────────────────────────────────────────
+        // The TextBlock inside the current agent bubble being streamed into
+        private TextBlock? _streamingTextBlock;
 
         // ── Typing indicator state ─────────────────────────────────────────
         private Border? _typingBubble;
@@ -33,117 +35,194 @@ namespace HybridAgent
         private Stopwatch _stopwatch = new();
         private int _dotFrame;
 
-        // Maps radio → choice string identical to the console "1/2/3" switch
-        private string CurrentChoice =>
-            RbCar.IsChecked == true ? "1" :
-            RbBible.IsChecked == true ? "2" :
-            RbCSharp.IsChecked == true ? "3" : "1";
+        // Maps radio → agent type string matching AgentType enum
+        private string CurrentAgentType =>
+            RbCar.IsChecked == true ? "Car" :
+            RbBible.IsChecked == true ? "Bible" :
+            RbCSharp.IsChecked == true ? "CSharp" : "Car";
 
-        // ── Constructor ───────────────────────────────────────────────────
+        // ── Constructor ────────────────────────────────────────────────────
         public MainWindow()
         {
             InitializeComponent();
-            Loaded += async (_, _) => await InitAgentAsync();
+            WireHubEvents();
+            Loaded += async (_, _) => await ConnectAndSelectAsync();
+            Closing += async (_, e) =>
+            {
+                e.Cancel = false;
+                await _hub.DisposeAsync();
+            };
         }
 
-        // ── Agent initialisation ──────────────────────────────────────────
-        private async Task InitAgentAsync()
+        // ── Connect + select initial agent ─────────────────────────────────
+        private async Task ConnectAndSelectAsync()
         {
             SetUiEnabled(false);
-            SetInitBadge("⬤  Initializing...", "#FBBF24");
+            SetInitBadge("⬤  Connecting…", "#FBBF24");
             ChatPanel.Children.Clear();
             _messageCount = 0;
             TxtMessageCount.Text = "0 messages";
 
-            var choice = CurrentChoice;
-
-            var (config, tools) = choice switch
-            {
-                "1" => AgentFactory.CreateCarAgent(),
-                "2" => AgentFactory.CreateBibleAgent(),
-                "3" => AgentFactory.CreateCSharpAgent(),
-                _ => AgentFactory.CreateCarAgent()
-            };
-
-            config.RagDocsDirectory = choice switch
-            {
-                "1" => "docs/car",
-                "2" => @"D:\Bible Study\bible-docs",
-                "3" => "docs/csharp",
-                _ => "docs/car"
-            };
-            config.RagIndexPath = choice switch
-            {
-                "1" => "index/car.json",
-                "2" => @"D:\Bible Study\index\bible.json",
-                "3" => "index/csharp.json",
-                _ => "index/car.json"
-            };
-
-            System.IO.Directory.CreateDirectory(config.RagDocsDirectory);
-            System.IO.Directory.CreateDirectory("index");
-
-            _config = config;
-
-            string agentName = choice switch
-            {
-                "1" => "Car Diagnostics",
-                "2" => "Bible Research",
-                "3" => "C# Troubleshooting",
-                _ => "Car Diagnostics"
-            };
-            TxtAgentTitle.Text = agentName;
-            TxtModelBadge.Text = config.OllamaModel;
-            TxtDocsPath.Text = config.RagDocsDirectory;
-
-            if (!string.IsNullOrWhiteSpace(config.OpenAiApiKey))
-            {
-                TxtCloudStatus.Text = config.CloudModel;
-                TxtCloudStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
-            }
-            else
-            {
-                TxtCloudStatus.Text = "not configured";
-                TxtCloudStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24));
-            }
-
-            _pipeline = null;
-
             try
             {
-                var logFactory = LoggerFactory.Create(b => b
-                    .AddConsole()
-                    .SetMinimumLevel(LogLevel.Information));
-
-                _pipeline = await HybridPipeline.CreateAsync(config, tools, logFactory);
-
-                SetInitBadge("⬤  Ready", "#4ADE80");
-                SetUiEnabled(true);
-                BtnVerdict.IsEnabled = _pipeline.CloudAvailable;
-
-                AddSystemMessage($"Agent '{agentName}' loaded. " +
-                    (_pipeline.CloudAvailable
-                        ? $"Cloud ({config.CloudModel}) available."
-                        : "Cloud not configured."));
+                await _hub.ConnectAsync();
+                await _hub.SelectAgentAsync(CurrentAgentType);
             }
             catch (Exception ex)
             {
-                SetInitBadge("⬤  Error", "#F87171");
-                AddSystemMessage($"[Error] {ex.GetType().Name}: {ex.Message}");
-
-                if (ex.Message.Contains("connect", StringComparison.OrdinalIgnoreCase))
-                    AddSystemMessage("→ Is Ollama running?  Try: ollama serve");
+                SetInitBadge("⬤  Connection failed", "#F87171");
+                AddSystemMessage($"[Error] {ex.Message}");
+                AddSystemMessage("→ Is HybridAgent.API running?  dotnet run in the API project.");
             }
         }
 
-        // ── Event: agent radio changed ────────────────────────────────────
-        private async void AgentRadio_Checked(object sender, RoutedEventArgs e)
+        // ── Hub event wiring ───────────────────────────────────────────────
+        private void WireHubEvents()
         {
-            if (!IsLoaded) return;
-            await InitAgentAsync();
+            _hub.ConnectionStateChanged += state => Dispatch(() =>
+            {
+                if (state == HubConnectionState.Reconnecting)
+                {
+                    SetInitBadge("⬤  Reconnecting…", "#FBBF24");
+                    SetUiEnabled(false);
+                    AddSystemMessage("Connection lost — reconnecting…");
+                }
+                else if (state == HubConnectionState.Disconnected)
+                {
+                    SetInitBadge("⬤  Disconnected", "#F87171");
+                    SetUiEnabled(false);
+                }
+            });
+
+            // AgentSelected — fired after SelectAgent completes on the server
+            _hub.AgentSelected += (type, cloudAvailable, ragChunks) => Dispatch(() =>
+            {
+                // Update header badges to match what the server loaded
+                string agentName = type switch
+                {
+                    "Car" => "Car Diagnostics",
+                    "Bible" => "Bible Research",
+                    "CSharp" => "C# Troubleshooting",
+                    _ => type
+                };
+                string modelName = type switch
+                {
+                    "Car" => "llama3.2:3b",
+                    "Bible" => "llama3:8b",
+                    "CSharp" => "deepseek-coder:6.7b",
+                    _ => type
+                };
+
+                TxtAgentTitle.Text = agentName;
+                TxtModelBadge.Text = modelName;
+                TxtDocsPath.Text = type switch
+                {
+                    "Car" => "docs/car",
+                    "Bible" => "docs/bible",
+                    "CSharp" => "docs/csharp",
+                    _ => "docs/" + type.ToLower()
+                };
+
+                if (cloudAvailable)
+                {
+                    TxtCloudStatus.Text = "gpt-4o";
+                    TxtCloudStatus.Foreground =
+                        new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
+                }
+                else
+                {
+                    TxtCloudStatus.Text = "not configured";
+                    TxtCloudStatus.Foreground =
+                        new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24));
+                }
+
+                BtnVerdict.IsEnabled = cloudAvailable;
+                SetInitBadge("⬤  Ready", "#4ADE80");
+                SetUiEnabled(true);
+
+                AddSystemMessage($"Agent '{agentName}' loaded." +
+                    (cloudAvailable ? " Cloud verdict available." : "") +
+                    (ragChunks > 0 ? $" {ragChunks} RAG chunks indexed." : " No RAG index."));
+            });
+
+            // Streaming — tokens append to the current streaming bubble
+            _hub.TokenReceived += token => Dispatch(() =>
+            {
+                if (_streamingTextBlock is not null && !string.IsNullOrEmpty(token))
+                    _streamingTextBlock.Text += token;
+            });
+
+            // Message done — hide typing indicator, commit final text
+            _hub.MessageComplete += fullText => Dispatch(() =>
+            {
+                HideTypingIndicator();
+
+                // Replace the partial streamed text with the authoritative full reply
+                if (_streamingTextBlock is not null)
+                {
+                    _streamingTextBlock.Text = fullText;
+                    _streamingTextBlock = null;
+                }
+                else
+                {
+                    // Fallback: no streaming bubble was created yet
+                    AddAgentBubble(fullText);
+                }
+
+                SetBusy(false);
+            });
+
+            // Verdict done
+            _hub.VerdictComplete += verdictText => Dispatch(() =>
+            {
+                HideTypingIndicator();
+                AddAgentBubble(verdictText, isVerdict: true);
+                SetBusy(false);
+            });
+
+            // Conversation reset
+            _hub.ConversationReset += () => Dispatch(() =>
+            {
+                ChatPanel.Children.Clear();
+                _messageCount = 0;
+                TxtMessageCount.Text = "0 messages";
+            });
+
+            // RAG events — surface as system messages
+            _hub.RagStatus += (hasIndex, chunks, details) => Dispatch(() =>
+                AddSystemMessage($"RAG: {(hasIndex ? $"{chunks} chunks" : "no index")} — {details}"));
+
+            _hub.RagIndexing += msg => Dispatch(() =>
+                AddSystemMessage(msg));
+
+            _hub.RagIndexed += (success, message) => Dispatch(() =>
+                AddSystemMessage(message));
+
+            // Errors
+            _hub.ErrorReceived += msg => Dispatch(() =>
+            {
+                HideTypingIndicator();
+                AddSystemMessage($"[Error] {msg}");
+                SetBusy(false);
+            });
         }
 
-        // ── Events: send ──────────────────────────────────────────────────
+        // ── Agent radio changed ────────────────────────────────────────────
+        private async void AgentRadio_Checked(object sender, RoutedEventArgs e)
+        {
+            if (!IsLoaded || !_hub.IsConnected) return;
+
+            SetUiEnabled(false);
+            SetInitBadge("⬤  Switching agent…", "#FBBF24");
+            ChatPanel.Children.Clear();
+            _messageCount = 0;
+            TxtMessageCount.Text = "0 messages";
+
+            await _hub.SelectAgentAsync(CurrentAgentType);
+            // UI update happens in AgentSelected handler above
+        }
+
+        // ── Send ───────────────────────────────────────────────────────────
         private async void BtnSend_Click(object sender, RoutedEventArgs e)
             => await SendMessageAsync();
 
@@ -156,79 +235,102 @@ namespace HybridAgent
             }
         }
 
-        // ── Event: Verdict ────────────────────────────────────────────────
-        private async void BtnVerdict_Click(object sender, RoutedEventArgs e)
-        {
-            if (_pipeline is null || _busy) return;
-
-            SetBusy(true);
-            ShowTypingIndicator(isVerdict: true);
-
-            try
-            {
-                var result = await _pipeline.GetVerdictAsync();
-                HideTypingIndicator();
-                if (result is not null)
-                    AddAgentBubble(FormatVerdict(result), isVerdict: true);
-            }
-            catch (Exception ex)
-            {
-                HideTypingIndicator();
-                AddSystemMessage($"[Cloud error] {ex.Message}");
-            }
-            finally
-            {
-                SetBusy(false);
-            }
-        }
-
-        // ── Event: Reset ──────────────────────────────────────────────────
-        private void BtnReset_Click(object sender, RoutedEventArgs e)
-        {
-            _pipeline?.Reset();
-            ChatPanel.Children.Clear();
-            _messageCount = 0;
-            TxtMessageCount.Text = "0 messages";
-        }
-
-        // ── Core chat ─────────────────────────────────────────────────────
         private async Task SendMessageAsync()
         {
             var text = InputBox.Text.Trim();
-            if (string.IsNullOrEmpty(text) || _pipeline is null || _busy) return;
+            if (string.IsNullOrEmpty(text) || _busy || !_hub.IsConnected) return;
 
             InputBox.Clear();
             AddUserBubble(text);
             SetBusy(true);
+
+            // Create the agent bubble now so tokens can stream into it
             ShowTypingIndicator();
+            _streamingTextBlock = PrepareStreamingBubble();
 
-            try
-            {
-                var reply = await _pipeline.ChatAsync(text);
-                HideTypingIndicator();
-                AddAgentBubble(reply ?? "(no response)");
-            }
-            catch (Exception ex)
-            {
-                HideTypingIndicator();
-                AddSystemMessage($"[Error] {ex.GetType().Name}: {ex.Message}");
+            await _hub.SendMessageAsync(text);
+            // Rest handled in TokenReceived / MessageComplete
+        }
 
-                if (ex.Message.Contains("connect", StringComparison.OrdinalIgnoreCase))
-                    AddSystemMessage("→ Is Ollama running?  Try: ollama serve");
-            }
-            finally
-            {
-                SetBusy(false);
-            }
+        // ── Verdict ────────────────────────────────────────────────────────
+        private async void BtnVerdict_Click(object sender, RoutedEventArgs e)
+        {
+            if (_busy || !_hub.IsConnected) return;
+
+            SetBusy(true);
+            ShowTypingIndicator(isVerdict: true);
+            await _hub.GetVerdictAsync();
+            // Response handled in VerdictComplete handler
+        }
+
+        // ── Reset ──────────────────────────────────────────────────────────
+        private async void BtnReset_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_hub.IsConnected) return;
+            await _hub.ResetConversationAsync();
+            // UI clear handled in ConversationReset handler
         }
 
         // ════════════════════════════════════════════════════════════════════
-        //  TYPING INDICATOR
+        //  STREAMING BUBBLE
+        //  Creates the agent bubble shell and returns the TextBlock to stream into.
+        // ════════════════════════════════════════════════════════════════════
+
+        private TextBlock PrepareStreamingBubble()
+        {
+            _messageCount++;
+            UpdateMessageCount();
+
+            var outer = new Border
+            {
+                Margin = new Thickness(0, 8, 60, 8),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+
+            var stack = new StackPanel();
+            stack.Children.Add(new TextBlock
+            {
+                Text = TxtAgentTitle.Text,
+                FontSize = 10,
+                FontFamily = new FontFamily("Consolas"),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x5B, 0x8D, 0xEF)),
+                Margin = new Thickness(4, 0, 0, 4)
+            });
+
+            var textBlock = new TextBlock
+            {
+                Text = "",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xF0)),
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 13,
+                LineHeight = 20
+            };
+
+            var bubble = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(0x16, 0x16, 0x20)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x2A, 0x2A, 0x3E)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(3, 10, 10, 10),
+                Padding = new Thickness(14, 10, 14, 10),
+                Child = textBlock
+            };
+
+            stack.Children.Add(bubble);
+            outer.Child = stack;
+            ChatPanel.Children.Add(outer);
+            ScrollToBottom();
+
+            return textBlock;
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        //  TYPING INDICATOR  (unchanged from your original)
         // ════════════════════════════════════════════════════════════════════
 
         private void ShowTypingIndicator(bool isVerdict = false)
         {
-            // Outer wrapper — left-aligned like agent bubbles
             var outer = new Border
             {
                 Margin = new Thickness(0, 8, 60, 4),
@@ -237,8 +339,6 @@ namespace HybridAgent
             };
 
             var stack = new StackPanel();
-
-            // Agent name label
             var labelText = TxtAgentTitle.Text + (isVerdict ? "  ⚡ cloud" : "");
             stack.Children.Add(new TextBlock
             {
@@ -251,7 +351,6 @@ namespace HybridAgent
                 Margin = new Thickness(4, 0, 0, 4)
             });
 
-            // Bubble shell
             var bubble = new Border
             {
                 Background = new SolidColorBrush(Color.FromRgb(0x16, 0x16, 0x20)),
@@ -262,9 +361,8 @@ namespace HybridAgent
             };
 
             var innerStack = new StackPanel();
-
-            // Three animated dots
             var dotRow = new StackPanel { Orientation = Orientation.Horizontal };
+
             _dots = new Ellipse[3];
             for (int i = 0; i < 3; i++)
             {
@@ -280,7 +378,6 @@ namespace HybridAgent
                 dotRow.Children.Add(dot);
             }
 
-            // Elapsed time label
             _timerLabel = new TextBlock
             {
                 Text = "thinking…",
@@ -293,7 +390,6 @@ namespace HybridAgent
             innerStack.Children.Add(dotRow);
             innerStack.Children.Add(_timerLabel);
             bubble.Child = innerStack;
-
             stack.Children.Add(bubble);
             outer.Child = stack;
 
@@ -301,14 +397,12 @@ namespace HybridAgent
             ChatPanel.Children.Add(outer);
             ScrollToBottom();
 
-            // Start dot animation — 400 ms per frame
             _dotFrame = 0;
             _dotTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
             _dotTimer.Tick += (_, _) => AnimateDots();
             _dotTimer.Start();
-            AnimateDots(); // fire immediately so dots appear at once
+            AnimateDots();
 
-            // Start elapsed timer — ticks every second
             _stopwatch.Restart();
             _elapsedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _elapsedTimer.Tick += (_, _) => UpdateElapsed();
@@ -318,13 +412,11 @@ namespace HybridAgent
         private void AnimateDots()
         {
             if (_dots is null) return;
-
             int active = _dotFrame % 3;
             for (int i = 0; i < 3; i++)
             {
-                double target = (i == active) ? 1.0 : 0.2;
-                _dots[i].BeginAnimation(
-                    UIElement.OpacityProperty,
+                double target = i == active ? 1.0 : 0.2;
+                _dots[i].BeginAnimation(UIElement.OpacityProperty,
                     new DoubleAnimation(target, TimeSpan.FromMilliseconds(250))
                     {
                         EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
@@ -344,11 +436,8 @@ namespace HybridAgent
 
         private void HideTypingIndicator()
         {
-            _dotTimer?.Stop();
-            _dotTimer = null;
-
-            _elapsedTimer?.Stop();
-            _elapsedTimer = null;
+            _dotTimer?.Stop(); _dotTimer = null;
+            _elapsedTimer?.Stop(); _elapsedTimer = null;
             _stopwatch.Stop();
 
             if (_typingBubble is not null)
@@ -356,13 +445,12 @@ namespace HybridAgent
                 ChatPanel.Children.Remove(_typingBubble);
                 _typingBubble = null;
             }
-
             _dots = null;
             _timerLabel = null;
         }
 
         // ════════════════════════════════════════════════════════════════════
-        //  MESSAGE RENDERERS
+        //  MESSAGE RENDERERS  (unchanged from your original)
         // ════════════════════════════════════════════════════════════════════
 
         private void AddUserBubble(string text)
@@ -375,7 +463,6 @@ namespace HybridAgent
                 Margin = new Thickness(60, 8, 0, 8),
                 HorizontalAlignment = HorizontalAlignment.Right
             };
-
             var stack = new StackPanel();
             stack.Children.Add(new TextBlock
             {
@@ -420,9 +507,9 @@ namespace HybridAgent
                 Margin = new Thickness(0, 8, 60, 8),
                 HorizontalAlignment = HorizontalAlignment.Left
             };
-
             var stack = new StackPanel();
             var agentName = TxtAgentTitle.Text + (isVerdict ? "  ⚡ cloud" : "");
+
             stack.Children.Add(new TextBlock
             {
                 Text = agentName,
@@ -476,16 +563,14 @@ namespace HybridAgent
             ScrollToBottom();
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────
+        // ── Helpers ────────────────────────────────────────────────────────
 
         private void SetUiEnabled(bool enabled)
         {
             InputBox.IsEnabled = enabled;
             BtnSend.IsEnabled = enabled;
             BtnReset.IsEnabled = enabled;
-
-            if (enabled && _pipeline is not null)
-                BtnVerdict.IsEnabled = _pipeline.CloudAvailable;
+            BtnVerdict.IsEnabled = enabled && _hub.IsConnected;
         }
 
         private void SetBusy(bool busy)
@@ -498,18 +583,18 @@ namespace HybridAgent
         private void SetInitBadge(string text, string hex)
         {
             TxtInitStatus.Text = text;
-            TxtInitStatus.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom(hex)!;
+            TxtInitStatus.Foreground =
+                (SolidColorBrush)new BrushConverter().ConvertFrom(hex)!;
         }
 
-        private void UpdateMessageCount()
-        {
+        private void UpdateMessageCount() =>
             TxtMessageCount.Text =
                 $"{_messageCount} message{(_messageCount == 1 ? "" : "s")}";
-        }
 
-        private void ScrollToBottom() => ChatScrollViewer.ScrollToEnd();
+        private void ScrollToBottom() =>
+            ChatScrollViewer.ScrollToEnd();
 
-        private static string FormatVerdict(VerdictResult result)
-            => result.ToString() ?? "(no verdict)";
+        private void Dispatch(Action a) =>
+            Dispatcher.Invoke(a);
     }
 }

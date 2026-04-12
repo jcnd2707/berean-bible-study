@@ -103,6 +103,8 @@ public class HybridPipeline
     public void Reset() => _diagnostic.Reset();
     public int MessageCount => _diagnostic.MessageCount;
 
+    public int IndexedChunks => _rag?.IndexedChunks ?? 0;
+
     // ── Factory ────────────────────────────────────────────────────────────
 
     public static async Task<HybridPipeline> CreateAsync(
