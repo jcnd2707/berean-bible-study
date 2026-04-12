@@ -1,9 +1,9 @@
 ﻿using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.Extensions.AI;
-using HybridAgent.Models;
+using HybridAgent.Core.Models;
 
-namespace HybridAgent.Tools;
+namespace HybridAgent.Core.Tools;
 
 /// <summary>
 /// Owns all tool definitions and tracks every invocation for the DiagnosisSummary.

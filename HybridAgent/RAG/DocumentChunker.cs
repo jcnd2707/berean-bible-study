@@ -1,4 +1,4 @@
-﻿namespace HybridAgent.RAG;
+﻿namespace HybridAgent.Core.RAG;
 
 /// <summary>
 /// Represents a single chunk of text extracted from a source document.

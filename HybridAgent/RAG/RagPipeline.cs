@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using OpenAI.VectorStores;
 
-namespace HybridAgent.RAG;
+namespace HybridAgent.Core.RAG;
 
 /// <summary>
 /// Ties the chunker, embedding service, and vector store into one pipeline.

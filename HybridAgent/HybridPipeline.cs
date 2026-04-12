@@ -2,12 +2,12 @@
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using OpenAI;
-using HybridAgent.Agents;
-using HybridAgent.Models;
-using HybridAgent.Tools;
-using HybridAgent.RAG;
+using HybridAgent.Core.Agents;
+using HybridAgent.Core.Models;
+using HybridAgent.Core.Tools;
+using HybridAgent.Core.RAG;
 
-namespace HybridAgent;
+namespace HybridAgent.Core;
 
 /// <summary>
 /// Hosts a conversational DiagnosticAgent (local Ollama) and an optional VerdictAgent (cloud).

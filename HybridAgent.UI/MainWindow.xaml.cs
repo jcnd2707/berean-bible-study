@@ -9,8 +9,9 @@ using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using HybridAgent;
-using HybridAgent.Agents;
-using HybridAgent.Models;
+using HybridAgent.Core;
+using HybridAgent.Core.Agents;
+using HybridAgent.Core.Models;
 using Microsoft.Extensions.Logging;
 
 namespace HybridAgent

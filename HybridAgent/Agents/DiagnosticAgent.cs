@@ -1,9 +1,9 @@
 ﻿using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using HybridAgent.Models;
-using HybridAgent.Tools;
+using HybridAgent.Core.Models;
+using HybridAgent.Core.Tools;
 
-namespace HybridAgent.Agents;
+namespace HybridAgent.Core.Agents;
 
 /// <summary>
 /// Conversational agent backed by local Ollama.

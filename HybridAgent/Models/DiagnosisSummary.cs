@@ -1,7 +1,7 @@
-﻿using HybridAgent.Agents;
+﻿using HybridAgent.Core.Agents;
 using static System.Net.Mime.MediaTypeNames;
 
-namespace HybridAgent.Models;
+namespace HybridAgent.Core.Models;
 
 public class DiagnosisSummary
 {

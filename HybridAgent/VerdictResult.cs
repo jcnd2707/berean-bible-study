@@ -1,8 +1,8 @@
 ﻿using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using HybridAgent.Models;
+using HybridAgent.Core.Models;
 
-namespace HybridAgent.Agents;
+namespace HybridAgent.Core.Agents;
 
 /// <summary>
 /// Phase 2 — sends the DiagnosisSummary to a cloud model for the final verdict.

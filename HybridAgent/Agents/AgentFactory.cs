@@ -1,8 +1,8 @@
-﻿using HybridAgent.Models;
-using HybridAgent.Tools;
+﻿using HybridAgent.Core.Models;
+using HybridAgent.Core.Tools;
 using System.ComponentModel;
 
-namespace HybridAgent.Agents;
+namespace HybridAgent.Core.Agents;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Each domain agent is just an AgentConfig + ToolRegistry + system prompt.

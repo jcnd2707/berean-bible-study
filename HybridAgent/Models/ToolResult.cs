@@ -1,4 +1,4 @@
-﻿namespace HybridAgent.Models;
+﻿namespace HybridAgent.Core.Models;
 
 public class ToolResult
 {

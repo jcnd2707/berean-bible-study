@@ -1,6 +1,6 @@
 ﻿using System.Text.Json;
 
-namespace HybridAgent.RAG;
+namespace HybridAgent.Core.RAG;
 
 /// <summary>
 /// In-memory vector store with cosine-similarity search and JSON persistence.

@@ -1,4 +1,4 @@
-﻿namespace HybridAgent.Models;
+﻿namespace HybridAgent.Core.Models;
 
 /// <summary>
 /// Configuration for one agent instance. Each domain agent gets its own.

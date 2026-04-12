@@ -1,6 +1,6 @@
-﻿//using HybridAgent;
-//using HybridAgent.Agents;
-//using HybridAgent.Models;
+﻿//using HybridAgent.Core;
+//using HybridAgent.Core.Agents;
+//using HybridAgent.Core.Models;
 //using Microsoft.Extensions.Logging;
 
 //var logFactory = LoggerFactory.Create(b => b

@@ -1,4 +1,4 @@
-# HybridAgent — Multi-Domain with RAG
+# HybridAgent.Core — Multi-Domain with RAG
 
 Three specialized AI agents, each backed by local Ollama + RAG + cloud verdict.
 
@@ -58,7 +58,7 @@ docs/
 ## Project structure
 
 ```
-HybridAgent/
+HybridAgent.Core/
 ├── RAG/
 │   ├── DocumentChunker.cs   # splits text into overlapping chunks
 │   ├── EmbeddingService.cs  # calls Ollama /api/embed
