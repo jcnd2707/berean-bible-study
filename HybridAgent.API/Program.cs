@@ -9,7 +9,6 @@ namespace HybridAgent.API
         public static void Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
-
             // ── Services ───────────────────────────────────────────────────────────────
 
             builder.Services.AddSignalR(opts =>

@@ -1,7 +1,5 @@
-﻿using HybridAgent.Core;
-using HybridAgent.Core.Agents;
-using HybridAgent.Core.Models;
-using HybridAgent.Core.Tools;
+﻿using HybridAgent.Core.Agents;
+using HybridAgent.Core.RAG;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
@@ -9,38 +7,53 @@ namespace HybridAgent.API.Services;
 
 /// <summary>
 /// Manages one HybridPipeline per SignalR connection.
-/// Each connection gets its own agent instance with its own conversation history.
 ///
-/// Lifetime: Singleton — the dictionary lives for the app lifetime.
-/// Individual sessions are created on SelectAgent and removed on disconnect.
+/// All RAG configuration comes from appsettings.json — nothing is hardcoded.
+/// Config shape:
+///   Agents:BibleAgent → AgentRagConfig (RagDbPath, ModulesRootPath, AllowedExtensions)
+///   Agents:CarAgent   → AgentRagConfig
+///   Agents:CodeAgent  → AgentRagConfig
+///   Ollama:Endpoint, Ollama:EmbeddingModel
+///   OpenAI:ApiKey
 /// </summary>
 public class AgentSessionService
 {
     private readonly ILoggerFactory _logFactory;
     private readonly ILogger _log;
     private readonly string _openAiApiKey;
+    private readonly string _ollamaEndpoint;
+    private readonly string _embeddingModel;
 
-    // connectionId → active pipeline
+    // Typed RAG config per agent — null means RAG is not configured for that agent
+    private readonly AgentRagConfig? _bibleRagConfig;
+    private readonly AgentRagConfig? _carRagConfig;
+    private readonly AgentRagConfig? _codeRagConfig;
+
     private readonly ConcurrentDictionary<string, HybridPipeline> _sessions = new();
-
-    // connectionId → selected agent type (so we can report it back)
     private readonly ConcurrentDictionary<string, AgentType> _agentTypes = new();
 
     public AgentSessionService(ILoggerFactory logFactory, IConfiguration config)
     {
         _logFactory = logFactory;
         _log = logFactory.CreateLogger<AgentSessionService>();
+
         _openAiApiKey = config["OpenAI:ApiKey"]
                         ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
                         ?? string.Empty;
+
+        _ollamaEndpoint = config["Ollama:Endpoint"] ?? "http://localhost:11434";
+        _embeddingModel = config["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
+
+        // Bind each agent's RAG config from the Agents section.
+        // GetSection returns an empty section (not null) when the key is absent,
+        // so we check that ModulesRootPath is actually set before using it.
+        _bibleRagConfig = BindRagConfig(config, "BibleAgent");
+        _carRagConfig = BindRagConfig(config, "CarAgent");
+        _codeRagConfig = BindRagConfig(config, "CodeAgent");
     }
 
     // ── Session lifecycle ──────────────────────────────────────────────────
 
-    /// <summary>
-    /// Create or replace the pipeline for a connection with the chosen agent type.
-    /// Also wires up the RAG index for that domain.
-    /// </summary>
     public async Task<HybridPipeline> SelectAgentAsync(
         string connectionId,
         AgentType agentType,
@@ -48,7 +61,7 @@ public class AgentSessionService
     {
         _log.LogInformation("[Session] {ConnId} selecting agent: {Agent}", connectionId, agentType);
 
-        var (config, tools) = agentType switch
+        var (agentConfig, tools) = agentType switch
         {
             AgentType.Car => AgentFactory.CreateCarAgent(_openAiApiKey),
             AgentType.Bible => AgentFactory.CreateBibleAgent(_openAiApiKey),
@@ -56,41 +69,30 @@ public class AgentSessionService
             _ => AgentFactory.CreateCarAgent(_openAiApiKey)
         };
 
-        config.RagDocsDirectory = agentType switch
+        var ragConfig = agentType switch
         {
-            AgentType.Car => "docs/car",
-            AgentType.Bible => "docs/bible",
-            AgentType.CSharp => "docs/csharp",
-            _ => "docs/car"
-        };
-        config.RagIndexPath = agentType switch
-        {
-            AgentType.Car => "index/car.json",
-            AgentType.Bible => "index/bible.json",
-            AgentType.CSharp => "index/csharp.json",
-            _ => "index/car.json"
+            AgentType.Bible => _bibleRagConfig,
+            AgentType.Car => _carRagConfig,
+            AgentType.CSharp => _codeRagConfig,
+            _ => null
         };
 
-        Directory.CreateDirectory(config.RagDocsDirectory);
-        Directory.CreateDirectory("index");
+        var pipeline = await HybridPipeline.CreateAsync(
+            agentConfig, tools, _logFactory,
+            ragConfig, _ollamaEndpoint, _embeddingModel, ct);
 
-        var pipeline = await HybridPipeline.CreateAsync(config, tools, _logFactory, ct);
-
-        // Replace any existing session
         _sessions[connectionId] = pipeline;
         _agentTypes[connectionId] = agentType;
 
         return pipeline;
     }
 
-    /// <summary>Get the active pipeline for a connection, or null if none selected.</summary>
     public HybridPipeline? GetPipeline(string connectionId) =>
         _sessions.TryGetValue(connectionId, out var p) ? p : null;
 
     public AgentType? GetAgentType(string connectionId) =>
         _agentTypes.TryGetValue(connectionId, out var t) ? t : null;
 
-    /// <summary>Remove the session when the client disconnects.</summary>
     public void RemoveSession(string connectionId)
     {
         _sessions.TryRemove(connectionId, out _);
@@ -98,40 +100,30 @@ public class AgentSessionService
         _log.LogInformation("[Session] {ConnId} removed", connectionId);
     }
 
-    /// <summary>Re-index the RAG documents for the active agent on this connection.</summary>
     public async Task<RagIndexResult> ReindexAsync(
         string connectionId,
         CancellationToken ct = default)
     {
         var agentType = GetAgentType(connectionId);
         if (agentType is null)
-            return new RagIndexResult(false, "No agent selected. Call SelectAgent first.");
+            return new RagIndexResult(false, "No agent selected.");
 
-        var docsDir = agentType switch
+        // Delete the rag.db for this agent to force a rebuild on next SelectAgent
+        var ragConfig = agentType switch
         {
-            AgentType.Car => "docs/car",
-            AgentType.Bible => "docs/bible",
-            AgentType.CSharp => "docs/csharp",
-            _ => "docs/car"
-        };
-        var indexPath = agentType switch
-        {
-            AgentType.Car => "index/car.json",
-            AgentType.Bible => "index/bible.json",
-            AgentType.CSharp => "index/csharp.json",
-            _ => "index/car.json"
+            AgentType.Bible => _bibleRagConfig,
+            AgentType.Car => _carRagConfig,
+            AgentType.CSharp => _codeRagConfig,
+            _ => null
         };
 
-        // Delete existing index to force rebuild
-        if (File.Exists(indexPath))
-            File.Delete(indexPath);
+        if (ragConfig is not null && File.Exists(ragConfig.RagDbPath))
+            File.Delete(ragConfig.RagDbPath);
 
-        // Re-select the agent — this triggers a fresh index build
         await SelectAgentAsync(connectionId, agentType.Value, ct);
 
         var pipeline = GetPipeline(connectionId)!;
-        return new RagIndexResult(true,
-            $"Indexed {pipeline.IndexedChunks} chunks from {docsDir}");
+        return new RagIndexResult(true, $"Re-indexed {pipeline.IndexedChunks} chunks");
     }
 
     public RagStatusResult GetRagStatus(string connectionId)
@@ -142,22 +134,33 @@ public class AgentSessionService
         if (pipeline is null || agentType is null)
             return new RagStatusResult(false, 0, "No agent selected");
 
-        var docsDir = agentType switch
+        var ragConfig = agentType switch
         {
-            AgentType.Car => "docs/car",
-            AgentType.Bible => "docs/bible",
-            AgentType.CSharp => "docs/csharp",
-            _ => "docs/car"
+            AgentType.Bible => _bibleRagConfig,
+            AgentType.Car => _carRagConfig,
+            AgentType.CSharp => _codeRagConfig,
+            _ => null
         };
 
-        var files = Directory.Exists(docsDir)
-            ? Directory.GetFiles(docsDir, "*.txt", SearchOption.AllDirectories).Length
-            : 0;
+        var details = ragConfig is null
+            ? "RAG not configured"
+            : $"Root: {ragConfig.ModulesRootPath} | " +
+              $"Extensions: {string.Join(", ", ragConfig.AllowedExtensions)}";
 
-        return new RagStatusResult(
-            pipeline.IndexedChunks > 0,
-            pipeline.IndexedChunks,
-            $"{files} .txt file(s) in {docsDir}");
+        return new RagStatusResult(pipeline.IndexedChunks > 0, pipeline.IndexedChunks, details);
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private static AgentRagConfig? BindRagConfig(IConfiguration config, string agentKey)
+    {
+        var section = config.GetSection($"Agents:{agentKey}");
+        if (!section.Exists()) return null;
+
+        var ragConfig = section.Get<AgentRagConfig>();
+
+        // Treat as unconfigured if root path is missing or empty
+        return string.IsNullOrWhiteSpace(ragConfig?.ModulesRootPath) ? null : ragConfig;
     }
 }
 

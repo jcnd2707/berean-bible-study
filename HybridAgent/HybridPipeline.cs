@@ -2,23 +2,25 @@
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using OpenAI;
+using HybridAgent.RAG;
 using HybridAgent.Core.Agents;
 using HybridAgent.Core.Models;
-using HybridAgent.Core.Tools;
 using HybridAgent.Core.RAG;
+using HybridAgent.Core.Tools;
 
-namespace HybridAgent.Core;
+namespace HybridAgent;
 
 /// <summary>
 /// Hosts a conversational DiagnosticAgent (local Ollama) and an optional VerdictAgent (cloud).
 ///
-/// Normal flow  → ChatAsync()       — always local, full conversation memory
-/// Escalation   → GetVerdictAsync() — only available when an API key was provided
+/// Normal flow  → ChatAsync()        — always local, full conversation memory
+/// Escalation   → GetVerdictAsync()  — only when API key is present
+/// Verse lookup → GetVerseContext()  — verse-pinned RAG for Bible agent
 /// </summary>
 public class HybridPipeline
 {
     private readonly DiagnosticAgent _diagnostic;
-    private readonly VerdictAgent? _verdict;      // null when no API key provided
+    private readonly VerdictAgent? _verdict;
     private readonly RagPipeline? _rag;
     private readonly AgentConfig _config;
     private readonly ILogger _log;
@@ -26,6 +28,7 @@ public class HybridPipeline
     private string _lastUserInput = string.Empty;
 
     public bool CloudAvailable => _verdict is not null;
+    public int IndexedChunks => _rag?.IndexedChunks ?? 0;
 
     public HybridPipeline(
         AgentConfig config,
@@ -37,12 +40,9 @@ public class HybridPipeline
         _rag = rag;
         _log = logFactory.CreateLogger<HybridPipeline>();
 
-        // ── Local client (always required) ─────────────────────────────────
+        // ── Local client ───────────────────────────────────────────────────
         IChatClient localClient = new OllamaApiClient(new Uri(config.OllamaEndpoint), config.OllamaModel);
-
-        _diagnostic = new DiagnosticAgent(
-            localClient, registry, config,
-            logFactory.CreateLogger<DiagnosticAgent>());
+        
 
         // ── Cloud client (optional) ────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(config.OpenAiApiKey))
@@ -53,16 +53,20 @@ public class HybridPipeline
                 cloudClient, config,
                 logFactory.CreateLogger<VerdictAgent>());
 
-            _log.LogInformation("[Pipeline] Cloud model enabled: {Model}", config.CloudModel);
+            _log.LogInformation("[Pipeline] Cloud enabled: {Model}", config.CloudModel);
         }
         else
         {
             _verdict = null;
-            _log.LogInformation("[Pipeline] No API key — running local-only mode");
+            _log.LogInformation("[Pipeline] No API key — local-only mode");
         }
+
+        _diagnostic = new DiagnosticAgent(
+            localClient, registry, config,
+            logFactory.CreateLogger<DiagnosticAgent>());
     }
 
-    // ── Chat — always local ────────────────────────────────────────────────
+    // ── Chat ───────────────────────────────────────────────────────────────
 
     public async Task<string> ChatAsync(
         string userInput,
@@ -81,21 +85,28 @@ public class HybridPipeline
         return await _diagnostic.ChatAsync(userInput, ragContext, ct);
     }
 
-    // ── Verdict — cloud only, explicitly requested ─────────────────────────
+    // ── Verse-pinned context ───────────────────────────────────────────────
 
     /// <summary>
-    /// Escalates the current conversation to the cloud model for a final verdict.
-    /// Returns null and logs a warning when no API key was configured.
+    /// Returns context chunks that cover a specific verse.
+    /// Call this from the WPF UI when the user selects a passage,
+    /// then pass the result as additional context to ChatAsync.
+    /// Returns null when no chunks cover that verse.
     /// </summary>
+    public string? GetVerseContext(int bookNumber, int chapter, int verse) =>
+        _rag?.BuildVerseContext(bookNumber, chapter, verse);
+
+    // ── Verdict ────────────────────────────────────────────────────────────
+
     public async Task<VerdictResult?> GetVerdictAsync(CancellationToken ct = default)
     {
         if (_verdict is null)
         {
-            _log.LogWarning("[Pipeline] Cloud verdict requested but no API key configured");
+            _log.LogWarning("[Pipeline] Verdict requested but no API key configured");
             return null;
         }
 
-        _log.LogInformation("[Pipeline] Escalating to cloud model: {Model}", _config.CloudModel);
+        _log.LogInformation("[Pipeline] Escalating to cloud: {Model}", _config.CloudModel);
         var summary = await _diagnostic.BuildSummaryAsync(_lastUserInput, ct);
         return await _verdict.GetVerdictAsync(summary, ct);
     }
@@ -103,28 +114,33 @@ public class HybridPipeline
     public void Reset() => _diagnostic.Reset();
     public int MessageCount => _diagnostic.MessageCount;
 
-    public int IndexedChunks => _rag?.IndexedChunks ?? 0;
-
     // ── Factory ────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Single factory for all agents.
+    /// Builds the RAG pipeline from AgentRagConfig (root path + allowed extensions).
+    /// Pass null for ragConfig to disable RAG for this agent.
+    /// </summary>
     public static async Task<HybridPipeline> CreateAsync(
-        AgentConfig config,
+        AgentConfig agentConfig,
         ToolRegistry registry,
         ILoggerFactory logFactory,
+        AgentRagConfig? ragConfig = null,
+        string ollamaEndpoint = "http://localhost:11434",
+        string embeddingModel = "nomic-embed-text",
         CancellationToken ct = default)
     {
         RagPipeline? rag = null;
 
-        if (!string.IsNullOrWhiteSpace(config.RagDocsDirectory) &&
-            !string.IsNullOrWhiteSpace(config.RagIndexPath))
+        if (ragConfig is not null)
         {
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(ragConfig.RagDbPath) ?? "index");
+
             rag = await RagPipeline.CreateAsync(
-                config.RagDocsDirectory,
-                config.RagIndexPath,
-                logFactory,
-                ct: ct);
+                ragConfig, logFactory, embeddingModel, ollamaEndpoint, ct);
         }
 
-        return new HybridPipeline(config, registry, logFactory, rag);
+        return new HybridPipeline(agentConfig, registry, logFactory, rag);
     }
 }
