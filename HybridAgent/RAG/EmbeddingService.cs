@@ -1,8 +1,7 @@
-﻿using HybridAgent.Core.RAG;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 
-namespace HybridAgent.RAG;
+namespace HybridAgent.Core.RAG;
 
 /// <summary>
 /// Calls Ollama's embedding endpoint to convert text into float vectors.

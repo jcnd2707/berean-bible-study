@@ -4,20 +4,24 @@ using Microsoft.AspNetCore.SignalR;
 namespace HybridAgent.API.Hubs;
 
 /// <summary>
-/// SignalR hub — one persistent connection per WPF window.
+/// SignalR hub — one persistent connection per client window.
 ///
-/// Client → Server methods (called by WPF):
-///   SelectAgent(agentType)        — switch to car / bible / csharp
-///   SendMessage(text)             — send a chat message, receive streamed tokens
-///   ResetConversation()           — clear history, start fresh topic
-///   GetRagStatus()                — check index status for current agent
-///   ReindexDocuments()            — rebuild the RAG index from docs folder
+/// Client → Server:
+///   SelectAgent(agentType)
+///   SendMessage(text)
+///   GetVerdict()
+///   ResetConversation()
+///   GetRagStatus()
+///   ReindexDocuments()
 ///
-/// Server → Client events (received by WPF):
-///   AgentSelected(agentType, cloudAvailable, ragChunks)
-///   TokenReceived(token)          — one chunk of the streaming response
-///   MessageComplete(fullText)     — full assembled response when done
+/// Server → Client:
+///   AgentSelected(type, cloudAvailable, ragChunks)
+///   TokenReceived(token)
+///   MessageComplete(fullText)
+///   VerdictComplete(verdictText)
+///   ConversationReset()
 ///   RagStatus(hasIndex, chunks, details)
+///   RagIndexing(message)
 ///   RagIndexed(success, message)
 ///   Error(message)
 /// </summary>
@@ -36,20 +40,19 @@ public class ChatHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        _log.LogInformation("[Hub] Connected: {ConnId}", Context.ConnectionId);
+        _log.LogInformation("[Hub] Connected: {Id}", Context.ConnectionId);
         await base.OnConnectedAsync();
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         _sessions.RemoveSession(Context.ConnectionId);
-        _log.LogInformation("[Hub] Disconnected: {ConnId}", Context.ConnectionId);
+        _log.LogInformation("[Hub] Disconnected: {Id}", Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
     }
 
-    // ── Client → Server ────────────────────────────────────────────────────
+    // ── SelectAgent ────────────────────────────────────────────────────────
 
-    /// <summary>Select or switch the active agent for this connection.</summary>
     public async Task SelectAgent(string agentType)
     {
         if (!Enum.TryParse<AgentType>(agentType, ignoreCase: true, out var type))
@@ -66,12 +69,7 @@ public class ChatHub : Hub
             var status = _sessions.GetRagStatus(Context.ConnectionId);
 
             await Clients.Caller.SendAsync("AgentSelected",
-                agentType,
-                pipeline.CloudAvailable,
-                status.ChunkCount);
-
-            _log.LogInformation("[Hub] {ConnId} agent={Agent} cloud={Cloud} rag={Chunks}",
-                Context.ConnectionId, agentType, pipeline.CloudAvailable, status.ChunkCount);
+                agentType, pipeline.CloudAvailable, status.ChunkCount);
         }
         catch (Exception ex)
         {
@@ -80,52 +78,38 @@ public class ChatHub : Hub
         }
     }
 
-    /// <summary>
-    /// Send a chat message. The response is streamed token-by-token via TokenReceived,
-    /// then a final MessageComplete event carries the full assembled text.
-    ///
-    /// Note: HybridPipeline.ChatAsync() returns the full string, not a stream.
-    /// We simulate streaming by splitting on word boundaries client-side.
-    /// To get true token streaming, wire OllamaSharp's streaming API into
-    /// DiagnosticAgent and yield each token via IAsyncEnumerable.
-    /// </summary>
+    // ── SendMessage ────────────────────────────────────────────────────────
+
     public async Task SendMessage(string text)
     {
         var pipeline = _sessions.GetPipeline(Context.ConnectionId);
         if (pipeline is null)
         {
-            await Clients.Caller.SendAsync("Error",
-                "No agent selected. Call SelectAgent first.");
+            await Clients.Caller.SendAsync("Error", "No agent selected. Call SelectAgent first.");
             return;
         }
 
-        _log.LogInformation("[Hub] {ConnId} message: {Text}", Context.ConnectionId,
-            text.Length > 60 ? text[..60] + "..." : text);
+        _log.LogInformation("[Hub] {Id} → {Preview}",
+            Context.ConnectionId, text.Length > 60 ? text[..60] + "…" : text);
 
         try
         {
-            // Signal that processing has started
+            // Signal start
             await Clients.Caller.SendAsync("TokenReceived", "");
 
             var fullReply = await pipeline.ChatAsync(text, Context.ConnectionAborted);
 
-            // Simulate streaming — send words one by one so the WPF UI
-            // can animate the response appearing progressively.
-            // Replace this with true streaming once DiagnosticAgent supports it.
-            var words = fullReply.Split(' ');
-            foreach (var word in words)
+            // Simulate word-by-word streaming — replace with true streaming
+            // once DiagnosticAgent exposes IAsyncEnumerable<string>
+            foreach (var word in fullReply.Split(' '))
             {
                 await Clients.Caller.SendAsync("TokenReceived", word + " ");
-                await Task.Delay(10, Context.ConnectionAborted); // pacing
+                await Task.Delay(8, Context.ConnectionAborted);
             }
 
-            // Final event — WPF uses this to commit the full message to history
             await Clients.Caller.SendAsync("MessageComplete", fullReply);
         }
-        catch (OperationCanceledException)
-        {
-            _log.LogInformation("[Hub] {ConnId} message cancelled", Context.ConnectionId);
-        }
+        catch (OperationCanceledException) { }
         catch (Exception ex)
         {
             _log.LogError(ex, "[Hub] SendMessage failed");
@@ -133,36 +117,79 @@ public class ChatHub : Hub
         }
     }
 
-    /// <summary>Clear conversation history for this connection.</summary>
-    public async Task ResetConversation()
-    {
-        _sessions.GetPipeline(Context.ConnectionId)?.Reset();
-        await Clients.Caller.SendAsync("ConversationReset");
-        _log.LogInformation("[Hub] {ConnId} conversation reset", Context.ConnectionId);
-    }
+    // ── GetVerdict ─────────────────────────────────────────────────────────
 
-    /// <summary>Return the RAG index status for the current agent.</summary>
-    public async Task GetRagStatus()
+    public async Task GetVerdict()
     {
-        var status = _sessions.GetRagStatus(Context.ConnectionId);
-        await Clients.Caller.SendAsync("RagStatus",
-            status.HasIndex, status.ChunkCount, status.Details);
-    }
-
-    /// <summary>
-    /// Rebuild the RAG index from the docs folder.
-    /// This can take a while — the WPF UI should show a progress indicator.
-    /// </summary>
-    public async Task ReindexDocuments()
-    {
-        var agentType = _sessions.GetAgentType(Context.ConnectionId);
-        if (agentType is null)
+        var pipeline = _sessions.GetPipeline(Context.ConnectionId);
+        if (pipeline is null)
         {
             await Clients.Caller.SendAsync("Error", "No agent selected.");
             return;
         }
 
-        await Clients.Caller.SendAsync("RagIndexing", "Indexing documents...");
+        if (!pipeline.CloudAvailable)
+        {
+            await Clients.Caller.SendAsync("Error",
+                "Cloud model not configured. Set OPENAI_API_KEY.");
+            return;
+        }
+
+        _log.LogInformation("[Hub] {Id} requesting verdict", Context.ConnectionId);
+
+        try
+        {
+            var result = await pipeline.GetVerdictAsync(Context.ConnectionAborted);
+            var text = result?.VerdictText ?? "(no verdict)";
+            await Clients.Caller.SendAsync("VerdictComplete", text);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "[Hub] GetVerdict failed");
+            await Clients.Caller.SendAsync("Error", $"Cloud error: {ex.Message}");
+        }
+    }
+
+    // ── SetLanguage ────────────────────────────────────────────────────────
+
+    /// <summary>Set preferred language for this connection ("en" or "es").</summary>
+    public async Task SetLanguage(string language)
+    {
+        var valid = language is "en" or "es";
+        if (!valid) language = "en";
+
+        _sessions.SetLanguage(Context.ConnectionId, language);
+        await Clients.Caller.SendAsync("LanguageSet", language);
+        _log.LogInformation("[Hub] {ConnId} language={Lang}", Context.ConnectionId, language);
+    }
+
+    // ── ResetConversation ──────────────────────────────────────────────────
+
+    public async Task ResetConversation()
+    {
+        _sessions.GetPipeline(Context.ConnectionId)?.Reset();
+        await Clients.Caller.SendAsync("ConversationReset");
+    }
+
+    // ── GetRagStatus ───────────────────────────────────────────────────────
+
+    public async Task GetRagStatus()
+    {
+        var s = _sessions.GetRagStatus(Context.ConnectionId);
+        await Clients.Caller.SendAsync("RagStatus", s.HasIndex, s.ChunkCount, s.Details);
+    }
+
+    // ── ReindexDocuments ───────────────────────────────────────────────────
+
+    public async Task ReindexDocuments()
+    {
+        if (_sessions.GetAgentType(Context.ConnectionId) is null)
+        {
+            await Clients.Caller.SendAsync("Error", "No agent selected.");
+            return;
+        }
+
+        await Clients.Caller.SendAsync("RagIndexing", "Indexing documents…");
 
         try
         {

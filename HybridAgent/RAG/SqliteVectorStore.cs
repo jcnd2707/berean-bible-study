@@ -4,24 +4,18 @@ using System.Runtime.InteropServices;
 namespace HybridAgent.Core.RAG;
 
 /// <summary>
-/// Replaces VectorStore (index.json) with a SQLite database (rag.db).
+/// SQLite-backed vector store with in-memory cosine search and MMR reranking.
 ///
-/// Public API is identical to VectorStore so RagPipeline needs minimal changes:
-///   Add()      → INSERT OR IGNORE into Chunks
-///   SaveAsync() → no-op (writes happen immediately in Add)
-///   LoadAsync() → SELECT all rows, deserialize embeddings to float[]
-///   Search()   → in-memory cosine similarity (same as before)
+/// Schema v2 adds SourceType (int) and Language (text) columns so retrieval
+/// can filter by content type and language without separate databases.
 ///
-/// Embeddings are stored as BLOB (raw IEEE-754 float bytes, 768 floats × 4 bytes = 3072 bytes).
-/// This is more compact and faster to deserialize than JSON.
-///
-/// Verse-pinned retrieval: SearchByVerse(bookNumber, chapter, verse)
-/// returns all chunks whose stored verse range covers that exact verse.
+/// On startup, InitialiseAsync() runs ALTER TABLE to add the new columns to
+/// existing databases — no manual migration required.
 /// </summary>
 public class SqliteVectorStore : IAsyncDisposable
 {
     private readonly string _dbPath;
-    private readonly List<DocumentChunk> _cache = [];  // in-memory after Load
+    private readonly List<DocumentChunk> _cache = [];
 
     public int Count => _cache.Count;
 
@@ -32,10 +26,6 @@ public class SqliteVectorStore : IAsyncDisposable
 
     // ── Schema init ────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Ensure the Chunks table and its indexes exist.
-    /// Call once at startup before Add() or LoadAsync().
-    /// </summary>
     public async Task InitialiseAsync(CancellationToken ct = default)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(_dbPath)!);
@@ -43,6 +33,7 @@ public class SqliteVectorStore : IAsyncDisposable
         await using var conn = OpenConnection();
         await conn.OpenAsync(ct);
 
+        // Create table with full v2 schema
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS Chunks (
@@ -54,38 +45,43 @@ public class SqliteVectorStore : IAsyncDisposable
                 BookNumber   INTEGER,
                 ChapterBegin INTEGER,
                 VerseBegin   INTEGER,
-                VerseEnd     INTEGER
+                VerseEnd     INTEGER,
+                SourceType   INTEGER NOT NULL DEFAULT 0,
+                Language     TEXT    NOT NULL DEFAULT 'en'
             );
             CREATE INDEX IF NOT EXISTS IX_Chunks_Verse
                 ON Chunks (BookNumber, ChapterBegin, VerseBegin, VerseEnd)
                 WHERE BookNumber IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS IX_Chunks_TypeLang
+                ON Chunks (SourceType, Language);
             """;
         await cmd.ExecuteNonQueryAsync(ct);
+
+        // Migrate existing databases that have the old schema (no SourceType/Language)
+        await AddColumnIfMissingAsync(conn, "SourceType", "INTEGER NOT NULL DEFAULT 0", ct);
+        await AddColumnIfMissingAsync(conn, "Language", "TEXT    NOT NULL DEFAULT 'en'", ct);
     }
 
     // ── Write ──────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Persist chunks to SQLite and add them to the in-memory cache.
-    /// Uses INSERT OR IGNORE so re-indexing the same source is safe.
-    /// </summary>
     public async Task AddAsync(
         IEnumerable<DocumentChunk> chunks,
         CancellationToken ct = default)
     {
         await using var conn = OpenConnection();
         await conn.OpenAsync(ct);
-
         await using var tx = await conn.BeginTransactionAsync(ct);
 
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT OR IGNORE INTO Chunks
                 (Id, Source, ChunkIndex, Text, Embedding,
-                 BookNumber, ChapterBegin, VerseBegin, VerseEnd)
+                 BookNumber, ChapterBegin, VerseBegin, VerseEnd,
+                 SourceType, Language)
             VALUES
                 (@id, @source, @idx, @text, @emb,
-                 @book, @chapter, @vb, @ve)
+                 @book, @chapter, @vb, @ve,
+                 @st, @lang)
             """;
 
         var pId = cmd.Parameters.Add("@id", SqliteType.Text);
@@ -97,6 +93,8 @@ public class SqliteVectorStore : IAsyncDisposable
         var pChapter = cmd.Parameters.Add("@chapter", SqliteType.Integer);
         var pVb = cmd.Parameters.Add("@vb", SqliteType.Integer);
         var pVe = cmd.Parameters.Add("@ve", SqliteType.Integer);
+        var pSt = cmd.Parameters.Add("@st", SqliteType.Integer);
+        var pLang = cmd.Parameters.Add("@lang", SqliteType.Text);
 
         foreach (var chunk in chunks)
         {
@@ -109,6 +107,8 @@ public class SqliteVectorStore : IAsyncDisposable
             pChapter.Value = chunk.ChapterBegin is int c ? c : DBNull.Value;
             pVb.Value = chunk.VerseBegin is int v ? v : DBNull.Value;
             pVe.Value = chunk.VerseEnd is int e ? e : DBNull.Value;
+            pSt.Value = (int)chunk.SourceType;
+            pLang.Value = chunk.Language;
 
             await cmd.ExecuteNonQueryAsync(ct);
             _cache.Add(chunk);
@@ -117,15 +117,10 @@ public class SqliteVectorStore : IAsyncDisposable
         await tx.CommitAsync(ct);
     }
 
-    /// <summary>No-op — kept for API compatibility with VectorStore.</summary>
     public Task SaveAsync(string? _ = null) => Task.CompletedTask;
 
     // ── Read ───────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Load all chunks from rag.db into memory. Returns false if the file
-    /// does not exist or is empty (caller should then re-index).
-    /// </summary>
     public async Task<bool> LoadAsync(CancellationToken ct = default)
     {
         if (!File.Exists(_dbPath)) return false;
@@ -136,7 +131,8 @@ public class SqliteVectorStore : IAsyncDisposable
         var cmd = conn.CreateCommand();
         cmd.CommandText =
             "SELECT Id, Source, ChunkIndex, Text, Embedding, " +
-            "       BookNumber, ChapterBegin, VerseBegin, VerseEnd " +
+            "       BookNumber, ChapterBegin, VerseBegin, VerseEnd, " +
+            "       SourceType, Language " +
             "FROM Chunks";
 
         _cache.Clear();
@@ -156,13 +152,15 @@ public class SqliteVectorStore : IAsyncDisposable
                 ChapterBegin = reader.IsDBNull(6) ? null : reader.GetInt32(6),
                 VerseBegin = reader.IsDBNull(7) ? null : reader.GetInt32(7),
                 VerseEnd = reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                SourceType = reader.IsDBNull(9) ? SourceType.Unknown
+                                                   : (SourceType)reader.GetInt32(9),
+                Language = reader.IsDBNull(10) ? "en" : reader.GetString(10),
             });
         }
 
         return _cache.Count > 0;
     }
 
-    /// <summary>Clear both the in-memory cache and the on-disk database.</summary>
     public async Task ClearAsync(CancellationToken ct = default)
     {
         _cache.Clear();
@@ -175,39 +173,85 @@ public class SqliteVectorStore : IAsyncDisposable
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    // ── Semantic search ────────────────────────────────────────────────────
+    // ── Semantic search with MMR ───────────────────────────────────────────
 
     /// <summary>
-    /// Returns the top-k chunks most similar to the query embedding.
-    /// Cosine similarity is computed in-memory — identical to VectorStore.
+    /// MMR search with optional source-type and language filters.
+    /// Pass null filters to search all chunks (default behaviour).
     /// </summary>
-    public List<DocumentChunk> Search(float[] queryEmbedding, int topK = 5)
+    public List<DocumentChunk> Search(
+        float[] queryEmbedding,
+        int topK = 8,
+        float lambda = 0.6f,
+        int candidateK = 80,
+        SourceType? sourceType = null,
+        string? language = null)
     {
         if (_cache.Count == 0) return [];
 
-        return _cache
+        // Apply optional filters before scoring
+        var pool = _cache.AsEnumerable();
+        if (sourceType.HasValue) pool = pool.Where(c => c.SourceType == sourceType.Value);
+        if (language is not null) pool = pool.Where(c => c.Language == language);
+
+        var candidates = pool
             .Select(c => (chunk: c, score: CosineSimilarity(queryEmbedding, c.Embedding)))
             .OrderByDescending(x => x.score)
-            .Take(topK)
-            .Select(x => x.chunk)
+            .Take(candidateK)
             .ToList();
+
+        if (candidates.Count == 0) return [];
+
+        // MMR greedy selection
+        var selected = new List<(DocumentChunk chunk, float score)>();
+        var remaining = candidates.ToList();
+
+        while (selected.Count < topK && remaining.Count > 0)
+        {
+            var bestIdx = -1;
+            var bestMmr = float.MinValue;
+
+            for (int i = 0; i < remaining.Count; i++)
+            {
+                var relevance = remaining[i].score;
+                var maxSim = selected.Count == 0
+                    ? 0f
+                    : selected.Max(s =>
+                        CosineSimilarity(remaining[i].chunk.Embedding, s.chunk.Embedding));
+
+                var mmr = lambda * relevance - (1f - lambda) * maxSim;
+                if (mmr > bestMmr) { bestMmr = mmr; bestIdx = i; }
+            }
+
+            selected.Add(remaining[bestIdx]);
+            remaining.RemoveAt(bestIdx);
+        }
+
+        return selected.Select(x => x.chunk).ToList();
     }
 
     // ── Verse-pinned retrieval ─────────────────────────────────────────────
 
     /// <summary>
-    /// Returns all chunks whose stored verse range covers the requested verse.
-    /// Hits the in-memory cache for speed — no extra DB round-trip needed.
+    /// Returns chunks covering a specific verse, optionally filtered by type and language.
     /// </summary>
-    public List<DocumentChunk> SearchByVerse(int bookNumber, int chapter, int verse)
+    public List<DocumentChunk> SearchByVerse(
+        int bookNumber,
+        int chapter,
+        int verse,
+        SourceType? sourceType = null,
+        string? language = null)
     {
-        return _cache
-            .Where(c =>
-                c.BookNumber == bookNumber &&
-                c.ChapterBegin == chapter &&
-                c.VerseBegin <= verse &&
-                c.VerseEnd >= verse)
-            .ToList();
+        var q = _cache.Where(c =>
+            c.BookNumber == bookNumber &&
+            c.ChapterBegin == chapter &&
+            c.VerseBegin <= verse &&
+            c.VerseEnd >= verse);
+
+        if (sourceType.HasValue) q = q.Where(c => c.SourceType == sourceType.Value);
+        if (language is not null) q = q.Where(c => c.Language == language);
+
+        return q.ToList();
     }
 
     // ── Math ───────────────────────────────────────────────────────────────
@@ -224,6 +268,21 @@ public class SqliteVectorStore : IAsyncDisposable
         }
         float denom = MathF.Sqrt(normA) * MathF.Sqrt(normB);
         return denom == 0 ? 0f : dot / denom;
+    }
+
+    // ── Migration helper ───────────────────────────────────────────────────
+
+    private static async Task AddColumnIfMissingAsync(
+        SqliteConnection conn, string column, string definition, CancellationToken ct)
+    {
+        var check = conn.CreateCommand();
+        check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('Chunks') WHERE name='{column}'";
+        var exists = (long)(await check.ExecuteScalarAsync(ct))! > 0;
+        if (exists) return;
+
+        var alter = conn.CreateCommand();
+        alter.CommandText = $"ALTER TABLE Chunks ADD COLUMN {column} {definition}";
+        await alter.ExecuteNonQueryAsync(ct);
     }
 
     // ── Serialization ──────────────────────────────────────────────────────

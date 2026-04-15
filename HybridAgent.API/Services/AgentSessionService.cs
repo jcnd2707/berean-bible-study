@@ -1,5 +1,6 @@
 ﻿using HybridAgent.Core.Agents;
 using HybridAgent.Core.RAG;
+using HybridAgent.Core;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
@@ -7,14 +8,7 @@ namespace HybridAgent.API.Services;
 
 /// <summary>
 /// Manages one HybridPipeline per SignalR connection.
-///
-/// All RAG configuration comes from appsettings.json — nothing is hardcoded.
-/// Config shape:
-///   Agents:BibleAgent → AgentRagConfig (RagDbPath, ModulesRootPath, AllowedExtensions)
-///   Agents:CarAgent   → AgentRagConfig
-///   Agents:CodeAgent  → AgentRagConfig
-///   Ollama:Endpoint, Ollama:EmbeddingModel
-///   OpenAI:ApiKey
+/// Language is stored per-connection and passed to the router at session creation.
 /// </summary>
 public class AgentSessionService
 {
@@ -23,34 +17,39 @@ public class AgentSessionService
     private readonly string _openAiApiKey;
     private readonly string _ollamaEndpoint;
     private readonly string _embeddingModel;
-
-    // Typed RAG config per agent — null means RAG is not configured for that agent
     private readonly AgentRagConfig? _bibleRagConfig;
     private readonly AgentRagConfig? _carRagConfig;
     private readonly AgentRagConfig? _codeRagConfig;
 
     private readonly ConcurrentDictionary<string, HybridPipeline> _sessions = new();
     private readonly ConcurrentDictionary<string, AgentType> _agentTypes = new();
+    private readonly ConcurrentDictionary<string, string> _languages = new();
 
     public AgentSessionService(ILoggerFactory logFactory, IConfiguration config)
     {
         _logFactory = logFactory;
         _log = logFactory.CreateLogger<AgentSessionService>();
-
         _openAiApiKey = config["OpenAI:ApiKey"]
-                        ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-                        ?? string.Empty;
-
+                          ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
+                          ?? string.Empty;
         _ollamaEndpoint = config["Ollama:Endpoint"] ?? "http://localhost:11434";
         _embeddingModel = config["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
-
-        // Bind each agent's RAG config from the Agents section.
-        // GetSection returns an empty section (not null) when the key is absent,
-        // so we check that ModulesRootPath is actually set before using it.
         _bibleRagConfig = BindRagConfig(config, "BibleAgent");
         _carRagConfig = BindRagConfig(config, "CarAgent");
         _codeRagConfig = BindRagConfig(config, "CodeAgent");
     }
+
+    // ── Language ───────────────────────────────────────────────────────────
+
+    /// <summary>Set the preferred language for a connection ("en" or "es").</summary>
+    public void SetLanguage(string connectionId, string language)
+    {
+        _languages[connectionId] = language;
+        _log.LogInformation("[Session] {ConnId} language set to {Lang}", connectionId, language);
+    }
+
+    public string GetLanguage(string connectionId) =>
+        _languages.TryGetValue(connectionId, out var l) ? l : "en";
 
     // ── Session lifecycle ──────────────────────────────────────────────────
 
@@ -61,25 +60,40 @@ public class AgentSessionService
     {
         _log.LogInformation("[Session] {ConnId} selecting agent: {Agent}", connectionId, agentType);
 
-        var (agentConfig, tools) = agentType switch
-        {
-            AgentType.Car => AgentFactory.CreateCarAgent(_openAiApiKey),
-            AgentType.Bible => AgentFactory.CreateBibleAgent(_openAiApiKey),
-            AgentType.CSharp => AgentFactory.CreateCSharpAgent(_openAiApiKey),
-            _ => AgentFactory.CreateCarAgent(_openAiApiKey)
-        };
+        var language = GetLanguage(connectionId);
 
-        var ragConfig = agentType switch
-        {
-            AgentType.Bible => _bibleRagConfig,
-            AgentType.Car => _carRagConfig,
-            AgentType.CSharp => _codeRagConfig,
-            _ => null
-        };
+        HybridPipeline pipeline;
 
-        var pipeline = await HybridPipeline.CreateAsync(
-            agentConfig, tools, _logFactory,
-            ragConfig, _ollamaEndpoint, _embeddingModel, ct);
+        if (agentType == AgentType.Bible && _bibleRagConfig is not null)
+        {
+            // Bible agent uses the dedicated factory with router + language
+            var (agentConfig, _) = AgentFactory.CreateBibleAgent(_openAiApiKey);
+
+            pipeline = await HybridPipeline.CreateBibleAsync(
+                agentConfig, _logFactory, _bibleRagConfig,
+                _ollamaEndpoint, _embeddingModel,
+                language, ct);
+        }
+        else
+        {
+            var (agentConfig, tools) = agentType switch
+            {
+                AgentType.Car => AgentFactory.CreateCarAgent(_openAiApiKey),
+                AgentType.CSharp => AgentFactory.CreateCSharpAgent(_openAiApiKey),
+                _ => AgentFactory.CreateCarAgent(_openAiApiKey)
+            };
+
+            var ragConfig = agentType switch
+            {
+                AgentType.Car => _carRagConfig,
+                AgentType.CSharp => _codeRagConfig,
+                _ => null
+            };
+
+            pipeline = await HybridPipeline.CreateAsync(
+                agentConfig, tools, _logFactory,
+                ragConfig, _ollamaEndpoint, _embeddingModel, ct);
+        }
 
         _sessions[connectionId] = pipeline;
         _agentTypes[connectionId] = agentType;
@@ -97,18 +111,16 @@ public class AgentSessionService
     {
         _sessions.TryRemove(connectionId, out _);
         _agentTypes.TryRemove(connectionId, out _);
+        _languages.TryRemove(connectionId, out _);
         _log.LogInformation("[Session] {ConnId} removed", connectionId);
     }
 
     public async Task<RagIndexResult> ReindexAsync(
-        string connectionId,
-        CancellationToken ct = default)
+        string connectionId, CancellationToken ct = default)
     {
         var agentType = GetAgentType(connectionId);
-        if (agentType is null)
-            return new RagIndexResult(false, "No agent selected.");
+        if (agentType is null) return new RagIndexResult(false, "No agent selected.");
 
-        // Delete the rag.db for this agent to force a rebuild on next SelectAgent
         var ragConfig = agentType switch
         {
             AgentType.Bible => _bibleRagConfig,
@@ -121,7 +133,6 @@ public class AgentSessionService
             File.Delete(ragConfig.RagDbPath);
 
         await SelectAgentAsync(connectionId, agentType.Value, ct);
-
         var pipeline = GetPipeline(connectionId)!;
         return new RagIndexResult(true, $"Re-indexed {pipeline.IndexedChunks} chunks");
     }
@@ -142,29 +153,23 @@ public class AgentSessionService
             _ => null
         };
 
+        var lang = GetLanguage(connectionId);
         var details = ragConfig is null
             ? "RAG not configured"
-            : $"Root: {ragConfig.ModulesRootPath} | " +
-              $"Extensions: {string.Join(", ", ragConfig.AllowedExtensions)}";
+            : $"Root: {ragConfig.ModulesRootPath} | Lang: {lang}";
 
         return new RagStatusResult(pipeline.IndexedChunks > 0, pipeline.IndexedChunks, details);
     }
-
-    // ── Helpers ────────────────────────────────────────────────────────────
 
     private static AgentRagConfig? BindRagConfig(IConfiguration config, string agentKey)
     {
         var section = config.GetSection($"Agents:{agentKey}");
         if (!section.Exists()) return null;
-
-        var ragConfig = section.Get<AgentRagConfig>();
-
-        // Treat as unconfigured if root path is missing or empty
-        return string.IsNullOrWhiteSpace(ragConfig?.ModulesRootPath) ? null : ragConfig;
+        var c = section.Get<AgentRagConfig>();
+        return string.IsNullOrWhiteSpace(c?.ModulesRootPath) ? null : c;
     }
 }
 
 public enum AgentType { Car, Bible, CSharp }
-
 public record RagIndexResult(bool Success, string Message);
 public record RagStatusResult(bool HasIndex, int ChunkCount, string Details);

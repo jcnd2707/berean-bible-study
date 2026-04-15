@@ -1,22 +1,36 @@
 ﻿namespace HybridAgent.Core.RAG;
 
 /// <summary>
+/// Classifies what kind of content a chunk came from.
+/// Stored in the Chunks table so retrieval can filter by type.
+/// </summary>
+public enum SourceType
+{
+    Unknown = 0,
+    Bible = 1,   // .bblx
+    Commentary = 2,   // .cmtx
+    Dictionary = 3,   // .dctx / .lexx
+    Topic = 4,   // .topx / .devx / .refx
+    PlainText = 5,   // .txt / .md / .cs etc.
+}
+
+/// <summary>
 /// A single chunk of text ready for embedding and retrieval.
-///
-/// Verse metadata (BookNumber, ChapterBegin, VerseBegin, VerseEnd) is populated
-/// when the chunk was produced from an e-Sword file. It is null for chunks
-/// produced from plain-text sources. Both paths use the same chunker logic.
 /// </summary>
 public class DocumentChunk
 {
-    public required string Id { get; init; }   // "{source}::{chunkIndex}"
-    public required string Source { get; init; }   // filename or logical name
-    public required string Text { get; init; }   // plain text, ready to embed
+    public required string Id { get; init; }
+    public required string Source { get; init; }
+    public required string Text { get; init; }
     public required int ChunkIndex { get; init; }
     public float[] Embedding { get; set; } = [];
 
-    // ── Verse metadata (populated only for e-Sword sourced chunks) ─────────
-    public int? BookNumber { get; init; }   // e-Sword book number (1=Gen, 40=Matt…)
+    // ── Classification metadata ────────────────────────────────────────────
+    public SourceType SourceType { get; init; } = SourceType.Unknown;
+    public string Language { get; init; } = "en";   // "en" | "es" | …
+
+    // ── Verse metadata (Bible and Commentary chunks only) ──────────────────
+    public int? BookNumber { get; init; }
     public int? ChapterBegin { get; init; }
     public int? VerseBegin { get; init; }
     public int? VerseEnd { get; init; }
@@ -24,7 +38,7 @@ public class DocumentChunk
 
 /// <summary>
 /// Splits raw text into overlapping fixed-size chunks.
-/// Chunking logic is unchanged — only the sources feeding it have changed.
+/// Chunking logic is unchanged — metadata is now richer.
 /// </summary>
 public static class DocumentChunker
 {
@@ -36,7 +50,9 @@ public static class DocumentChunker
         int? bookNumber = null,
         int? chapter = null,
         int? verseBegin = null,
-        int? verseEnd = null)
+        int? verseEnd = null,
+        SourceType sourceType = SourceType.Unknown,
+        string language = "en")
     {
         var chunks = new List<DocumentChunk>();
         int start = 0;
@@ -55,6 +71,8 @@ public static class DocumentChunker
                     Source = source,
                     Text = slice,
                     ChunkIndex = index,
+                    SourceType = sourceType,
+                    Language = language,
                     BookNumber = bookNumber,
                     ChapterBegin = chapter,
                     VerseBegin = verseBegin,
@@ -69,18 +87,19 @@ public static class DocumentChunker
         return chunks;
     }
 
-    /// <summary>Load a plain-text file and chunk it (original behaviour, kept intact).</summary>
     public static async Task<List<DocumentChunk>> ChunkFileAsync(
         string filePath,
         int chunkSize = 500,
-        int overlap = 100)
+        int overlap = 100,
+        SourceType sourceType = SourceType.PlainText,
+        string language = "en")
     {
         var text = await File.ReadAllTextAsync(filePath);
         var source = Path.GetFileName(filePath);
-        return Chunk(text, source, chunkSize, overlap);
+        return Chunk(text, source, chunkSize, overlap,
+            sourceType: sourceType, language: language);
     }
 
-    /// <summary>Load every .txt file in a directory and chunk them all.</summary>
     public static async Task<List<DocumentChunk>> ChunkDirectoryAsync(
         string directory,
         string searchPattern = "*.txt",

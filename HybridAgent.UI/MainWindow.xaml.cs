@@ -108,7 +108,7 @@ namespace HybridAgent
                 string modelName = type switch
                 {
                     "Car" => "llama3.2:3b",
-                    "Bible" => "llama3:8b",
+                    "Bible" => "llama3.2:3b",
                     "CSharp" => "deepseek-coder:6.7b",
                     _ => type
                 };
@@ -118,7 +118,7 @@ namespace HybridAgent
                 TxtDocsPath.Text = type switch
                 {
                     "Car" => "docs/car",
-                    "Bible" => "docs/bible",
+                    "Bible" => "D:\\Bible Study\\bible-docs\\index",
                     "CSharp" => "docs/csharp",
                     _ => "docs/" + type.ToLower()
                 };

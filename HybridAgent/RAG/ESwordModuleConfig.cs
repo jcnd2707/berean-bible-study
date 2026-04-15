@@ -1,49 +1,67 @@
-﻿
-namespace HybridAgent.Core.RAG 
+﻿namespace HybridAgent.Core.RAG;
+
+/// <summary>
+/// Configuration for one agent's RAG pipeline.
+/// Bound from appsettings.json under "Agents:{AgentName}".
+/// </summary>
+public class AgentRagConfig
 {
-    /// The pipeline scans ModulesRootPath recursively and processes every file
-    /// whose extension is in AllowedExtensions. No wildcards or per-file lists needed.
+    public string RagDbPath { get; set; } = "index/agent.rag.db";
+    public string ModulesRootPath { get; set; } = string.Empty;
+    public List<string> AllowedExtensions { get; set; } = [];
+
+    /// <summary>
+    /// Default language for retrieval filtering ("en" or "es").
+    /// Can be overridden per-connection at runtime via the UI language selector.
     /// </summary>
-    public class AgentRagConfig
+    public string Language { get; set; } = "en";
+
+    /// <summary>
+    /// Path to the folder containing dictionary files (.dctx, .lexx).
+    /// Dictionaries are NOT embedded — they are queried directly as tools.
+    /// If empty, dictionary tools are disabled.
+    /// </summary>
+    public string DictionaryRootPath { get; set; } = string.Empty;
+
+    // ── MMR tuning ─────────────────────────────────────────────────────────
+    public int TopK { get; set; } = 8;
+    public float MmrLambda { get; set; } = 0.6f;
+    public int MmrCandidateK { get; set; } = 80;
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    public IEnumerable<string> ResolveFiles()
     {
-        /// <summary>
-        /// Path to the SQLite RAG database written by this application.
-        /// Relative paths resolve from the API working directory.
-        /// </summary>
-        public string RagDbPath { get; set; } = "index/agent.rag.db";
+        if (string.IsNullOrWhiteSpace(ModulesRootPath) || !Directory.Exists(ModulesRootPath))
+            return [];
 
-        /// <summary>
-        /// Root folder that is scanned recursively for source files.
-        /// </summary>
-        public string ModulesRootPath { get; set; } = string.Empty;
+        var extensions = AllowedExtensions
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant())
+            .ToHashSet();
 
-        /// <summary>
-        /// File extensions to include, e.g. ".bblx", ".txt", ".md", ".cs".
-        /// The leading dot is required. Comparison is case-insensitive.
-        /// </summary>
-        public List<string> AllowedExtensions { get; set; } = [];
+        if (extensions.Count == 0) return [];
 
-        /// <summary>
-        /// Returns all file paths under ModulesRootPath that match AllowedExtensions.
-        /// Returns an empty list if the directory does not exist.
-        /// </summary>
-        public IEnumerable<string> ResolveFiles()
-        {
-            if (string.IsNullOrWhiteSpace(ModulesRootPath) || !Directory.Exists(ModulesRootPath))
-                return [];
+        return Directory
+            .EnumerateFiles(ModulesRootPath, "*.*", SearchOption.AllDirectories)
+            .Where(f => extensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+    }
 
-            var extensions = AllowedExtensions
-                .Where(e => !string.IsNullOrWhiteSpace(e))
-                .Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant())
-                .ToHashSet();
+    /// <summary>
+    /// Returns all .dctx and .lexx files under DictionaryRootPath.
+    /// </summary>
+    public IEnumerable<string> ResolveDictionaryFiles()
+    {
+        if (string.IsNullOrWhiteSpace(DictionaryRootPath) ||
+            !Directory.Exists(DictionaryRootPath))
+            return [];
 
-            if (extensions.Count == 0)
-                return [];
-
-            return Directory
-                .EnumerateFiles(ModulesRootPath, "*.*", SearchOption.AllDirectories)
-                .Where(f => extensions.Contains(
-                    Path.GetExtension(f).ToLowerInvariant()));
-        }
+        return Directory
+            .EnumerateFiles(DictionaryRootPath, "*.*", SearchOption.AllDirectories)
+            .Where(f =>
+            {
+                var ext = Path.GetExtension(f).ToLowerInvariant();
+                return ext is ".dctx" or ".lexx";
+            });
     }
 }

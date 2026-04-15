@@ -2,55 +2,57 @@
 using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using OpenAI;
-using HybridAgent.RAG;
 using HybridAgent.Core.Agents;
 using HybridAgent.Core.Models;
 using HybridAgent.Core.RAG;
 using HybridAgent.Core.Tools;
 
-namespace HybridAgent;
+namespace HybridAgent.Core;
 
 /// <summary>
 /// Hosts a conversational DiagnosticAgent (local Ollama) and an optional VerdictAgent (cloud).
 ///
-/// Normal flow  → ChatAsync()        — always local, full conversation memory
-/// Escalation   → GetVerdictAsync()  — only when API key is present
-/// Verse lookup → GetVerseContext()  — verse-pinned RAG for Bible agent
+/// Flow for every ChatAsync() call:
+///   1. QueryRouter classifies the query (Verse / Definition / Conceptual / Mixed)
+///   2. Router performs targeted retrieval — verse-pinned, tool hint, or multi-source MMR
+///   3. Pre-fetched context is injected into DiagnosticAgent.ChatAsync()
+///   4. Model synthesizes the answer; tool loop handles lookup_word calls
 /// </summary>
 public class HybridPipeline
 {
     private readonly DiagnosticAgent _diagnostic;
     private readonly VerdictAgent? _verdict;
-    private readonly RagPipeline? _rag;
+    private readonly QueryRouter? _router;
     private readonly AgentConfig _config;
+    private readonly AgentRagConfig? _ragConfig;
     private readonly ILogger _log;
 
     private string _lastUserInput = string.Empty;
 
     public bool CloudAvailable => _verdict is not null;
-    public int IndexedChunks => _rag?.IndexedChunks ?? 0;
+    public int IndexedChunks => _router is null ? 0 : -1; // -1 = router owns the store
 
     public HybridPipeline(
         AgentConfig config,
         ToolRegistry registry,
         ILoggerFactory logFactory,
-        RagPipeline? rag = null)
+        QueryRouter? router = null,
+        AgentRagConfig? ragConfig = null)
     {
         _config = config;
-        _rag = rag;
+        _router = router;
+        _ragConfig = ragConfig;
         _log = logFactory.CreateLogger<HybridPipeline>();
 
         // ── Local client ───────────────────────────────────────────────────
         IChatClient localClient = new OllamaApiClient(new Uri(config.OllamaEndpoint), config.OllamaModel);
-        
 
         // ── Cloud client (optional) ────────────────────────────────────────
         if (!string.IsNullOrWhiteSpace(config.OpenAiApiKey))
         {
             IChatClient cloudClient = new OpenAIClient(config.OpenAiApiKey).GetChatClient(config.CloudModel) as IChatClient;
 
-            _verdict = new VerdictAgent(
-                cloudClient, config,
+            _verdict = new VerdictAgent(cloudClient, config,
                 logFactory.CreateLogger<VerdictAgent>());
 
             _log.LogInformation("[Pipeline] Cloud enabled: {Model}", config.CloudModel);
@@ -61,8 +63,7 @@ public class HybridPipeline
             _log.LogInformation("[Pipeline] No API key — local-only mode");
         }
 
-        _diagnostic = new DiagnosticAgent(
-            localClient, registry, config,
+        _diagnostic = new DiagnosticAgent(localClient, registry, config,
             logFactory.CreateLogger<DiagnosticAgent>());
     }
 
@@ -75,26 +76,19 @@ public class HybridPipeline
         _lastUserInput = userInput;
 
         string? ragContext = null;
-        if (_rag is not null && _rag.IndexedChunks > 0)
+
+        if (_router is not null)
         {
-            ragContext = await _rag.BuildContextAsync(userInput, topK: 5, ct: ct);
-            if (ragContext is not null)
-                _log.LogDebug("[Pipeline] RAG injected {Chars} chars", ragContext.Length);
+            // Step 4: pre-router classifies and retrieves targeted context
+            var result = await _router.RouteAsync(userInput, ct);
+            ragContext = result.Context;
+
+            _log.LogInformation("[Pipeline] Intent={Intent} context={HasCtx}",
+                result.Intent, ragContext is not null);
         }
 
         return await _diagnostic.ChatAsync(userInput, ragContext, ct);
     }
-
-    // ── Verse-pinned context ───────────────────────────────────────────────
-
-    /// <summary>
-    /// Returns context chunks that cover a specific verse.
-    /// Call this from the WPF UI when the user selects a passage,
-    /// then pass the result as additional context to ChatAsync.
-    /// Returns null when no chunks cover that verse.
-    /// </summary>
-    public string? GetVerseContext(int bookNumber, int chapter, int verse) =>
-        _rag?.BuildVerseContext(bookNumber, chapter, verse);
 
     // ── Verdict ────────────────────────────────────────────────────────────
 
@@ -117,9 +111,7 @@ public class HybridPipeline
     // ── Factory ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Single factory for all agents.
-    /// Builds the RAG pipeline from AgentRagConfig (root path + allowed extensions).
-    /// Pass null for ragConfig to disable RAG for this agent.
+    /// Generic factory for Car and CSharp agents (no router, optional plain-text RAG).
     /// </summary>
     public static async Task<HybridPipeline> CreateAsync(
         AgentConfig agentConfig,
@@ -130,17 +122,57 @@ public class HybridPipeline
         string embeddingModel = "nomic-embed-text",
         CancellationToken ct = default)
     {
-        RagPipeline? rag = null;
+        QueryRouter? router = null;
 
         if (ragConfig is not null)
         {
             Directory.CreateDirectory(
                 Path.GetDirectoryName(ragConfig.RagDbPath) ?? "index");
 
-            rag = await RagPipeline.CreateAsync(
+            var rag = await RagPipeline.CreateAsync(
                 ragConfig, logFactory, embeddingModel, ollamaEndpoint, ct);
+
+            // Non-Bible agents use a simple conceptual-only router
+            router = new QueryRouter(rag, ragConfig, ragConfig.Language,
+                logFactory.CreateLogger<QueryRouter>());
         }
 
-        return new HybridPipeline(agentConfig, registry, logFactory, rag);
+        return new HybridPipeline(agentConfig, registry, logFactory, router, ragConfig);
+    }
+
+    /// <summary>
+    /// Bible agent factory — builds the full router with language awareness
+    /// and wires dictionary files into the lookup_word tool.
+    /// </summary>
+    public static async Task<HybridPipeline> CreateBibleAsync(
+        AgentConfig agentConfig,
+        ILoggerFactory logFactory,
+        AgentRagConfig ragConfig,
+        string ollamaEndpoint,
+        string embeddingModel,
+        string language = "en",
+        CancellationToken ct = default)
+    {
+        Directory.CreateDirectory(
+            Path.GetDirectoryName(ragConfig.RagDbPath) ?? "index");
+
+        var rag = await RagPipeline.CreateAsync(
+            ragConfig, logFactory, embeddingModel, ollamaEndpoint, ct);
+
+        // Resolve dictionary files for the lookup_word tool
+        var dictFiles = ragConfig.ResolveDictionaryFiles().ToList();
+
+        // Build tools with dictionary files injected
+        var (_, tools) = AgentFactory.CreateBibleAgent(
+            agentConfig.OpenAiApiKey, dictFiles);
+
+        // Build router with language from config (can be overridden at runtime)
+        var routerLanguage = string.IsNullOrWhiteSpace(language)
+            ? ragConfig.Language : language;
+
+        var router = new QueryRouter(rag, ragConfig, routerLanguage,
+            logFactory.CreateLogger<QueryRouter>());
+
+        return new HybridPipeline(agentConfig, tools, logFactory, router, ragConfig);
     }
 }

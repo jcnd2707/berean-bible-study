@@ -1,80 +1,57 @@
-﻿using HybridAgent.Core.Models;
+﻿using System.ComponentModel;
+using HybridAgent.Core.Models;
 using HybridAgent.Core.Tools;
-using System.ComponentModel;
+using Microsoft.Data.Sqlite;
 
 namespace HybridAgent.Core.Agents;
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Each domain agent is just an AgentConfig + ToolRegistry + system prompt.
-// The RAG pipeline is wired in by HybridPipeline when BuildContextAsync is called.
-// ──────────────────────────────────────────────────────────────────────────────
 
 public static class AgentFactory
 {
     // ── Car Diagnostics ───────────────────────────────────────────────────
 
     public static (AgentConfig config, ToolRegistry tools) CreateCarAgent(
-        string ollamaEndpoint = "",
         string? openAiKey = null)
     {
-        if (string.IsNullOrWhiteSpace(ollamaEndpoint))
-        {
-            ollamaEndpoint = "http://localhost:11434";
-        }
-
         var config = new AgentConfig
         {
-            OllamaEndpoint = ollamaEndpoint,
-            OllamaModel = "llama3.2:3b",    // fast, good for structured Q&A
-            CloudModel = "gpt-4o",
+            OllamaModel = "llama3.2:3b",
             OpenAiApiKey = openAiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
-            MaxToolRounds = 8,
             SystemPrompt = """
-                You are an ASE-certified master mechanic with 20 years of experience diagnosing
-                and repairing vehicles of all makes and models.
-
-                Your approach:
-                - Always ask for the vehicle year, make, model, and mileage if not provided
-                - Ask for any diagnostic trouble codes (DTCs) the user has retrieved
+                You are an ASE-certified master mechanic with 20 years of experience.
+                - Always ask for year, make, model, and mileage if not provided
+                - Ask for any OBD-II codes the user has retrieved
                 - Identify the most likely root cause before listing alternatives
-                - Estimate repair difficulty: DIY / Shop visit / Dealer only
-                - Flag any safety-critical issues immediately
-
-                When using reference material, cite it. When uncertain, say so.
-                Never guess at a diagnosis — gather facts first.
+                - Estimate repair difficulty: DIY / Shop / Dealer only
+                - Flag safety-critical issues immediately
+                Remember the full conversation context for follow-up questions.
                 """,
         };
 
         var tools = new ToolRegistry();
 
-        // OBD-II code lookup (stub — replace with a real database or API)
         tools.Register(
-            [Description("Looks up the meaning and common causes of an OBD-II diagnostic trouble code (DTC), e.g. P0300, P0171.")]
-        ([Description("OBD-II code such as P0300")] string code) =>
+            [Description("Looks up the meaning and common causes of an OBD-II diagnostic trouble code such as P0300 or P0171.")]
+        ([Description("OBD-II code, e.g. P0300")] string code) =>
             {
                 var db = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    ["P0300"] = "Random/Multiple Cylinder Misfire Detected. Common causes: spark plugs, ignition coils, fuel injectors, low compression.",
-                    ["P0171"] = "System Too Lean (Bank 1). Common causes: vacuum leak, weak fuel pump, dirty MAF sensor, clogged fuel injector.",
-                    ["P0420"] = "Catalyst System Efficiency Below Threshold. Common causes: failing catalytic converter, O2 sensor, exhaust leak.",
-                    ["P0442"] = "Evaporative Emission Control System Leak (Small). Common causes: loose/damaged gas cap, EVAP hose leak.",
-                    ["P0505"] = "Idle Air Control System Malfunction. Common causes: dirty/faulty IAC valve, vacuum leak.",
-                    ["B0001"] = "Driver Frontal Stage 1 Deployment Control (Airbag). Requires dealer scan tool — do not ignore."
+                    ["P0300"] = "Random/Multiple Cylinder Misfire. Causes: spark plugs, ignition coils, fuel injectors, low compression.",
+                    ["P0171"] = "System Too Lean (Bank 1). Causes: vacuum leak, weak fuel pump, dirty MAF sensor.",
+                    ["P0420"] = "Catalyst Efficiency Below Threshold. Causes: failing catalytic converter, O2 sensor, exhaust leak.",
+                    ["P0442"] = "EVAP Leak (Small). Causes: loose/damaged gas cap, EVAP hose.",
+                    ["P0505"] = "Idle Air Control Malfunction. Causes: dirty IAC valve, vacuum leak.",
                 };
-
                 return db.TryGetValue(code.Trim(), out var desc)
-                    ? $"Code {code.ToUpper()}: {desc}"
-                    : $"Code {code.ToUpper()} not found in local database. Check https://www.obd-codes.com/{code.ToLower()} for details.";
+                    ? $"{code.ToUpper()}: {desc}"
+                    : $"{code.ToUpper()} not in local DB — check https://www.obd-codes.com/{code.ToLower()}";
             },
             "lookup_obd_code"
         );
 
-        // Recall lookup stub
         tools.Register(
-            [Description("Checks for known recalls or technical service bulletins (TSBs) for a vehicle.")]
-        ([Description("Vehicle described as 'YYYY Make Model', e.g. '2019 Toyota Camry'")] string vehicle) =>
-                $"For official recall data on '{vehicle}', check: https://www.nhtsa.gov/vehicle/recalls — " +
-                $"enter your VIN for exact results. TSBs are available via ALLDATA or Mitchell1.",
+            [Description("Checks for known recalls or TSBs for a vehicle.")]
+        ([Description("Vehicle as 'YYYY Make Model', e.g. '2019 Toyota Camry'")] string vehicle) =>
+                $"Check recalls for '{vehicle}' at: https://www.nhtsa.gov/vehicle/recalls",
             "check_recalls"
         );
 
@@ -83,59 +60,122 @@ public static class AgentFactory
 
     // ── Bible Research ────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Creates the Bible agent with full tool suite.
+    /// dictionaryFiles: paths to .dctx / .lexx files for direct word lookup.
+    /// </summary>
     public static (AgentConfig config, ToolRegistry tools) CreateBibleAgent(
-        string ollamaEndpoint = "",
-        string? openAiKey = null)
+        string? openAiKey = null,
+        IEnumerable<string>? dictionaryFiles = null)
     {
-        if (string.IsNullOrWhiteSpace(ollamaEndpoint))
-        {
-            ollamaEndpoint = "http://localhost:11434";
-        }
         var config = new AgentConfig
         {
-            OllamaEndpoint = ollamaEndpoint,
-            OllamaModel = "llama3.2:3b",      // larger model for nuanced reasoning
-            CloudModel = "gpt-4o",
+            OllamaModel = "llama3.2:3b",
             OpenAiApiKey = openAiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
-            MaxToolRounds = 6,
             SystemPrompt = """
-                You are a biblical scholar with expertise in hermeneutics, biblical languages
-                (Hebrew, Greek, Aramaic), and historical theology.
+                You are a biblical scholar with expertise in hermeneutics, biblical
+                languages (Hebrew, Greek, Aramaic), and historical theology.
 
-                Your approach:
+                You receive pre-retrieved reference material before each response.
+                Your role is to synthesize that material into a clear, accurate answer.
+
+                Guidelines:
                 - Interpret passages in their historical and literary context
-                - Note differences across major translations (KJV, ESV, NIV, NASB) when relevant
-                - Reference the original language meaning when it illuminates understanding
+                - Reference original language meaning when it illuminates understanding
                 - Present multiple scholarly perspectives on disputed passages
-                - Distinguish between descriptive narrative and prescriptive instruction
                 - Cite chapter and verse precisely
+                - Respect all Christian traditions without favouring any denomination
+                - If reference material was provided, ground your answer in it and cite sources
+                - If no material was provided for a question, say so and answer from your training
 
-                You respect all Christian traditions and do not favour one denomination.
-                When using reference material from the knowledge base, cite the source.
+                When the user asks about a specific word, call lookup_word first.
+                When the user asks about a specific verse, the context has already been retrieved.
+                Remember the full conversation context for follow-up questions.
                 """,
         };
 
         var tools = new ToolRegistry();
+        var dictFiles = dictionaryFiles?.ToList() ?? [];
 
-        // Cross-reference tool
+        // ── Step 2: lookup_word — direct SQLite query against .dctx files ────
         tools.Register(
-            [Description("Returns cross-references and related passages for a given Bible verse.")]
-        ([Description("Verse reference, e.g. 'John 3:16' or 'Romans 8:28'")] string verse) =>
-                $"Cross-references for {verse} can be found at: " +
-                $"https://www.biblegateway.com/passage/?search={Uri.EscapeDataString(verse)} — " +
-                $"use the 'Cross References' tab. Also check Treasury of Scripture Knowledge.",
-            "get_cross_references"
+            [Description(
+                "Looks up a word, name, or theological term in the biblical dictionaries and lexicons. " +
+                "Use this when the user asks about the meaning of a Greek or Hebrew word, a theological " +
+                "concept, a biblical name, or a Strong's number (e.g. G25, H430). " +
+                "Returns the definition from all available dictionaries.")]
+        async ([Description("Word, term, name, or Strong's number to look up (e.g. 'agape', 'pneuma', 'G25', 'hesed')")] string term) =>
+            {
+                if (dictFiles.Count == 0)
+                    return "No dictionary files configured. Check DictionaryRootPath in appsettings.json.";
+
+                var results = new System.Text.StringBuilder();
+                var found = 0;
+
+                foreach (var file in dictFiles)
+                {
+                    if (!File.Exists(file)) continue;
+
+                    try
+                    {
+                        var cs = $"Data Source={file};Mode=ReadOnly;";
+                        await using var conn = new SqliteConnection(cs);
+                        await conn.OpenAsync();
+
+                        var cmd = conn.CreateCommand();
+                        // Search by exact topic first, then prefix, then substring
+                        cmd.CommandText = """
+                            SELECT Topic, Definition FROM Dictionary
+                            WHERE Topic = @exact
+                            UNION
+                            SELECT Topic, Definition FROM Dictionary
+                            WHERE Topic LIKE @prefix AND Topic != @exact
+                            UNION
+                            SELECT Topic, Definition FROM Dictionary
+                            WHERE Topic LIKE @contains AND Topic NOT LIKE @prefix AND Topic != @exact
+                            LIMIT 5
+                            """;
+                        cmd.Parameters.AddWithValue("@exact", term);
+                        cmd.Parameters.AddWithValue("@prefix", term + "%");
+                        cmd.Parameters.AddWithValue("@contains", "%" + term + "%");
+
+                        var dictName = Path.GetFileNameWithoutExtension(file);
+                        await using var reader = await cmd.ExecuteReaderAsync();
+
+                        while (await reader.ReadAsync())
+                        {
+                            var topic = reader.GetString(0);
+                            var def = reader.GetString(1);
+                            // Strip RTF/HTML markup (reuse the same logic as ESwordReader)
+                            def = System.Text.RegularExpressions.Regex
+                                .Replace(def, @"<[^>]+>|\{[^}]*\}|\\[a-z]+\d*\s?", " ")
+                                .Trim();
+                            if (def.Length > 1000) def = def[..1000] + "…";
+
+                            results.AppendLine($"**{topic}** ({dictName}):");
+                            results.AppendLine(def);
+                            results.AppendLine();
+                            found++;
+                        }
+                    }
+                    catch { /* skip unreadable or encrypted files */ }
+                }
+
+                return found > 0
+                    ? results.ToString()
+                    : $"No definition found for '{term}' in the available dictionaries.";
+            },
+            "lookup_word"
         );
 
-        // Original language lookup stub
+        // ── Step 3: get_cross_references ──────────────────────────────────
         tools.Register(
-            [Description("Looks up the original Hebrew or Greek word behind a translated English word in a verse.")]
-        ([Description("Book, chapter and verse, e.g. 'John 1:1'")] string verse,
-             [Description("The English word to look up")] string word) =>
-                $"For the original language behind '{word}' in {verse}, check Strong's Concordance: " +
-                $"https://www.blueletterbible.org/search/search.cfm?Criteria={Uri.EscapeDataString(word)}&t=KJV",
-            "lookup_original_language"
-        );
+     [Description("Returns cross-references and related passages for a Bible verse using online resources." + 
+     "Returns cross-references for a specific Bible verse. ALWAYS provide the 'verse' parameter — e.g. 'John 3:16'. Do not call this tool without a verse.")]
+        ([Description("Verse reference, e.g. 'John 3:16' or 'Romans 8:28'")] string verse = "John 3:16")
+         => $"Cross-references for {verse}: https://www.biblegateway.com/passage/?search={Uri.EscapeDataString(verse)}&version=NIV",
+     "get_cross_references"
+ );
 
         return (config, tools);
     }
@@ -143,83 +183,52 @@ public static class AgentFactory
     // ── C# Troubleshooting ────────────────────────────────────────────────
 
     public static (AgentConfig config, ToolRegistry tools) CreateCSharpAgent(
-        string ollamaEndpoint = "",
         string? openAiKey = null)
     {
-
-        if (string.IsNullOrWhiteSpace(ollamaEndpoint))
-        {
-            ollamaEndpoint = "http://localhost:11434";
-        }
-
         var config = new AgentConfig
         {
-            OllamaEndpoint = ollamaEndpoint,
-            OllamaModel = "deepseek-coder:6.7b",   // code-specialist model
-            CloudModel = "gpt-4o",
+            OllamaModel = "deepseek-coder:6.7b",
             OpenAiApiKey = openAiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
-            MaxToolRounds = 10,
             SystemPrompt = """
-                You are a senior C# / .NET engineer with deep expertise in:
-                - C# 12, .NET 8, ASP.NET Core, Entity Framework Core
-                - Async/await patterns, TPL, and concurrent programming
-                - Dependency injection, SOLID principles, clean architecture
-                - Performance profiling, memory management, and garbage collection
-                - Common NuGet ecosystem (Serilog, Polly, MediatR, FluentValidation, etc.)
-
-                Your approach:
+                You are a senior C# / .NET engineer expert in:
+                C# 12, .NET 8/9, ASP.NET Core, EF Core, async/await, DI, and performance.
                 - Ask for the full exception message and stack trace if not provided
                 - Ask for the relevant code snippet
-                - Identify the root cause before suggesting fixes
+                - Identify root cause before suggesting fixes
                 - Provide working code examples, not pseudo-code
                 - Flag breaking changes between .NET versions when relevant
-                - Suggest defensive patterns to prevent recurrence
-
-                Format code with proper indentation. Prefer modern C# idioms.
+                Remember the full conversation context for follow-up questions.
                 """,
         };
 
         var tools = new ToolRegistry();
+        tools.RegisterDefaults();
 
-        // Dotnet runtime info
         tools.Register(
-            [Description("Returns the .NET runtime version currently installed on this machine.")]
+            [Description("Returns the installed .NET runtime version on this machine.")]
         () => System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             "get_dotnet_version"
         );
 
-        // NuGet version lookup stub
         tools.Register(
-            [Description("Looks up the latest stable version of a NuGet package.")]
-        ([Description("Package name, e.g. 'Newtonsoft.Json'")] string packageName) =>
-                $"Check the latest version of '{packageName}' at: " +
-                $"https://www.nuget.org/packages/{Uri.EscapeDataString(packageName)}",
-            "lookup_nuget_package"
-        );
-
-        // Common exception explainer
-        tools.Register(
-            [Description("Explains the common causes of a well-known .NET exception type.")]
-        ([Description("Exception type name, e.g. 'NullReferenceException'")] string exceptionType) =>
+            [Description("Explains common causes of a well-known .NET exception type.")]
+        ([Description("Exception type name, e.g. NullReferenceException")] string exceptionType) =>
             {
                 var db = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    ["NullReferenceException"] = "Accessing a member on a null object. Use null-conditional (?.) operator, null checks, or ensure initialization. Enable nullable reference types (#nullable enable) to catch these at compile time.",
-                    ["StackOverflowException"] = "Infinite or deeply nested recursion. Check base cases, convert to iterative, or increase stack size as a last resort.",
-                    ["InvalidOperationException"] = "Object is in an invalid state for the operation. Common causes: modifying a collection while iterating, calling async method incorrectly (.Result or .Wait() causing deadlock).",
-                    ["TaskCanceledException"] = "A CancellationToken was triggered before the Task completed. Ensure your CancellationTokenSource lifetime is correct and tokens are passed through the call chain.",
-                    ["ObjectDisposedException"] = "Using an object after Dispose() was called. Common with HttpClient, DbContext, or IMemoryCache — check DI lifetime (Singleton vs Scoped vs Transient).",
-                    ["OutOfMemoryException"] = "Process memory exhausted. Check for memory leaks (use dotnet-counters or Visual Studio Diagnostic Tools), large allocations, or LOH fragmentation.",
+                    ["NullReferenceException"] = "Accessing a member on null. Use ?. operator, null checks, or enable nullable reference types.",
+                    ["StackOverflowException"] = "Infinite/deep recursion. Check base cases or convert to iterative.",
+                    ["InvalidOperationException"] = "Object in invalid state. Common: modifying collection while iterating, .Result/.Wait() deadlock.",
+                    ["TaskCanceledException"] = "CancellationToken triggered. Check CancellationTokenSource lifetime and token propagation.",
+                    ["ObjectDisposedException"] = "Using object after Dispose(). Check DI lifetime — Singleton capturing Scoped is the usual cause.",
+                    ["OutOfMemoryException"] = "Memory exhausted. Check for leaks with dotnet-counters or VS Diagnostic Tools.",
                 };
                 return db.TryGetValue(exceptionType, out var explanation)
                     ? $"{exceptionType}: {explanation}"
-                    : $"No built-in explanation for '{exceptionType}'. Search docs.microsoft.com for details.";
+                    : $"No built-in explanation for '{exceptionType}'. See docs.microsoft.com.";
             },
             "explain_exception"
         );
-
-        // System diagnostics
-        tools.RegisterDefaults(); // get_system_info, calculate, etc. are useful here too
 
         return (config, tools);
     }

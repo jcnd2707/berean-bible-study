@@ -107,17 +107,33 @@ public class ToolRegistry
             AIFunctionArguments arguments,
             CancellationToken cancellationToken)
         {
-            var result = await _inner.InvokeAsync(arguments, cancellationToken);
-
-            _log.Add(new ToolResult
+            try
             {
-                ToolName = _name,
-                Arguments = JsonSerializer.Serialize(
-                    arguments.ToDictionary(k => k.Key, v => v.Value)),
-                Result = result?.ToString() ?? "(null)"
-            });
+                var result = await _inner.InvokeAsync(arguments, cancellationToken);
+                _log.Add(new ToolResult
+                {
+                    ToolName = _name,
+                    Arguments = JsonSerializer.Serialize(
+                        arguments.ToDictionary(k => k.Key, v => v.Value)),
+                    Result = result?.ToString() ?? "(null)"
+                });
+                return result;
+            }
+            catch (ArgumentException ex) when (ex.Message.Contains("missing a value for the required parameter"))
+            {
+                var errorMsg = $"Tool call failed: required parameter missing. {ex.Message} " +
+                               $"Please retry and include all required parameters.";
 
-            return result;
+                _log.Add(new ToolResult
+                {
+                    ToolName = _name,
+                    Arguments = JsonSerializer.Serialize(
+                        arguments.ToDictionary(k => k.Key, v => v.Value)),
+                    Result = errorMsg
+                });
+
+                return errorMsg; // returned to the model as a tool result — it can recover
+            }
         }
     }
 }
