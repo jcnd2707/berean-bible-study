@@ -1,0 +1,6 @@
+@BereanResource.Api_HostAddress = http://localhost:5121
+
+GET {{BereanResource.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
