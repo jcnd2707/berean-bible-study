@@ -16,7 +16,7 @@ public class ResourceDiscoveryService(IOptions<BereanResourcesConfig> config, IL
     private readonly BereanResourcesConfig _cfg = config.Value;
 
     public List<ResourceModule> GetBibles() => ScanBibles();
-    public List<ResourceModule> GetCommentaries() => ScanESword(_cfg.SubFolders.Commentaries, ".cmtx");
+    public List<ResourceModule> GetCommentaries() => ScanESword(_cfg.SubFolders.Commentaries, ".cmt");
     public List<ResourceModule> GetDictionaries() => ScanESword(_cfg.SubFolders.Dictionaries, ".dctx");
     public List<ResourceModule> GetLexicons() => ScanESword(_cfg.SubFolders.Lexicons, ".lexi", ".lexh");
     public List<ResourceModule> GetTopicNotes() => ScanESword(_cfg.SubFolders.TopicNotes, ".topx");

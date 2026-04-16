@@ -1,0 +1,47 @@
+<div class="commentary-shell">
+  <!-- Module tab strip -->
+  <div class="comm-tabs">
+    @for (mod of modules(); track mod.moduleId) {
+      <span
+        class="c-tab"
+        [class.active]="mod.moduleId === activeModuleId()"
+        (click)="selectModule(mod.moduleId)"
+        [title]="mod.name"
+      >
+        {{ mod.moduleId }}
+      </span>
+    }
+    @if (modules().length === 0) {
+      <span class="c-tab-empty">No commentaries</span>
+    }
+  </div>
+
+  <!-- Body -->
+  <div class="comm-body" #commBody>
+    @if (loading()) {
+      <div class="state-center">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+      </div>
+    }
+
+    @if (error() && !loading()) {
+      <div class="state-center">
+        <p class="error-msg">{{ error() }}</p>
+      </div>
+    }
+
+    @if (!loading() && !error() && entries().length === 0) {
+      <div class="state-center">
+        <p class="empty-msg">Select a passage to view commentary.</p>
+      </div>
+    }
+
+    @for (entry of entries(); track entry.reference) {
+      <div class="comm-entry" [class.comm-entry--active]="isActiveEntry(entry)">
+        <div class="comm-ref">{{ entry.reference }}</div>
+        <span class="src-tag">{{ activeModuleId() }}</span>
+        <div class="comm-text">{{ entry.text }}</div>
+      </div>
+    }
+  </div>
+</div>

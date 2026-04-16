@@ -2,7 +2,7 @@
 
 export interface BibleModule {
   moduleId: string;
-  name: string; // full name, e.g. "American Standard Version (1901)"
+  name: string;
   language: string;
   filePath?: string;
 }
@@ -31,11 +31,11 @@ export interface BookEntry {
 }
 
 export interface Verse {
-  book: number; // book number (1-66)
-  bookName: string; // e.g. "Genesis"
+  book: number;
+  bookName: string;
   chapter: number;
   verse: number;
-  reference: string; // e.g. "Genesis 1:1"
+  reference: string;
   text: string;
 }
 
@@ -54,16 +54,20 @@ export interface VerseResponse extends Verse {
 // ── Commentary ────────────────────────────────────────────────────────────────
 
 export interface CommentaryEntry {
-  book: string;
+  book: number;
+  bookName: string;
   chapter: number;
-  verse?: number;
-  heading?: string;
-  html: string; // commentary is rich-text HTML from e-Sword
+  verseBegin: number;
+  verseEnd: number;
+  reference: string;
+  marker: string | null;
+  text: string;
 }
 
 export interface CommentaryResponse {
   moduleId: string;
-  book: string;
+  book: number;
+  bookName: string;
   chapter: number;
   entries: CommentaryEntry[];
 }
@@ -90,7 +94,7 @@ export interface DictionaryEntry {
   word: string;
   strongs?: string;
   transliteration?: string;
-  definition: string; // may be HTML
+  definition: string;
   partOfSpeech?: string;
 }
 
@@ -103,7 +107,7 @@ export interface DictionarySearchResult {
 // ── Notes ─────────────────────────────────────────────────────────────────────
 
 export interface Note {
-  reference: string; // e.g. "Gen.1.1"
+  reference: string;
   text: string;
   updatedAt?: string;
 }
@@ -112,11 +116,11 @@ export interface UpsertNoteRequest {
   text: string;
 }
 
-// ── Navigation state (shared signal contract) ─────────────────────────────────
+// ── Navigation state ──────────────────────────────────────────────────────────
 
 export interface BibleLocation {
   moduleId: string;
-  book: string;
+  book: string; // abbreviation e.g. "Gen"
   chapter: number;
   verse: number | null;
 }

@@ -1,195 +1,65 @@
 <div class="reader-shell">
-  <!-- ── Top bar: translation + book + chapter ── -->
-  <div class="reader-toolbar">
-    <!-- Translation picker -->
-    <div class="picker-group">
-      <label class="picker-label">Translation</label>
-      <select
-        class="picker-select"
-        (change)="onModuleSelect($event)"
-        [disabled]="modules().length === 0"
+  <!-- Translation tab bar -->
+  <div class="trans-bar">
+    @for (mod of modules(); track mod.moduleId) {
+      <span
+        class="t-tab"
+        [class.active]="mod.moduleId === navState.moduleId()"
+        (click)="onModuleTabClick(mod)"
       >
-        @for (mod of modules(); track mod.moduleId) {
-          <option
-            [value]="mod.moduleId"
-            [selected]="mod.moduleId === selectedModule()?.moduleId"
-          >
-            {{ mod.moduleId }} — {{ mod.name }}
-          </option>
-        }
-      </select>
-    </div>
-
-    <div class="toolbar-divider"></div>
-
-    <!-- Book picker -->
-    <div class="picker-group">
-      <label class="picker-label">Book</label>
-      <select
-        class="picker-select"
-        (change)="onBookSelect($event)"
-        [disabled]="books().length === 0"
-      >
-        @if (otBooks().length > 0) {
-          <optgroup label="Old Testament">
-            @for (book of otBooks(); track book.abbreviation) {
-              <option
-                [value]="book.abbreviation"
-                [selected]="book.abbreviation === selectedBook()?.abbreviation"
-              >
-                {{ book.name }}
-              </option>
-            }
-          </optgroup>
-        }
-        @if (ntBooks().length > 0) {
-          <optgroup label="New Testament">
-            @for (book of ntBooks(); track book.abbreviation) {
-              <option
-                [value]="book.abbreviation"
-                [selected]="book.abbreviation === selectedBook()?.abbreviation"
-              >
-                {{ book.name }}
-              </option>
-            }
-          </optgroup>
-        }
-      </select>
-    </div>
-
-    <div class="toolbar-divider"></div>
-
-    <!-- Chapter picker -->
-    <div class="picker-group">
-      <label class="picker-label">Chapter</label>
-      <select
-        class="picker-select chapter-select"
-        (change)="onChapterSelect($event)"
-        [disabled]="!selectedBook()"
-      >
-        @for (n of chapterNumbers(); track n) {
-          <option [value]="n" [selected]="n === selectedChapter()">
-            {{ n }}
-          </option>
-        }
-      </select>
-    </div>
-
-    <!-- Prev / Next -->
-    <div class="chapter-nav">
-      <button
-        class="nav-btn"
-        (click)="prevChapter()"
-        [disabled]="selectedChapter() <= 1"
-        title="Previous chapter"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path
-            d="M10 12L6 8l4-4"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
-      <button
-        class="nav-btn"
-        (click)="nextChapter()"
-        [disabled]="selectedChapter() >= chapterCount()"
-        title="Next chapter"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path
-            d="M6 4l4 4-4 4"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
-    </div>
+        {{ mod.moduleId }}
+      </span>
+    }
   </div>
 
-  <!-- ── Passage heading ── -->
-  @if (selectedBook() && !loading()) {
+  <!-- Passage heading -->
+  @if (passageTitle() && !loading()) {
     <div class="passage-heading">
-      <h1 class="passage-title">
-        {{ selectedBook()!.name }} {{ selectedChapter() }}
-      </h1>
-      @if (selectedModule()) {
-        <span class="passage-translation">{{
-          selectedModule()!.moduleId
-        }}</span>
-      }
+      <h1 class="pass-title">{{ passageTitle() }}</h1>
+      <p class="pass-sub">{{ activeModuleName() }}</p>
     </div>
   }
 
-  <!-- ── States ── -->
+  <!-- Loading -->
   @if (loading()) {
     <div class="state-container">
       <div class="loading-dots"><span></span><span></span><span></span></div>
     </div>
   }
 
+  <!-- Error -->
   @if (error() && !loading()) {
     <div class="state-container">
       <div class="error-card">
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 20 20"
-          fill="none"
-          class="error-icon"
-        >
-          <circle
-            cx="10"
-            cy="10"
-            r="9"
-            stroke="currentColor"
-            stroke-width="1.5"
-          />
-          <path
-            d="M10 6v5M10 14h.01"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-          />
-        </svg>
         <p>{{ error() }}</p>
       </div>
     </div>
   }
 
-  <!-- ── Verses ── -->
+  <!-- Verses -->
   @if (passage() && !loading() && !error()) {
     <div class="verse-list">
-      @for (v of passage()!.verses; track v.verse; let i = $index) {
+      @for (v of passage()!.verses; track v.verse) {
         <div
-          class="verse-row"
-          [class.verse-row--active]="activeVerse() === v.verse"
+          class="v-row"
+          [class.sel]="activeVerse() === v.verse"
           (click)="onVerseClick(v)"
         >
-          <span class="verse-number">{{ v.verse }}</span>
-          <span class="verse-text" [innerHTML]="v.text"></span>
+          <span class="vn">{{ v.verse }}</span>
+          <span class="vt" [innerHTML]="v.text"></span>
         </div>
       }
     </div>
   }
 
-  <!-- ── Active verse indicator ── -->
+  <!-- Active verse strip -->
   @if (activeVerse() !== null && passage()) {
     <div class="active-verse-strip">
       <span class="strip-ref">
-        {{ selectedBook()?.name }} {{ selectedChapter() }}:{{ activeVerse() }}
+        {{ navState.book() }} {{ navState.chapter() }}:{{ activeVerse() }}
       </span>
       <span class="strip-hint">Selected · context sent to AI chat</span>
-      <button
-        class="strip-clear"
-        (click)="navState.clearVerse()"
-        title="Clear selection"
-      >
+      <button class="strip-clear" (click)="navState.clearVerse()">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <path
             d="M2 2l10 10M12 2L2 12"
