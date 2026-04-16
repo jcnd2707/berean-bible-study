@@ -4,6 +4,17 @@ using Microsoft.Extensions.Options;
 
 namespace BereanResourceApi.Services;
 
+/// <summary>
+/// Supports two on-disk formats:
+///
+///   MySword  (.dct)        — table: dictionary   columns: [relativeorder?,] word, data
+///   e-Sword  (.lexi/.lexh) — table: Lexicon       columns: Topic, Definition
+///
+/// Within MySword .dct files the <c>relativeorder</c> column is optional:
+/// Strong's-based modules (strong.dct, bdb.dct) include it; some plain-word
+/// dictionaries (eastons.dct) do not. The service detects this at open-time
+/// via PRAGMA table_info and falls back to ordering by <c>word</c>.
+/// </summary>
 public class DictionaryService(
     ResourceDiscoveryService discovery,
     IOptions<BereanResourcesConfig> config,
@@ -11,90 +22,193 @@ public class DictionaryService(
 {
     private readonly BereanResourcesConfig _cfg = config.Value;
 
-    /// <summary>Looks up a dictionary entry by word or topic key.</summary>
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /// <summary>Looks up an entry by its exact key (word / topic).</summary>
     public DictionaryEntry? LookupByWord(string moduleId, string word)
     {
-        var (path, isDictionary) = ResolveOrThrow(moduleId);
-
-        using var conn = Open(path);
+        var info = ResolveOrThrow(moduleId);
+        using var conn = Open(info.Path);
         using var cmd = conn.CreateCommand();
 
-        // Both .dctx and .lexi/.lexh use a Topic/Definition pattern
-        // but the table name differs: Dictionary vs Lexicon
-        var table = isDictionary ? "Dictionary" : "Lexicon";
+        cmd.CommandText = info.Format == ModuleFormat.MySword
+            ? "SELECT word, data FROM dictionary WHERE word = $word COLLATE NOCASE"
+            : "SELECT Topic, Definition FROM Lexicon WHERE Topic = $word";
 
-        cmd.CommandText = $"""
-            SELECT Topic, Definition
-            FROM   {table}
-            WHERE  Topic = $word
-            """;
         cmd.Parameters.AddWithValue("$word", word);
+
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadEntry(reader) : null;
+    }
+
+    /// <summary>
+    /// Looks up by Strong's number.
+    /// Accepts any padding style: "H001", "H1", "G05485", "G5485".
+    /// </summary>
+    public DictionaryEntry? LookupByStrongs(string moduleId, string strongsNumber)
+        => LookupByWord(moduleId, NormaliseStrongs(strongsNumber));
+
+    /// <summary>
+    /// Returns metadata stored in the <c>details</c> table (MySword .dct only).
+    /// Returns <c>null</c> for e-Sword modules that have no such table.
+    /// </summary>
+    public ModuleDetails? GetDetails(string moduleId)
+    {
+        var info = ResolveOrThrow(moduleId);
+        if (info.Format != ModuleFormat.MySword) return null;
+
+        using var conn = Open(info.Path);
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = """
+            SELECT title, abbreviation, description, author, version, versiondate,
+                   publisher, strong, righttoleft
+            FROM   details
+            LIMIT  1
+            """;
 
         using var reader = cmd.ExecuteReader();
         if (!reader.Read()) return null;
 
-        return new DictionaryEntry(
-            Topic: reader.GetString(0),
-            Definition: reader.IsDBNull(1) ? string.Empty : StripHtml(reader.GetString(1))
+        return new ModuleDetails(
+            Title: reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+            Abbreviation: reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+            Description: reader.IsDBNull(2) ? string.Empty : StripHtml(reader.GetString(2)),
+            Author: reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+            Version: reader.IsDBNull(4) ? string.Empty : reader.GetString(4),
+            VersionDate: reader.IsDBNull(5) ? null : reader.GetString(5),
+            Publisher: reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
+            IsStrongs: !reader.IsDBNull(7) && reader.GetInt32(7) != 0,
+            RightToLeft: !reader.IsDBNull(8) && reader.GetInt32(8) != 0
         );
     }
 
-    /// <summary>
-    /// Looks up by Strong's number. e-Sword lexicons key entries like "H1" or "G5485".
-    /// </summary>
-    public DictionaryEntry? LookupByStrongs(string moduleId, string strongsNumber)
-    {
-        // Normalise: accept "H001", "H1", "G5485" etc.
-        var normalised = NormaliseStrongs(strongsNumber);
-        return LookupByWord(moduleId, normalised);
-    }
-
-    /// <summary>Full-text search across topics — useful for the UI search box.</summary>
+    /// <summary>Full-text search across word/topic keys.</summary>
     public List<DictionaryEntry> Search(string moduleId, string query, int limit = 20)
     {
-        var (path, isDictionary) = ResolveOrThrow(moduleId);
-
-        using var conn = Open(path);
+        var info = ResolveOrThrow(moduleId);
+        using var conn = Open(info.Path);
         using var cmd = conn.CreateCommand();
 
-        var table = isDictionary ? "Dictionary" : "Lexicon";
+        cmd.CommandText = info.Format == ModuleFormat.MySword
+            ? $"""
+               SELECT word, data
+               FROM   dictionary
+               WHERE  word LIKE $query
+               ORDER  BY {(info.HasRelativeOrder ? "relativeorder" : "word")}
+               LIMIT  $limit
+               """
+            : """
+              SELECT Topic, Definition
+              FROM   Lexicon
+              WHERE  Topic LIKE $query
+              ORDER  BY Topic
+              LIMIT  $limit
+              """;
 
-        cmd.CommandText = $"""
-            SELECT Topic, Definition
-            FROM   {table}
-            WHERE  Topic LIKE $query
-            ORDER  BY Topic
-            LIMIT  $limit
-            """;
         cmd.Parameters.AddWithValue("$query", $"%{query}%");
         cmd.Parameters.AddWithValue("$limit", limit);
 
         using var reader = cmd.ExecuteReader();
-
         var results = new List<DictionaryEntry>();
         while (reader.Read())
-        {
-            results.Add(new DictionaryEntry(
-                Topic: reader.GetString(0),
-                Definition: reader.IsDBNull(1) ? string.Empty : StripHtml(reader.GetString(1))
-            ));
-        }
+            results.Add(ReadEntry(reader));
+
+        return results;
+    }
+
+    /// <summary>
+    /// Returns a page of entries in their natural order.
+    /// MySword modules order by <c>relativeorder</c> when available, else by <c>word</c>.
+    /// </summary>
+    public List<DictionaryEntry> GetPage(string moduleId, int offset = 0, int pageSize = 50)
+    {
+        var info = ResolveOrThrow(moduleId);
+        using var conn = Open(info.Path);
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = info.Format == ModuleFormat.MySword
+            ? $"""
+               SELECT word, data
+               FROM   dictionary
+               ORDER  BY {(info.HasRelativeOrder ? "relativeorder" : "word")}
+               LIMIT  $limit OFFSET $offset
+               """
+            : """
+              SELECT Topic, Definition
+              FROM   Lexicon
+              ORDER  BY Topic
+              LIMIT  $limit OFFSET $offset
+              """;
+
+        cmd.Parameters.AddWithValue("$limit", pageSize);
+        cmd.Parameters.AddWithValue("$offset", offset);
+
+        using var reader = cmd.ExecuteReader();
+        var results = new List<DictionaryEntry>();
+        while (reader.Read())
+            results.Add(ReadEntry(reader));
 
         return results;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private (string Path, bool IsDictionary) ResolveOrThrow(string moduleId)
+    private enum ModuleFormat { MySword, ESword }
+
+    /// <param name="Path">Absolute path to the module file.</param>
+    /// <param name="Format">File format (MySword .dct vs e-Sword .lexi/.lexh).</param>
+    /// <param name="HasRelativeOrder">
+    ///   True when the <c>dictionary</c> table contains a <c>relativeorder</c> column.
+    ///   Most MySword .dct files include it, but some plain-word dictionaries (e.g.
+    ///   Easton's) were published without it.
+    /// </param>
+    private record ModuleInfo(string Path, ModuleFormat Format, bool HasRelativeOrder);
+
+    private ModuleInfo ResolveOrThrow(string moduleId)
     {
-        // Try dictionary first, then lexicons
-        var path = discovery.ResolvePath(_cfg.SubFolders.Dictionaries, moduleId, ".dctx");
-        if (path is not null) return (path, true);
+        var path = discovery.ResolvePath(_cfg.SubFolders.Dictionaries, moduleId, ".dct");
+        if (path is not null)
+        {
+            var hasOrder = DctHasRelativeOrder(path);
+            logger.LogDebug(
+                "Resolved '{ModuleId}' → MySword .dct at {Path} (relativeorder={HasOrder})",
+                moduleId, path, hasOrder);
+            return new ModuleInfo(path, ModuleFormat.MySword, hasOrder);
+        }
 
         path = discovery.ResolvePath(_cfg.SubFolders.Lexicons, moduleId, ".lexi", ".lexh");
-        if (path is not null) return (path, false);
+        if (path is not null)
+        {
+            logger.LogDebug("Resolved '{ModuleId}' → e-Sword lexicon at {Path}", moduleId, path);
+            return new ModuleInfo(path, ModuleFormat.ESword, false);
+        }
 
         throw new FileNotFoundException($"Dictionary/lexicon module '{moduleId}' not found.");
+    }
+
+    /// <summary>
+    /// Checks whether the <c>dictionary</c> table actually has a <c>relativeorder</c>
+    /// column. This varies across MySword module publishers.
+    /// </summary>
+    private static bool DctHasRelativeOrder(string path)
+    {
+        using var conn = Open(path);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info(dictionary)";
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            if (reader.GetString(1).Equals("relativeorder", StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    // Column positions are identical for both formats: 0 = key, 1 = content.
+    private static DictionaryEntry ReadEntry(SqliteDataReader reader)
+    {
+        var topic = reader.GetString(0);
+        var rawContent = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+        return new DictionaryEntry(Topic: topic, Definition: StripHtml(rawContent));
     }
 
     private static SqliteConnection Open(string path)
@@ -104,12 +218,16 @@ public class DictionaryService(
         return conn;
     }
 
+    /// <summary>
+    /// Normalises a Strong's number: prefix uppercased, no leading zeros.
+    /// "H001" → "H1", "g05485" → "G5485", "H000" → "H0".
+    /// </summary>
     private static string NormaliseStrongs(string input)
     {
-        // Strip leading zeros from the numeric part: "H001" → "H1", "G05485" → "G5485"
         if (input.Length < 2) return input.ToUpperInvariant();
         var prefix = char.ToUpper(input[0]);
         var number = input[1..].TrimStart('0');
+        if (number.Length == 0) number = "0";
         return $"{prefix}{number}";
     }
 

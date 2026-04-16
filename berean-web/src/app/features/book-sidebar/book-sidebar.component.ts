@@ -1,31 +1,31 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { BibleService } from '../../core/services/bible.service';
-import { ResourcesService } from '../../core/services/resources.service';
-import { NavigationStateService } from '../../core/services/navigation-state.service';
-import { BookEntry } from '../../core/models';
+import { Component, OnInit, inject, signal, computed } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { BibleService } from "../../core/services/bible.service";
+import { ResourcesService } from "../../core/services/resources.service";
+import { NavigationStateService } from "../../core/services/navigation-state.service";
+import { BookEntry } from "../../core/models";
 
 @Component({
-  selector: 'app-book-sidebar',
+  selector: "app-book-sidebar",
   standalone: true,
   imports: [CommonModule],
-  templateUrl: './book-sidebar.component.html',
-  styleUrl: './book-sidebar.component.scss',
+  templateUrl: "./book-sidebar.component.html",
+  styleUrl: "./book-sidebar.component.scss",
 })
 export class BookSidebarComponent implements OnInit {
-  private readonly bibleService     = inject(BibleService);
+  private readonly bibleService = inject(BibleService);
   private readonly resourcesService = inject(ResourcesService);
-  readonly nav                      = inject(NavigationStateService);
+  readonly nav = inject(NavigationStateService);
 
-  readonly books       = signal<BookEntry[]>([]);
-  readonly moduleId    = signal<string>('');
+  readonly books = signal<BookEntry[]>([]);
+  readonly moduleId = signal<string>("");
 
-  readonly otBooks = computed(() => this.books().filter(b => b.number <= 39));
-  readonly ntBooks = computed(() => this.books().filter(b => b.number >= 40));
+  readonly otBooks = computed(() => this.books().filter((b) => b.number <= 39));
+  readonly ntBooks = computed(() => this.books().filter((b) => b.number >= 40));
 
   readonly selectedBook = computed(() => {
     const abbr = this.nav.book();
-    return this.books().find(b => b.abbreviation === abbr) ?? null;
+    return this.books().find((b) => b.abbreviation === abbr) ?? null;
   });
 
   readonly chapterNumbers = computed(() => {
@@ -35,18 +35,21 @@ export class BookSidebarComponent implements OnInit {
 
   ngOnInit(): void {
     this.resourcesService.getBibles().subscribe({
-      next: mods => {
+      next: (mods) => {
         if (!mods.length) return;
         const first = mods[0];
         this.moduleId.set(first.moduleId);
         this.loadBooks(first.moduleId);
-      }
+      },
     });
   }
 
   private loadBooks(moduleId: string): void {
     this.bibleService.getBooks(moduleId).subscribe({
-      next: books => this.books.set(books)
+      next: (books) => {
+        this.books.set(books);
+        this.nav.setBooks(books);
+      },
     });
   }
 

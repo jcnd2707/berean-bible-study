@@ -17,7 +17,7 @@ public class ResourceDiscoveryService(IOptions<BereanResourcesConfig> config, IL
 
     public List<ResourceModule> GetBibles() => ScanBibles();
     public List<ResourceModule> GetCommentaries() => ScanESword(_cfg.SubFolders.Commentaries, ".cmt");
-    public List<ResourceModule> GetDictionaries() => ScanESword(_cfg.SubFolders.Dictionaries, ".dctx");
+    public List<ResourceModule> GetDictionaries() => ScanESword(_cfg.SubFolders.Dictionaries, ".dct");
     public List<ResourceModule> GetLexicons() => ScanESword(_cfg.SubFolders.Lexicons, ".lexi", ".lexh");
     public List<ResourceModule> GetTopicNotes() => ScanESword(_cfg.SubFolders.TopicNotes, ".topx");
 
@@ -46,6 +46,13 @@ public class ResourceDiscoveryService(IOptions<BereanResourcesConfig> config, IL
         var results = new List<ResourceModule>();
 
         foreach (var file in Directory.EnumerateFiles(folder, "*.db"))
+        {
+            var moduleId = Path.GetFileNameWithoutExtension(file);
+            var (name, language) = ReadScrollmapperMetadata(file, moduleId);
+            results.Add(new ResourceModule(moduleId, name, language, file));
+        }
+
+        foreach (var file in Directory.EnumerateFiles(folder, "*.bbl"))
         {
             var moduleId = Path.GetFileNameWithoutExtension(file);
             var (name, language) = ReadScrollmapperMetadata(file, moduleId);

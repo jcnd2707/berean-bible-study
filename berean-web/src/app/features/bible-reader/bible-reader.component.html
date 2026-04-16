@@ -1,74 +1,92 @@
 <div class="reader-shell">
   <!-- Translation tab bar -->
   <div class="trans-bar">
-    @for (mod of modules(); track mod.moduleId) {
+    @for (tab of tabs(); track tab.moduleId) {
       <span
         class="t-tab"
-        [class.active]="mod.moduleId === navState.moduleId()"
-        (click)="onModuleTabClick(mod)"
+        [class.active]="tab.moduleId === navState.moduleId()"
+        [title]="tab.title"
+        (click)="onModuleTabClick(tab)"
       >
-        {{ mod.moduleId }}
+        {{ tab.label }}
       </span>
     }
   </div>
 
-  <!-- Passage heading -->
-  @if (passageTitle() && !loading()) {
-    <div class="passage-heading">
-      <h1 class="pass-title">{{ passageTitle() }}</h1>
-      <p class="pass-sub">{{ activeModuleName() }}</p>
+  <!-- Search overlay -->
+  @if (navState.showSearch()) {
+    <div class="search-overlay">
+      <app-search-panel (navigate)="navState.closeSearch()" />
     </div>
   }
 
-  <!-- Loading -->
-  @if (loading()) {
-    <div class="state-container">
-      <div class="loading-dots"><span></span><span></span><span></span></div>
+  <!-- Compare overlay -->
+  @if (navState.showCompare() && !navState.showSearch()) {
+    <div class="search-overlay">
+      <app-compare-panel />
     </div>
   }
 
-  <!-- Error -->
-  @if (error() && !loading()) {
-    <div class="state-container">
-      <div class="error-card">
-        <p>{{ error() }}</p>
+  <!-- Passage content (hidden when search or compare is open) -->
+  @if (!navState.showSearch() && !navState.showCompare()) {
+    <!-- Passage heading -->
+    @if (passageTitle() && !loading()) {
+      <div class="passage-heading">
+        <h1 class="pass-title">{{ passageTitle() }}</h1>
+        <p class="pass-sub">{{ activeTab()?.title ?? navState.moduleId() }}</p>
       </div>
-    </div>
-  }
+    }
 
-  <!-- Verses -->
-  @if (passage() && !loading() && !error()) {
-    <div class="verse-list">
-      @for (v of passage()!.verses; track v.verse) {
-        <div
-          class="v-row"
-          [class.sel]="activeVerse() === v.verse"
-          (click)="onVerseClick(v)"
-        >
-          <span class="vn">{{ v.verse }}</span>
-          <span class="vt" [innerHTML]="v.text"></span>
+    <!-- Loading -->
+    @if (loading()) {
+      <div class="state-container">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+      </div>
+    }
+
+    <!-- Error -->
+    @if (error() && !loading()) {
+      <div class="state-container">
+        <div class="error-card">
+          <p>{{ error() }}</p>
         </div>
-      }
-    </div>
-  }
+      </div>
+    }
 
-  <!-- Active verse strip -->
-  @if (activeVerse() !== null && passage()) {
-    <div class="active-verse-strip">
-      <span class="strip-ref">
-        {{ navState.book() }} {{ navState.chapter() }}:{{ activeVerse() }}
-      </span>
-      <span class="strip-hint">Selected · context sent to AI chat</span>
-      <button class="strip-clear" (click)="navState.clearVerse()">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path
-            d="M2 2l10 10M12 2L2 12"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-          />
-        </svg>
-      </button>
-    </div>
+    <!-- Verses -->
+    @if (passage() && !loading() && !error()) {
+      <div class="verse-list" (dblclick)="onVerseDoubleClick($event)">
+        @for (v of passage()!.verses; track v.verse) {
+          <div
+            class="v-row"
+            [class.sel]="activeVerse() === v.verse"
+            (click)="onVerseClick(v)"
+          >
+            <span class="vn">{{ v.verse }}</span>
+            <span class="vt" [innerHTML]="v.text"></span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Active verse strip -->
+    @if (activeVerse() !== null && passage()) {
+      <div class="active-verse-strip">
+        <span class="strip-ref">
+          {{ navState.book() }} {{ navState.chapter() }}:{{ activeVerse() }}
+        </span>
+        <span class="strip-hint">Selected · context sent to AI chat</span>
+        <button class="strip-clear" (click)="navState.clearVerse()">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path
+              d="M2 2l10 10M12 2L2 12"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+      </div>
+    }
   }
 </div>

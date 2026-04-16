@@ -1,0 +1,126 @@
+<div class="chat-shell">
+  <!-- Header -->
+  <div class="chat-head">
+    <div class="agent-dot" [ngClass]="stateDot()"></div>
+    <span class="agent-label">Research Agent</span>
+    <span class="state-label">{{ stateLabel() }}</span>
+    @if (ragChunks() > 0) {
+      <span class="rag-badge">{{ ragChunks() }} chunks</span>
+    }
+    <div class="head-actions">
+      @for (qa of quickAsks; track qa.label) {
+        <button
+          class="chip"
+          [disabled]="!agentReady() || isStreaming()"
+          (click)="quickAsk(qa.prompt)"
+        >
+          {{ qa.label }}
+        </button>
+      }
+      <button
+        class="reset-btn"
+        title="Reset conversation"
+        [disabled]="!agentReady()"
+        (click)="reset()"
+      >
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <path
+            d="M2 8a6 6 0 1 0 1.5-3.9"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+          <polyline
+            points="2 3 2 8 7 8"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div class="msg-list" #msgList>
+    @if (messages().length === 0 && agentReady()) {
+      <div class="empty-state">
+        <p>Ask anything about the current passage.</p>
+        <p class="empty-hint">Use the quick-ask chips above or type below.</p>
+      </div>
+    }
+
+    @if (
+      messages().length === 0 && !agentReady() && hubState() !== "disconnected"
+    ) {
+      <div class="empty-state">
+        <p class="empty-hint">{{ stateLabel() }}</p>
+      </div>
+    }
+
+    @for (msg of messages(); track $index) {
+      @if (msg.role === "user") {
+        <div class="msg-row msg-row--user">
+          <div class="bubble bubble--user">{{ msg.text }}</div>
+        </div>
+      } @else {
+        <div class="msg-row msg-row--agent">
+          <div
+            class="bubble bubble--agent"
+            [class.bubble--streaming]="msg.streaming"
+          >
+            {{ msg.text }}<span class="cursor" *ngIf="msg.streaming">▍</span>
+          </div>
+        </div>
+      }
+    }
+
+    @if (error()) {
+      <div class="msg-row">
+        <div class="error-bubble">{{ error() }}</div>
+      </div>
+    }
+  </div>
+
+  <!-- Context strip -->
+  <div class="ctx-strip">
+    <span class="ctx-pill">{{ contextLabel() }}</span>
+    @if (nav.activeCommentary()) {
+      <span class="ctx-pill">comm</span>
+    }
+    @if (nav.activeWord()) {
+      <span class="ctx-pill">{{ nav.activeWord()!.word }}</span>
+    }
+    @if (cloudAvail()) {
+      <span class="ctx-hint">· Cloud</span>
+    }
+  </div>
+
+  <!-- Input -->
+  <div class="chat-foot">
+    <input
+      class="chat-input"
+      [value]="inputText()"
+      (input)="setInput($any($event.target).value)"
+      (keydown)="onKeydown($event)"
+      placeholder="Ask about this passage…"
+      [disabled]="!agentReady() || isStreaming()"
+    />
+    <button class="send-btn" [disabled]="!canSend()" (click)="send()">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 16 16"
+        fill="none"
+        stroke="white"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <line x1="2" y1="8" x2="14" y2="8" />
+        <polyline points="9 3 14 8 9 13" />
+      </svg>
+    </button>
+  </div>
+</div>

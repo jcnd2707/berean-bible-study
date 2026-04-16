@@ -1,5 +1,6 @@
 ﻿using HybridAgent.API.Hubs;
 using HybridAgent.API.Services;
+using Microsoft.Extensions.Options;
 
 
 namespace HybridAgent.API
@@ -22,10 +23,12 @@ namespace HybridAgent.API
 
             // CORS — required for WPF SignalR client (it uses HTTP for the handshake)
             builder.Services.AddCors(opts => opts.AddDefaultPolicy(p => p
-                .WithOrigins("http://localhost", "https://localhost")
+                .WithOrigins("http://localhost", "https://localhost", "http://localhost:4200")
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .AllowCredentials()));
+
+
 
             builder.Services.AddLogging(l => l
                 .AddConsole()

@@ -211,3 +211,11 @@
     background: rgba(200, 146, 42, 0.08);
   }
 }
+
+// Search overlay
+.search-overlay {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}

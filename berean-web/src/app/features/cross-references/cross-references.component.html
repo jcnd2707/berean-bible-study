@@ -1,0 +1,36 @@
+<div class="xref-shell">
+
+  @if (!nav.verse()) {
+    <div class="empty-state">
+      <p>Select a verse to see cross-references.</p>
+    </div>
+  } @else if (loading()) {
+    <div class="empty-state">
+      <div class="loading-dots"><span></span><span></span><span></span></div>
+    </div>
+  } @else if (error()) {
+    <div class="empty-state">
+      <p class="hint">{{ error() }}</p>
+    </div>
+  } @else if (references().length === 0) {
+    <div class="empty-state">
+      <p class="hint">No cross-references for {{ fromRef() }}.</p>
+    </div>
+  } @else {
+    <div class="xref-header">
+      <span class="from-ref">{{ fromRef() }}</span>
+      <span class="xref-count">{{ references().length }} references</span>
+    </div>
+    <div class="xref-list">
+      @for (ref of references(); track ref.toReference) {
+        <div class="xref-row" (click)="navigateTo(ref)">
+          <div class="xref-left">
+            <span class="xref-ref">{{ ref.toReference }}</span>
+            <span class="votes-badge">{{ ref.votes }}</span>
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+</div>

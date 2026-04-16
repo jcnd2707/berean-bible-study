@@ -1,10 +1,10 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { environment } from '../../../environments/environment';
-import { CommentaryResponse } from '../models';
+import { Injectable, inject } from "@angular/core";
+import { HttpClient, HttpParams } from "@angular/common/http";
+import { Observable } from "rxjs";
+import { environment } from "../../../environments/environment";
+import { CommentaryResponse } from "../models";
 
-@Injectable({ providedIn: 'root' })
+@Injectable({ providedIn: "root" })
 export class CommentaryService {
   private readonly http = inject(HttpClient);
   private readonly base = environment.apiBaseUrl;
@@ -13,12 +13,12 @@ export class CommentaryService {
     moduleId: string,
     book: string,
     chapter: number,
-    lang = 'en'
+    lang = "en",
   ): Observable<CommentaryResponse> {
-    const params = new HttpParams().set('lang', lang);
+    const params = new HttpParams().set("lang", lang);
     return this.http.get<CommentaryResponse>(
       `${this.base}/api/commentary/${moduleId}/${book}/${chapter}`,
-      { params }
+      { params },
     );
   }
 
@@ -27,12 +27,12 @@ export class CommentaryService {
     book: string,
     chapter: number,
     verse: number,
-    lang = 'en'
+    lang = "en",
   ): Observable<CommentaryResponse> {
-    const params = new HttpParams().set('lang', lang);
+    const params = new HttpParams().set("lang", lang);
     return this.http.get<CommentaryResponse>(
       `${this.base}/api/commentary/${moduleId}/${book}/${chapter}/${verse}`,
-      { params }
+      { params },
     );
   }
 }

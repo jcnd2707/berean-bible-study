@@ -23,8 +23,9 @@ public record VerseRecord(
     int Chapter,
     int Verse,
     string BookName,
-    string Reference,       // "Genesis 1:1"
-    string Text
+    string Reference,
+    string Text,
+    List<StrongsWord>? StrongsWords = null
 );
 
 public record ChapterRecord(
@@ -92,3 +93,45 @@ public record CrossReferenceResult(
     string Reference,
     List<CrossReferenceEntry> References
 );
+
+/// <summary>
+/// Metadata from the <c>details</c> table present in MySword .dct files.
+/// </summary>
+public record ModuleDetails(
+    string Title,
+    string Abbreviation,
+    string Description,
+    string Author,
+    string Version,
+    string? VersionDate,
+    string Publisher,
+    bool IsStrongs,
+    bool RightToLeft
+);
+
+/// <summary>
+/// Module-level metadata read from the translations table.
+/// Title and License are optional — older or non-standard modules may omit them.
+/// </summary>
+public record TranslationInfo(
+    string Translation,
+    string? Title,
+    string? License,
+    bool HasStrongs
+);
+
+public record StrongsWord(
+    string Word,
+    string Number
+);
+
+/// <summary>
+/// Identifies the on-disk format of a Bible module.
+/// Scrollmapper: one .db per translation, prefixed table names, translations table.
+/// MySword:      one .bbl per translation, generic Bible/Details tables.
+/// </summary>
+public enum BibleFormat
+{
+    Scrollmapper,
+    MySword
+}

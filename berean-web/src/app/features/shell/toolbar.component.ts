@@ -1,39 +1,63 @@
-import { Component, inject, computed } from "@angular/core";
+import { Component, inject, computed, signal, OnInit } from "@angular/core";
 import { CommonModule } from "@angular/common";
+import { FormsModule } from "@angular/forms";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 
 @Component({
   selector: "app-toolbar",
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <div class="toolbar">
       <button
         class="tb-btn"
-        (click)="prevChapter()"
+        (click)="nav.prevChapter()"
         [disabled]="!canGoPrev()"
-        title="Previous chapter"
+        title="Previous chapter (Alt+←)"
       >
         ◀
       </button>
-      <button class="tb-btn" (click)="nextChapter()" title="Next chapter">
+      <button
+        class="tb-btn"
+        (click)="nav.nextChapter()"
+        title="Next chapter (Alt+→)"
+      >
         ▶
       </button>
 
       <div class="tb-sep"></div>
 
-      <div class="ref-box">{{ referenceLabel() }}</div>
+      <form class="ref-form" (submit)="onRefSubmit($event)">
+        <input
+          class="ref-box"
+          [value]="editing() ? refInput() : referenceLabel()"
+          (focus)="onRefFocus()"
+          (blur)="onRefBlur()"
+          (input)="refInput.set($any($event.target).value)"
+          (keydown.escape)="onRefEscape()"
+          placeholder="e.g. John 3:16"
+          title="Type a reference and press Enter to navigate"
+        />
+      </form>
 
       <div class="tb-sep"></div>
 
-      <button class="tb-btn">Compare</button>
-      <button class="tb-btn">Parallel</button>
-      <button class="tb-btn">Search</button>
-
-      <div class="tb-sep"></div>
-
-      <button class="tb-btn">Strong's</button>
-      <button class="tb-btn">Interlinear</button>
+      <button
+        class="tb-btn"
+        [class.tb-btn--active]="nav.showCompare()"
+        (click)="nav.toggleCompare()"
+        title="Compare translations"
+      >
+        Compare
+      </button>
+      <button
+        class="tb-btn"
+        [class.tb-btn--active]="nav.showSearch()"
+        (click)="nav.toggleSearch()"
+        title="Search the Bible (Ctrl+F)"
+      >
+        Search
+      </button>
 
       <div class="toolbar-right">
         <span class="ai-ctx-badge">{{ contextLabel() }}</span>
@@ -74,12 +98,20 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
         opacity: 0.3;
         cursor: default;
       }
+      .tb-btn--active {
+        background: rgba(200, 146, 42, 0.15);
+        border-color: rgba(200, 146, 42, 0.4);
+        color: #c8922a;
+      }
       .tb-sep {
         width: 0.5px;
         height: 20px;
         background: rgba(255, 255, 255, 0.08);
         margin: 0 4px;
         flex-shrink: 0;
+      }
+      .ref-form {
+        display: flex;
       }
       .ref-box {
         background: rgba(255, 255, 255, 0.06);
@@ -89,6 +121,20 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
         color: #e8e3d8;
         font-size: 12px;
         min-width: 150px;
+        outline: none;
+        font-family: inherit;
+        transition:
+          border-color 0.15s,
+          background 0.15s;
+        cursor: pointer;
+      }
+      .ref-box:focus {
+        border-color: rgba(200, 146, 42, 0.5);
+        background: rgba(255, 255, 255, 0.09);
+        cursor: text;
+      }
+      .ref-box::placeholder {
+        color: rgba(255, 255, 255, 0.25);
       }
       .toolbar-right {
         margin-left: auto;
@@ -110,7 +156,10 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
   ],
 })
 export class ToolbarComponent {
-  private readonly nav = inject(NavigationStateService);
+  readonly nav = inject(NavigationStateService);
+
+  readonly editing = signal(false);
+  readonly refInput = signal("");
 
   readonly referenceLabel = computed(() => {
     const loc = this.nav.location();
@@ -131,10 +180,53 @@ export class ToolbarComponent {
     return loc !== null && loc.chapter > 1;
   });
 
-  prevChapter(): void {
-    this.nav.prevChapter();
+  onRefFocus(): void {
+    this.editing.set(true);
+    this.refInput.set(this.referenceLabel());
   }
-  nextChapter(): void {
-    this.nav.nextChapter();
+
+  onRefBlur(): void {
+    this.editing.set(false);
+  }
+
+  onRefEscape(): void {
+    this.editing.set(false);
+    (document.activeElement as HTMLElement)?.blur();
+  }
+
+  onRefSubmit(e: Event): void {
+    e.preventDefault();
+    const parsed = this.parseReference(this.refInput().trim());
+    if (!parsed) return;
+    const loc = this.nav.location();
+    if (!loc) return;
+
+    const bookAbbr = this.nav.bookAbbrFromName(parsed.book);
+    if (!bookAbbr) return;
+
+    this.nav.navigate({
+      moduleId: loc.moduleId,
+      book: bookAbbr,
+      chapter: parsed.chapter,
+      verse: parsed.verse ?? null,
+    });
+    this.editing.set(false);
+    (document.activeElement as HTMLElement)?.blur();
+  }
+
+  /**
+   * Parses "John 3:16", "Gen 1", "Genesis 1:1", "Jhn 3.16" etc.
+   */
+  private parseReference(
+    input: string,
+  ): { book: string; chapter: number; verse?: number } | null {
+    // Match: word(s) + space + number + optional :or. + number
+    const match = input.match(/^(.+?)\s+(\d+)(?:[:.]\s*(\d+))?$/);
+    if (!match) return null;
+    return {
+      book: match[1].trim(),
+      chapter: parseInt(match[2], 10),
+      verse: match[3] ? parseInt(match[3], 10) : undefined,
+    };
   }
 }

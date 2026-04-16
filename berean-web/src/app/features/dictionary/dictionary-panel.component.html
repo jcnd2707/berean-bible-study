@@ -1,0 +1,75 @@
+<div class="dict-shell">
+  <div class="panel-tabs">
+    @for (tab of tabs(); track tab.moduleId) {
+      <span
+        class="p-tab"
+        [class.active]="tab.moduleId === activeTabId()"
+        (click)="selectTab(tab)"
+      >
+        {{ tab.label }}
+      </span>
+    }
+  </div>
+
+  <div class="dict-body">
+    @if (!lastWord() && !loading()) {
+      <p class="hint">Double-click any word in the passage to look it up.</p>
+    }
+
+    @if (loading()) {
+      <div class="loading-dots"><span></span><span></span><span></span></div>
+    }
+
+    @if (error() && !loading()) {
+      <p class="error-msg">{{ error() }}</p>
+    }
+
+    @if (parsed() && !loading()) {
+      <div class="dict-entry">
+        @if (parsed()!.isStrongs) {
+          <!-- Strong's / BDB entry -->
+          <div class="entry-header">
+            @if (parsed()!.original) {
+              <span class="dict-original">{{ parsed()!.original }}</span>
+            }
+            <span class="dict-topic">{{ parsed()!.topic }}</span>
+            @if (parsed()!.transliteration) {
+              <span class="dict-trans">{{ parsed()!.transliteration }}</span>
+            }
+            @if (parsed()!.phonetic) {
+              <span class="dict-phonetic">{{ parsed()!.phonetic }}</span>
+            }
+          </div>
+
+          @if (parsed()!.partOfSpeech) {
+            <div class="dict-pos">{{ parsed()!.partOfSpeech }}</div>
+          }
+
+          @if (parsed()!.bdbDefinitions.length > 0) {
+            <div class="dict-section-label">Definitions</div>
+            <ul class="dict-meanings">
+              @for (def of parsed()!.bdbDefinitions; track def) {
+                <li>{{ def }}</li>
+              }
+            </ul>
+          }
+
+          @if (parsed()!.strongsDefinition) {
+            <div class="dict-section-label">Strong's</div>
+            <p class="dict-strongs-def">{{ parsed()!.strongsDefinition }}</p>
+          }
+
+          @if (parsed()!.origin) {
+            <div class="dict-origin">Origin: {{ parsed()!.origin }}</div>
+          }
+        } @else {
+          <!-- Plain word entry (Easton's etc.) -->
+          <div class="entry-header">
+            <span class="dict-topic">{{ parsed()!.topic }}</span>
+          </div>
+          <p class="dict-plain">{{ parsed()!.plainText }}</p>
+        }
+      </div>
+    }
+  </div>
+</div>

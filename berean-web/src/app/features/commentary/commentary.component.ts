@@ -37,7 +37,6 @@ export class CommentaryComponent implements OnInit {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
-  // Only reload when book/chapter/moduleId changes — not on verse select
   private readonly location$ = toObservable(this.nav.location).pipe(
     distinctUntilChanged(
       (a, b) =>
@@ -47,12 +46,13 @@ export class CommentaryComponent implements OnInit {
     ),
   );
 
-  // Scroll to active entry whenever the verse signal changes
-  private readonly _scrollEffect = effect(() => {
+  // Scroll and push active commentary to nav state on verse change
+  private readonly _verseEffect = effect(() => {
     const verse = this.nav.verse();
-    if (verse === null) return;
-    // Defer to next frame so the DOM has rendered the highlight
-    requestAnimationFrame(() => this.scrollToActiveEntry());
+    requestAnimationFrame(() => {
+      this.scrollToActiveEntry();
+      this.pushActiveCommentary();
+    });
   });
 
   ngOnInit(): void {
@@ -84,8 +84,10 @@ export class CommentaryComponent implements OnInit {
       .subscribe((resp) => {
         this.entries.set(resp.entries);
         this.loading.set(false);
-        // After new entries load, scroll to the active verse if one is selected
-        requestAnimationFrame(() => this.scrollToActiveEntry());
+        requestAnimationFrame(() => {
+          this.scrollToActiveEntry();
+          this.pushActiveCommentary();
+        });
       });
   }
 
@@ -101,7 +103,10 @@ export class CommentaryComponent implements OnInit {
         next: (resp) => {
           this.entries.set(resp.entries);
           this.loading.set(false);
-          requestAnimationFrame(() => this.scrollToActiveEntry());
+          requestAnimationFrame(() => {
+            this.scrollToActiveEntry();
+            this.pushActiveCommentary();
+          });
         },
         error: () => {
           this.error.set("No commentary available.");
@@ -114,6 +119,19 @@ export class CommentaryComponent implements OnInit {
     const v = this.nav.verse();
     if (v === null) return false;
     return v >= entry.verseBegin && v <= entry.verseEnd;
+  }
+
+  private pushActiveCommentary(): void {
+    const verse = this.nav.verse();
+    if (verse === null) {
+      this.nav.setActiveCommentary(null, "");
+      return;
+    }
+    const active =
+      this.entries().find(
+        (e) => verse >= e.verseBegin && verse <= e.verseEnd,
+      ) ?? null;
+    this.nav.setActiveCommentary(active, this.activeModuleId());
   }
 
   private scrollToActiveEntry(): void {

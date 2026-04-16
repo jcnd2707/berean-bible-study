@@ -1,23 +1,25 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
-import { environment } from '../../../environments/environment';
+import { Injectable, inject } from "@angular/core";
+import { HttpClient, HttpParams } from "@angular/common/http";
+import { Observable } from "rxjs";
+import { environment } from "../../../environments/environment";
 import {
   BookEntry,
   ChapterResponse,
   VerseResponse,
-} from '../models';
+  SearchResult,
+  SearchParams,
+} from "../models";
 
-@Injectable({ providedIn: 'root' })
+@Injectable({ providedIn: "root" })
 export class BibleService {
   private readonly http = inject(HttpClient);
   private readonly base = environment.apiBaseUrl;
 
-  getBooks(moduleId: string, lang = 'en'): Observable<BookEntry[]> {
-    const params = new HttpParams().set('lang', lang);
+  getBooks(moduleId: string, lang = "en"): Observable<BookEntry[]> {
+    const params = new HttpParams().set("lang", lang);
     return this.http.get<BookEntry[]>(
       `${this.base}/api/bible/${moduleId}/books`,
-      { params }
+      { params },
     );
   }
 
@@ -25,12 +27,12 @@ export class BibleService {
     moduleId: string,
     book: string,
     chapter: number,
-    lang = 'en'
+    lang = "en",
   ): Observable<ChapterResponse> {
-    const params = new HttpParams().set('lang', lang);
+    const params = new HttpParams().set("lang", lang);
     return this.http.get<ChapterResponse>(
       `${this.base}/api/bible/${moduleId}/${book}/${chapter}`,
-      { params }
+      { params },
     );
   }
 
@@ -39,12 +41,24 @@ export class BibleService {
     book: string,
     chapter: number,
     verse: number,
-    lang = 'en'
+    lang = "en",
   ): Observable<VerseResponse> {
-    const params = new HttpParams().set('lang', lang);
+    const params = new HttpParams().set("lang", lang);
     return this.http.get<VerseResponse>(
       `${this.base}/api/bible/${moduleId}/${book}/${chapter}/${verse}`,
-      { params }
+      { params },
+    );
+  }
+
+  search(moduleId: string, p: SearchParams): Observable<SearchResult[]> {
+    let params = new HttpParams().set("q", p.q);
+    if (p.limit) params = params.set("limit", p.limit);
+    if (p.testament && p.testament !== "both")
+      params = params.set("testament", p.testament);
+    if (p.book) params = params.set("book", p.book);
+    return this.http.get<SearchResult[]>(
+      `${this.base}/api/bible/${moduleId}/search`,
+      { params },
     );
   }
 }

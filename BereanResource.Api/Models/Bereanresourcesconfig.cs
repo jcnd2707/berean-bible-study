@@ -6,7 +6,7 @@ public class BereanResourcesConfig
 
     public string RootPath { get; set; } = string.Empty;
     public string NotesDbPath { get; set; } = string.Empty;
-    public string CrossReferencesDbPath { get; set; } = string.Empty;
+    public string CrossReferencesDbFolder { get; set; } = string.Empty;
     public SubFolderConfig SubFolders { get; set; } = new();
 }
 

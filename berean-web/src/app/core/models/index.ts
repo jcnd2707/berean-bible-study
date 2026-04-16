@@ -7,6 +7,13 @@ export interface BibleModule {
   filePath?: string;
 }
 
+export interface BibleModuleDetails {
+  translation: string;
+  title: string;
+  license: string | null;
+  hasStrongs: boolean;
+}
+
 export interface CommentaryModule {
   moduleId: string;
   name: string;
@@ -24,10 +31,15 @@ export interface DictionaryModule {
 // ── Bible text ────────────────────────────────────────────────────────────────
 
 export interface BookEntry {
-  number: number; // 1-39 = OT, 40-66 = NT
-  name: string; // e.g. "Genesis"
-  abbreviation: string; // e.g. "Gen" — used as the book param in API calls
+  number: number;
+  name: string;
+  abbreviation: string;
   chapterCount: number;
+}
+
+export interface StrongsWord {
+  word: string;
+  number: string; // e.g. "H430"
 }
 
 export interface Verse {
@@ -39,16 +51,17 @@ export interface Verse {
   text: string;
 }
 
+export interface VerseResponse extends Verse {
+  moduleId?: string;
+  strongsWords?: StrongsWord[];
+}
+
 export interface ChapterResponse {
   moduleId?: string;
   book: number;
   bookName: string;
   chapter: number;
   verses: Verse[];
-}
-
-export interface VerseResponse extends Verse {
-  moduleId?: string;
 }
 
 // ── Commentary ────────────────────────────────────────────────────────────────
@@ -75,16 +88,17 @@ export interface CommentaryResponse {
 // ── Cross-references ──────────────────────────────────────────────────────────
 
 export interface CrossReference {
-  fromBook: string;
-  fromChapter: number;
-  fromVerse: number;
-  toBook: string;
+  fromReference: string;
+  toReference: string;
+  toBook: number;
   toChapter: number;
-  toVerse: number;
+  toVerseStart: number;
+  toVerseEnd: number;
   votes: number;
 }
 
 export interface CrossReferencesResponse {
+  reference: string;
   references: CrossReference[];
 }
 
@@ -120,7 +134,27 @@ export interface UpsertNoteRequest {
 
 export interface BibleLocation {
   moduleId: string;
-  book: string; // abbreviation e.g. "Gen"
+  book: string;
   chapter: number;
   verse: number | null;
+}
+
+// ── Search ────────────────────────────────────────────────────────────────────
+
+export interface SearchResult {
+  book: number;
+  bookName: string;
+  chapter: number;
+  verse: number;
+  reference: string;
+  text: string;
+}
+
+export type Testament = "OT" | "NT" | "both";
+
+export interface SearchParams {
+  q: string;
+  limit?: number;
+  testament?: Testament;
+  book?: string; // book abbreviation e.g. "Rom"
 }

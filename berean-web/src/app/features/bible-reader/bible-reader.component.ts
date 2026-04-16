@@ -7,17 +7,33 @@ import {
   catchError,
   distinctUntilChanged,
 } from "rxjs/operators";
-import { of, EMPTY } from "rxjs";
+import { EMPTY, forkJoin } from "rxjs";
 
 import { BibleService } from "../../core/services/bible.service";
 import { ResourcesService } from "../../core/services/resources.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
-import { BibleModule, ChapterResponse, Verse } from "../../core/models";
+import { WordSelectionService } from "../../core/services/word-selection.service";
+import {
+  BibleModule,
+  BibleModuleDetails,
+  ChapterResponse,
+  Verse,
+  StrongsWord,
+} from "../../core/models";
+import { SearchPanelComponent } from "../search/search-panel.component";
+import { ComparePanelComponent } from "../compare/compare-panel.component";
+
+interface TabModule {
+  moduleId: string;
+  label: string; // short display label e.g. "BSB", "KJV"
+  title: string; // full title for tooltip
+  hasStrongs: boolean;
+}
 
 @Component({
   selector: "app-bible-reader",
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, SearchPanelComponent, ComparePanelComponent],
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",
 })
@@ -25,10 +41,12 @@ export class BibleReaderComponent implements OnInit {
   private readonly bibleService = inject(BibleService);
   private readonly resourcesService = inject(ResourcesService);
   readonly navState = inject(NavigationStateService);
+  private readonly wordSelection = inject(WordSelectionService);
 
-  readonly modules = signal<BibleModule[]>([]);
+  readonly tabs = signal<TabModule[]>([]);
   readonly passage = signal<ChapterResponse | null>(null);
   readonly activeVerse = signal<number | null>(null);
+  readonly showSearch = signal(false);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -38,12 +56,11 @@ export class BibleReaderComponent implements OnInit {
     return `${loc.book} ${loc.chapter}`;
   });
 
-  readonly activeModuleName = computed(() => {
-    const id = this.navState.moduleId();
-    return this.modules().find((m) => m.moduleId === id)?.name ?? id ?? "";
-  });
+  readonly activeTab = computed(
+    () =>
+      this.tabs().find((t) => t.moduleId === this.navState.moduleId()) ?? null,
+  );
 
-  // Convert location signal to observable, only emit when module/book/chapter changes
   private readonly location$ = toObservable(this.navState.location).pipe(
     distinctUntilChanged(
       (a, b) =>
@@ -53,12 +70,52 @@ export class BibleReaderComponent implements OnInit {
     ),
   );
 
+  private readonly module$ = toObservable(this.navState.location).pipe(
+    distinctUntilChanged((a, b) => a?.moduleId === b?.moduleId),
+  );
+
   ngOnInit(): void {
+    // Load all bible modules + their details in parallel for proper tab labels
     this.resourcesService.getBibles().subscribe({
-      next: (mods) => this.modules.set(mods),
+      next: (mods) => {
+        // Start with moduleId as label, then enrich with details
+        const initial: TabModule[] = mods.map((m) => ({
+          moduleId: m.moduleId,
+          label: m.moduleId,
+          title: m.name,
+          hasStrongs: false,
+        }));
+        this.tabs.set(initial);
+
+        // Fetch details for all modules in parallel
+        forkJoin(
+          mods.map((m) => this.resourcesService.getBibleDetails(m.moduleId)),
+        ).subscribe({
+          next: (details) => {
+            const enriched: TabModule[] = mods.map((m, i) => {
+              const d = details[i] as BibleModuleDetails;
+              return {
+                moduleId: m.moduleId,
+                label: d.translation ?? m.moduleId,
+                title: d.title ?? m.name,
+                hasStrongs: d.hasStrongs ?? false,
+              };
+            });
+            this.tabs.set(enriched);
+          },
+        });
+      },
       error: () => this.error.set("Could not load Bible modules."),
     });
 
+    // Update hasStrongs when module changes
+    this.module$.subscribe((loc) => {
+      if (!loc) return;
+      const tab = this.tabs().find((t) => t.moduleId === loc.moduleId);
+      this.navState.setHasStrongs(tab?.hasStrongs ?? false);
+    });
+
+    // Load passage when module/book/chapter changes
     this.location$
       .pipe(
         switchMap((loc) => {
@@ -78,13 +135,25 @@ export class BibleReaderComponent implements OnInit {
         }),
         tap(() => this.loading.set(false)),
       )
-      .subscribe((passage) => this.passage.set(passage));
+      .subscribe((passage) => {
+        // Deduplicate verses by verse number — some modules have duplicate rows
+        const seen = new Set<number>();
+        const unique = passage.verses.filter((v) => {
+          if (seen.has(v.verse)) return false;
+          seen.add(v.verse);
+          return true;
+        });
+        const deduped = { ...passage, verses: unique };
+        this.passage.set(deduped);
+        this.navState.setVerses(deduped.verses);
+      });
   }
 
-  onModuleTabClick(mod: BibleModule): void {
+  onModuleTabClick(tab: TabModule): void {
     const loc = this.navState.location();
     if (!loc) return;
-    this.navState.navigate({ ...loc, moduleId: mod.moduleId, verse: null });
+    this.navState.setHasStrongs(tab.hasStrongs);
+    this.navState.navigate({ ...loc, moduleId: tab.moduleId, verse: null });
   }
 
   onVerseClick(verse: Verse): void {
@@ -94,6 +163,67 @@ export class BibleReaderComponent implements OnInit {
     const loc = this.navState.location();
     if (!loc) return;
     this.navState.navigate({ ...loc, verse: newVerse });
+  }
+
+  onVerseDoubleClick(event: MouseEvent): void {
+    const selected = window.getSelection()?.toString().trim() ?? "";
+    const word = selected || this.wordAtPoint(event);
+    if (!word) return;
+    const clean = word.replace(/[^a-zA-Z'-]/g, "").toLowerCase();
+    if (!clean) return;
+
+    const loc = this.navState.location();
+    if (this.navState.hasStrongs() && loc) {
+      const verseNum = this.verseNumberAt(event);
+      this.bibleService
+        .getVerse(loc.moduleId, loc.book, loc.chapter, verseNum)
+        .subscribe({
+          next: (verseDetail) => {
+            const strongs = this.findStrongs(
+              clean,
+              verseDetail.strongsWords ?? [],
+            );
+            this.wordSelection.select(clean, strongs);
+          },
+          error: () => this.wordSelection.select(clean, null),
+        });
+    } else {
+      this.wordSelection.select(clean, null);
+    }
+  }
+
+  private findStrongs(
+    word: string,
+    strongsWords: StrongsWord[],
+  ): string | null {
+    const match = strongsWords.find((sw) =>
+      sw.word
+        .toLowerCase()
+        .split(/\s+/)
+        .some((w) => w.replace(/[^a-zA-Z'-]/g, "") === word),
+    );
+    return match?.number ?? null;
+  }
+
+  private verseNumberAt(event: MouseEvent): number {
+    const row = (event.target as HTMLElement).closest(".v-row");
+    const vn = row?.querySelector(".vn")?.textContent?.trim();
+    return vn ? parseInt(vn, 10) : 1;
+  }
+
+  private wordAtPoint(event: MouseEvent): string {
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(event.clientX, event.clientY);
+      return range?.toString().trim() ?? "";
+    }
+    return "";
+  }
+
+  toggleSearch(): void {
+    this.showSearch.update((v) => !v);
+  }
+  closeSearch(): void {
+    this.showSearch.set(false);
   }
 
   trackByVerse(_: number, v: Verse): number {

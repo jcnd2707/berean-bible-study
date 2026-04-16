@@ -32,6 +32,7 @@ public class Program
         builder.Services.AddSingleton<CommentaryService>();
         builder.Services.AddSingleton<DictionaryService>();
         builder.Services.AddSingleton<NotesService>();
+        builder.Services.AddSingleton<CrossReferenceService>();
 
         // ── MVC ───────────────────────────────────────────────────────────────
         builder.Services.AddControllers();
