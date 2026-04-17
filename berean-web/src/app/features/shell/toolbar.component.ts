@@ -1,7 +1,8 @@
-import { Component, inject, computed, signal, OnInit } from "@angular/core";
+import { Component, inject, computed, signal } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
+import { PreferencesService } from "../../core/services/preferences.service";
 
 @Component({
   selector: "app-toolbar",
@@ -58,6 +59,42 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
       >
         Search
       </button>
+      <button
+        class="tb-btn"
+        [class.tb-btn--active]="nav.showNotesList()"
+        (click)="nav.toggleNotesList()"
+        title="Browse all notes"
+      >
+        My Notes
+      </button>
+
+      <div class="tb-sep"></div>
+
+      <button
+        class="tb-btn tb-btn--icon"
+        (click)="prefs.decreaseFontSize()"
+        title="Decrease font size"
+      >
+        A−
+      </button>
+      <button
+        class="tb-btn tb-btn--icon"
+        (click)="prefs.increaseFontSize()"
+        title="Increase font size"
+      >
+        A+
+      </button>
+      <button
+        class="tb-btn tb-btn--icon"
+        [title]="
+          prefs.readerTheme() === 'light'
+            ? 'Switch to dark reader'
+            : 'Switch to light reader'
+        "
+        (click)="prefs.toggleTheme()"
+      >
+        {{ prefs.readerTheme() === "light" ? "☽" : "☀" }}
+      </button>
 
       <div class="toolbar-right">
         <span class="ai-ctx-badge">{{ contextLabel() }}</span>
@@ -102,6 +139,10 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
         background: rgba(200, 146, 42, 0.15);
         border-color: rgba(200, 146, 42, 0.4);
         color: #c8922a;
+      }
+      .tb-btn--icon {
+        padding: 3px 7px;
+        font-size: 11px;
       }
       .tb-sep {
         width: 0.5px;
@@ -157,6 +198,7 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
 })
 export class ToolbarComponent {
   readonly nav = inject(NavigationStateService);
+  readonly prefs = inject(PreferencesService);
 
   readonly editing = signal(false);
   readonly refInput = signal("");

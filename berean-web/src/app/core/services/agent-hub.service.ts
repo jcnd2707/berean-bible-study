@@ -97,6 +97,11 @@ export class AgentHubService implements OnDestroy {
     await this.hub.send("ResetConversation");
   }
 
+  async reconnect(): Promise<void> {
+    if (this.hub.state !== signalR.HubConnectionState.Disconnected) return;
+    await this.connect();
+  }
+
   async disconnect(): Promise<void> {
     await this.hub.stop();
   }

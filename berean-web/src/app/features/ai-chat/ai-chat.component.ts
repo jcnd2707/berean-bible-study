@@ -245,6 +245,16 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (el) el.scrollTop = el.scrollHeight;
   }
 
+  async reconnect(): Promise<void> {
+    this.error.set(null);
+    this.agentReady.set(false);
+    try {
+      await this.hub.reconnect();
+    } catch {
+      this.error.set("Could not reconnect. Is the Agent API running?");
+    }
+  }
+
   stateLabel(): string {
     switch (this.hubState()) {
       case "connecting":

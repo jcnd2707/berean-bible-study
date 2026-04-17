@@ -20,6 +20,8 @@ export class NavigationStateService {
   private readonly _activeWord = signal<WordContext | null>(null);
   private readonly _showSearch = signal<boolean>(false);
   private readonly _showCompare = signal<boolean>(false);
+  private readonly _notedReferences = signal<Set<string>>(new Set());
+  private readonly _showNotesList = signal<boolean>(false);
 
   readonly location = this._location.asReadonly();
   readonly maxChapter = this._maxChapter.asReadonly();
@@ -31,6 +33,8 @@ export class NavigationStateService {
   readonly activeWord = this._activeWord.asReadonly();
   readonly showSearch = this._showSearch.asReadonly();
   readonly showCompare = this._showCompare.asReadonly();
+  readonly notedReferences = this._notedReferences.asReadonly();
+  readonly showNotesList = this._showNotesList.asReadonly();
 
   readonly moduleId = computed(() => this._location()?.moduleId ?? null);
   readonly book = computed(() => this._location()?.book ?? null);
@@ -67,6 +71,24 @@ export class NavigationStateService {
   }
   closeCompare(): void {
     this._showCompare.set(false);
+  }
+  toggleNotesList(): void {
+    this._showNotesList.update((v) => !v);
+  }
+  closeNotesList(): void {
+    this._showNotesList.set(false);
+  }
+
+  setNotedReferences(refs: string[]): void {
+    this._notedReferences.set(new Set(refs));
+  }
+
+  hasNoteForChapter(book: string, chapter: number): boolean {
+    const prefix = `${book}.${chapter}`;
+    for (const r of this._notedReferences()) {
+      if (r === prefix || r.startsWith(prefix + ".")) return true;
+    }
+    return false;
   }
 
   setBooks(books: BookEntry[]): void {

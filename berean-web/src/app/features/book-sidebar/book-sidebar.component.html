@@ -1,10 +1,12 @@
 <div class="sidebar">
-
   <div class="sb-label">Old Testament</div>
   <div class="book-scroll">
     @for (book of otBooks(); track book.number) {
-      <div class="book-item" [class.active]="isActiveBook(book)"
-           (click)="selectBook(book)">
+      <div
+        class="book-item"
+        [class.active]="isActiveBook(book)"
+        (click)="selectBook(book)"
+      >
         {{ book.name }}
         <span class="ch-count">{{ book.chapterCount }}</span>
       </div>
@@ -14,8 +16,11 @@
 
     <div class="sb-label sb-label--inline">New Testament</div>
     @for (book of ntBooks(); track book.number) {
-      <div class="book-item" [class.active]="isActiveBook(book)"
-           (click)="selectBook(book)">
+      <div
+        class="book-item"
+        [class.active]="isActiveBook(book)"
+        (click)="selectBook(book)"
+      >
         {{ book.name }}
         <span class="ch-count">{{ book.chapterCount }}</span>
       </div>
@@ -27,12 +32,17 @@
     <div class="sb-label">Chapter</div>
     <div class="ch-grid">
       @for (ch of chapterNumbers(); track ch) {
-        <div class="ch" [class.active]="isActiveChapter(ch)"
-             (click)="selectChapter(ch)">
+        <div
+          class="ch"
+          [class.active]="isActiveChapter(ch)"
+          (click)="selectChapter(ch)"
+        >
           {{ ch }}
+          @if (hasNote(ch)) {
+            <span class="note-dot" title="Has notes"></span>
+          }
         </div>
       }
     </div>
   }
-
 </div>

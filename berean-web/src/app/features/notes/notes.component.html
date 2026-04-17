@@ -1,5 +1,4 @@
 <div class="notes-shell">
-
   <!-- Header -->
   <div class="notes-head">
     <span class="notes-ref">{{ referenceLabel() }}</span>
@@ -7,22 +6,28 @@
     <div class="head-right">
       @if (saving()) {
         <span class="status status--saving">Saving…</span>
-      } @else if (saveStatus() === 'saved') {
+      } @else if (saveStatus() === "saved") {
         <span class="status status--saved">Saved</span>
-      } @else if (saveStatus() === 'error') {
+      } @else if (saveStatus() === "error") {
         <span class="status status--error">Save failed</span>
       } @else if (isDirty()) {
         <span class="status status--dirty">Unsaved</span>
       }
 
       @if (hasNote()) {
-        <button class="delete-btn"
-                [disabled]="deleting()"
-                (click)="deleteNote()"
-                title="Delete this note">
+        <button
+          class="delete-btn"
+          [disabled]="deleting()"
+          (click)="deleteNote()"
+          title="Delete this note"
+        >
           <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-            <path d="M2 2l10 10M12 2L2 12" stroke="currentColor" stroke-width="1.5"
-                  stroke-linecap="round"/>
+            <path
+              d="M2 2l10 10M12 2L2 12"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
           </svg>
         </button>
       }
@@ -31,7 +36,6 @@
 
   <!-- Body -->
   <div class="notes-body">
-
     @if (!reference()) {
       <div class="empty-state">
         <p>Navigate to a passage to add notes.</p>
@@ -41,11 +45,13 @@
         <div class="loading-dots"><span></span><span></span><span></span></div>
       </div>
     } @else {
-      <textarea class="note-editor"
-                [value]="noteText()"
-                (input)="onTextInput($any($event.target).value)"
-                placeholder="Type your notes for {{ referenceLabel() }}…"
-                spellcheck="true">
+      <textarea
+        class="note-editor"
+        [value]="noteText()"
+        (input)="onTextInput($any($event.target).value)"
+        placeholder="Type your notes for {{ referenceLabel() }}…"
+        spellcheck="true"
+      >
       </textarea>
 
       @if (error()) {
@@ -61,7 +67,5 @@
         }
       </p>
     }
-
   </div>
-
 </div>

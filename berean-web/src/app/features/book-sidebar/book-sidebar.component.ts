@@ -77,4 +77,10 @@ export class BookSidebarComponent implements OnInit {
   isActiveChapter(ch: number): boolean {
     return this.nav.chapter() === ch;
   }
+
+  hasNote(ch: number): boolean {
+    const book = this.selectedBook();
+    if (!book) return false;
+    return this.nav.hasNoteForChapter(book.abbreviation, ch);
+  }
 }

@@ -60,7 +60,7 @@
 
 .pass-title {
   font-family: Georgia, serif;
-  font-size: 15px;
+  font-size: 1.15em;
   font-weight: bold;
   color: #1c1917;
   margin-bottom: 2px;
@@ -167,7 +167,7 @@
 
 .vt {
   font-family: Georgia, serif;
-  font-size: 13px;
+  font-size: 1em;
   line-height: 1.78;
   color: #2c2825;
 }
@@ -218,4 +218,78 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+// ── Dark mode ──────────────────────────────────────────────────────────────
+:host(.reader-theme-dark) .reader-shell {
+  background: #1a1815;
+  color: #e8e3d8;
+
+  .trans-bar {
+    background: #211f1c;
+    border-bottom-color: #2e2b27;
+  }
+  .t-tab {
+    color: #9c9186;
+    &:hover {
+      color: #e8e3d8;
+    }
+    &.active {
+      color: #e8e3d8;
+      border-bottom-color: #c8922a;
+    }
+  }
+
+  .passage-heading {
+  }
+  .pass-title {
+    color: #e8e3d8;
+  }
+  .pass-sub {
+    color: #6b6457;
+  }
+
+  .verse-list {
+    scrollbar-color: #2e2b27 transparent;
+  }
+
+  .v-row {
+    border-left-color: transparent;
+    &:hover {
+      background: rgba(200, 146, 42, 0.07);
+    }
+    &.sel {
+      background: rgba(200, 146, 42, 0.12);
+      border-left-color: #c8922a;
+    }
+  }
+
+  .vt {
+    color: #e8e3d8;
+  }
+
+  .active-verse-strip {
+    background: rgba(200, 146, 42, 0.12);
+    border-top-color: #2e2b27;
+  }
+  .strip-ref {
+    color: #c8922a;
+  }
+  .strip-hint {
+    color: #6b6457;
+  }
+  .strip-clear {
+    color: #6b6457;
+    &:hover {
+      background: rgba(200, 146, 42, 0.1);
+    }
+  }
+
+  .error-card {
+    background: rgba(127, 29, 29, 0.2);
+    border-color: rgba(252, 165, 165, 0.2);
+    p {
+      color: #fca5a5;
+    }
+  }
 }

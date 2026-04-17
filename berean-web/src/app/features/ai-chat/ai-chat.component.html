@@ -4,6 +4,9 @@
     <div class="agent-dot" [ngClass]="stateDot()"></div>
     <span class="agent-label">Research Agent</span>
     <span class="state-label">{{ stateLabel() }}</span>
+    @if (hubState() === "disconnected") {
+      <button class="reconnect-btn" (click)="reconnect()">Reconnect</button>
+    }
     @if (ragChunks() > 0) {
       <span class="rag-badge">{{ ragChunks() }} chunks</span>
     }

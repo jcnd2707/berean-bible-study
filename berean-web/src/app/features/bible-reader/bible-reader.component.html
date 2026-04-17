@@ -1,4 +1,8 @@
-<div class="reader-shell">
+<div
+  class="reader-shell"
+  [class.reader-shell--dark]="prefs.readerTheme() === 'dark'"
+  [style]="'--reader-font-size:' + prefs.fontSize() + 'px'"
+>
   <!-- Translation tab bar -->
   <div class="trans-bar">
     @for (tab of tabs(); track tab.moduleId) {
@@ -27,8 +31,23 @@
     </div>
   }
 
-  <!-- Passage content (hidden when search or compare is open) -->
-  @if (!navState.showSearch() && !navState.showCompare()) {
+  <!-- Notes list overlay -->
+  @if (
+    navState.showNotesList() &&
+    !navState.showSearch() &&
+    !navState.showCompare()
+  ) {
+    <div class="search-overlay">
+      <app-notes-list />
+    </div>
+  }
+
+  <!-- Passage content -->
+  @if (
+    !navState.showSearch() &&
+    !navState.showCompare() &&
+    !navState.showNotesList()
+  ) {
     <!-- Passage heading -->
     @if (passageTitle() && !loading()) {
       <div class="passage-heading">

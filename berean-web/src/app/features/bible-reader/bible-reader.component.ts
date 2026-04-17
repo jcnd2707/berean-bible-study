@@ -1,4 +1,11 @@
-import { Component, OnInit, inject, signal, computed } from "@angular/core";
+import {
+  Component,
+  OnInit,
+  inject,
+  signal,
+  computed,
+  HostBinding,
+} from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { toObservable } from "@angular/core/rxjs-interop";
 import {
@@ -20,8 +27,10 @@ import {
   Verse,
   StrongsWord,
 } from "../../core/models";
+import { PreferencesService } from "../../core/services/preferences.service";
 import { SearchPanelComponent } from "../search/search-panel.component";
 import { ComparePanelComponent } from "../compare/compare-panel.component";
+import { NotesListComponent } from "../notes/notes-list.component";
 
 interface TabModule {
   moduleId: string;
@@ -33,7 +42,12 @@ interface TabModule {
 @Component({
   selector: "app-bible-reader",
   standalone: true,
-  imports: [CommonModule, SearchPanelComponent, ComparePanelComponent],
+  imports: [
+    CommonModule,
+    SearchPanelComponent,
+    ComparePanelComponent,
+    NotesListComponent,
+  ],
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",
 })
@@ -42,6 +56,22 @@ export class BibleReaderComponent implements OnInit {
   private readonly resourcesService = inject(ResourcesService);
   readonly navState = inject(NavigationStateService);
   private readonly wordSelection = inject(WordSelectionService);
+  readonly prefs = inject(PreferencesService);
+
+  @HostBinding("style.--reader-font-size")
+  get hostFontSize(): string {
+    return this.prefs.fontSize() + "px";
+  }
+
+  @HostBinding("style.font-size")
+  get hostBaseFontSize(): string {
+    return this.prefs.fontSize() + "px";
+  }
+
+  @HostBinding("class.reader-theme-dark")
+  get hostDarkTheme(): boolean {
+    return this.prefs.readerTheme() === "dark";
+  }
 
   readonly tabs = signal<TabModule[]>([]);
   readonly passage = signal<ChapterResponse | null>(null);
