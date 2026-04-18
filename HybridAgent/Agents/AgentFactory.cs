@@ -1,7 +1,7 @@
 ﻿using System.ComponentModel;
 using HybridAgent.Core.Models;
+using HybridAgent.Core.RAG;
 using HybridAgent.Core.Tools;
-using Microsoft.Data.Sqlite;
 
 namespace HybridAgent.Core.Agents;
 
@@ -62,11 +62,17 @@ public static class AgentFactory
 
     /// <summary>
     /// Creates the Bible agent with full tool suite.
-    /// dictionaryFiles: paths to .dctx / .lexx files for direct word lookup.
+    ///
+    /// Supply either:
+    ///   - <paramref name="apiClient"/> + <paramref name="dictionaryModuleIds"/>
+    ///     for API-based word lookup (preferred when ResourceApiBaseUrl is configured), or
+    ///   - <paramref name="dictionaryFiles"/> for legacy direct-SQLite lookup.
     /// </summary>
     public static (AgentConfig config, ToolRegistry tools) CreateBibleAgent(
         string? openAiKey = null,
-        IEnumerable<string>? dictionaryFiles = null)
+        IEnumerable<string>? dictionaryFiles = null,
+        BereanResourceApiClient? apiClient = null,
+        IEnumerable<string>? dictionaryModuleIds = null)
     {
         var config = new AgentConfig
         {
@@ -95,9 +101,9 @@ public static class AgentFactory
         };
 
         var tools = new ToolRegistry();
-        var dictFiles = dictionaryFiles?.ToList() ?? [];
+        var moduleIds = dictionaryModuleIds?.ToList() ?? [];
 
-        // ── Step 2: lookup_word — direct SQLite query against .dctx files ────
+        // ── lookup_word: API-based (preferred) or SQLite fallback ─────────────
         tools.Register(
             [Description(
                 "Looks up a word, name, or theological term in the biblical dictionaries and lexicons. " +
@@ -106,78 +112,130 @@ public static class AgentFactory
                 "Returns the definition from all available dictionaries.")]
         async ([Description("Word, term, name, or Strong's number to look up (e.g. 'agape', 'pneuma', 'G25', 'hesed')")] string term) =>
             {
-                if (dictFiles.Count == 0)
-                    return "No dictionary files configured. Check DictionaryRootPath in appsettings.json.";
+                if (apiClient is not null)
+                    return await LookupWordViaApiAsync(apiClient, moduleIds, term);
 
-                var results = new System.Text.StringBuilder();
-                var found = 0;
-
-                foreach (var file in dictFiles)
-                {
-                    if (!File.Exists(file)) continue;
-
-                    try
-                    {
-                        var cs = $"Data Source={file};Mode=ReadOnly;";
-                        await using var conn = new SqliteConnection(cs);
-                        await conn.OpenAsync();
-
-                        var cmd = conn.CreateCommand();
-                        // Search by exact topic first, then prefix, then substring
-                        cmd.CommandText = """
-                            SELECT Topic, Definition FROM Dictionary
-                            WHERE Topic = @exact
-                            UNION
-                            SELECT Topic, Definition FROM Dictionary
-                            WHERE Topic LIKE @prefix AND Topic != @exact
-                            UNION
-                            SELECT Topic, Definition FROM Dictionary
-                            WHERE Topic LIKE @contains AND Topic NOT LIKE @prefix AND Topic != @exact
-                            LIMIT 5
-                            """;
-                        cmd.Parameters.AddWithValue("@exact", term);
-                        cmd.Parameters.AddWithValue("@prefix", term + "%");
-                        cmd.Parameters.AddWithValue("@contains", "%" + term + "%");
-
-                        var dictName = Path.GetFileNameWithoutExtension(file);
-                        await using var reader = await cmd.ExecuteReaderAsync();
-
-                        while (await reader.ReadAsync())
-                        {
-                            var topic = reader.GetString(0);
-                            var def = reader.GetString(1);
-                            // Strip RTF/HTML markup (reuse the same logic as ESwordReader)
-                            def = System.Text.RegularExpressions.Regex
-                                .Replace(def, @"<[^>]+>|\{[^}]*\}|\\[a-z]+\d*\s?", " ")
-                                .Trim();
-                            if (def.Length > 1000) def = def[..1000] + "…";
-
-                            results.AppendLine($"**{topic}** ({dictName}):");
-                            results.AppendLine(def);
-                            results.AppendLine();
-                            found++;
-                        }
-                    }
-                    catch { /* skip unreadable or encrypted files */ }
-                }
-
-                return found > 0
-                    ? results.ToString()
-                    : $"No definition found for '{term}' in the available dictionaries.";
+                return await LookupWordViaFilesAsync(dictionaryFiles?.ToList() ?? [], term);
             },
             "lookup_word"
         );
 
-        // ── Step 3: get_cross_references ──────────────────────────────────
+        // ── get_cross_references ──────────────────────────────────────────────
         tools.Register(
-     [Description("Returns cross-references and related passages for a Bible verse using online resources." + 
-     "Returns cross-references for a specific Bible verse. ALWAYS provide the 'verse' parameter — e.g. 'John 3:16'. Do not call this tool without a verse.")]
-        ([Description("Verse reference, e.g. 'John 3:16' or 'Romans 8:28'")] string verse = "John 3:16")
-         => $"Cross-references for {verse}: https://www.biblegateway.com/passage/?search={Uri.EscapeDataString(verse)}&version=NIV",
-     "get_cross_references"
- );
+            [Description(
+                "Returns cross-references and related passages for a Bible verse. " +
+                "ALWAYS provide the 'verse' parameter — e.g. 'John 3:16'. " +
+                "Do not call this tool without a verse.")]
+            ([Description("Verse reference, e.g. 'John 3:16' or 'Romans 8:28'")] string verse = "John 3:16")
+                => $"Cross-references for {verse}: https://www.biblegateway.com/passage/?search={Uri.EscapeDataString(verse)}&version=NIV",
+            "get_cross_references"
+        );
 
         return (config, tools);
+    }
+
+    // ── lookup_word implementations ───────────────────────────────────────────
+
+    private static async Task<string> LookupWordViaApiAsync(
+        BereanResourceApiClient client,
+        List<string> moduleIds,
+        string term)
+    {
+        if (moduleIds.Count == 0)
+            return "No dictionary modules configured for API lookup.";
+
+        var sb = new System.Text.StringBuilder();
+        int found = 0;
+
+        foreach (var moduleId in moduleIds)
+        {
+            // Try exact / Strong's lookup first, then fall back to search
+            var entry = await client.LookupWordAsync(moduleId, term);
+
+            if (entry is null)
+            {
+                var hits = await client.SearchDictionaryAsync(moduleId, term, limit: 3);
+                foreach (var hit in hits)
+                {
+                    AppendEntry(sb, hit.Topic, hit.Definition, moduleId);
+                    found++;
+                }
+            }
+            else
+            {
+                AppendEntry(sb, entry.Topic, entry.Definition, moduleId);
+                found++;
+            }
+        }
+
+        return found > 0
+            ? sb.ToString()
+            : $"No definition found for '{term}' in the available dictionaries.";
+
+        static void AppendEntry(System.Text.StringBuilder sb, string topic, string def, string source)
+        {
+            if (def.Length > 1000) def = def[..1000] + "…";
+            sb.AppendLine($"**{topic}** ({source}):");
+            sb.AppendLine(def);
+            sb.AppendLine();
+        }
+    }
+
+    private static async Task<string> LookupWordViaFilesAsync(
+        List<string> dictFiles, string term)
+    {
+        if (dictFiles.Count == 0)
+            return "No dictionary files configured. Check DictionaryRootPath in appsettings.json.";
+
+        var sb = new System.Text.StringBuilder();
+        int found = 0;
+
+        foreach (var file in dictFiles)
+        {
+            if (!File.Exists(file)) continue;
+            try
+            {
+                var cs = $"Data Source={file};Mode=ReadOnly;";
+                await using var conn = new Microsoft.Data.Sqlite.SqliteConnection(cs);
+                await conn.OpenAsync();
+
+                var cmd = conn.CreateCommand();
+                cmd.CommandText = """
+                    SELECT Topic, Definition FROM Dictionary
+                    WHERE Topic = @exact
+                    UNION
+                    SELECT Topic, Definition FROM Dictionary
+                    WHERE Topic LIKE @prefix AND Topic != @exact
+                    UNION
+                    SELECT Topic, Definition FROM Dictionary
+                    WHERE Topic LIKE @contains AND Topic NOT LIKE @prefix AND Topic != @exact
+                    LIMIT 5
+                    """;
+                cmd.Parameters.AddWithValue("@exact", term);
+                cmd.Parameters.AddWithValue("@prefix", term + "%");
+                cmd.Parameters.AddWithValue("@contains", "%" + term + "%");
+
+                var dictName = Path.GetFileNameWithoutExtension(file);
+                await using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    var topic = reader.GetString(0);
+                    var def = System.Text.RegularExpressions.Regex
+                        .Replace(reader.GetString(1), @"<[^>]+>|\{[^}]*\}|\\[a-z]+\d*\s?", " ")
+                        .Trim();
+                    if (def.Length > 1000) def = def[..1000] + "…";
+                    sb.AppendLine($"**{topic}** ({dictName}):");
+                    sb.AppendLine(def);
+                    sb.AppendLine();
+                    found++;
+                }
+            }
+            catch { /* skip unreadable or encrypted files */ }
+        }
+
+        return found > 0
+            ? sb.ToString()
+            : $"No definition found for '{term}' in the available dictionaries.";
     }
 
     // ── C# Troubleshooting ────────────────────────────────────────────────

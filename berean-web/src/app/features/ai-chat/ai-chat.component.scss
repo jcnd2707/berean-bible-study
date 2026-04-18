@@ -78,6 +78,18 @@
   background: rgba(123, 110, 245, 0.15);
   color: rgba(160, 150, 255, 0.7);
   border: 0.5px solid rgba(123, 110, 245, 0.25);
+
+  &--indexing {
+    background: rgba(255, 180, 50, 0.12);
+    color: rgba(255, 200, 80, 0.85);
+    border-color: rgba(255, 180, 50, 0.3);
+    animation: rag-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes rag-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
 }
 
 .reconnect-btn {

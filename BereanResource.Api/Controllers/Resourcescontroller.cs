@@ -5,7 +5,7 @@ namespace BereanResourceApi.Controllers;
 
 [ApiController]
 [Route("api/resources")]
-public class ResourcesController(ResourceDiscoveryService discovery) : ControllerBase
+public class ResourcesController(ResourceDiscoveryService discovery, BookService bookService) : ControllerBase
 {
     [HttpGet("bibles")]
     public IActionResult GetBibles() => Ok(discovery.GetBibles());
@@ -21,4 +21,7 @@ public class ResourcesController(ResourceDiscoveryService discovery) : Controlle
 
     [HttpGet("topic-notes")]
     public IActionResult GetTopicNotes() => Ok(discovery.GetTopicNotes());
+
+    [HttpGet("books")]
+    public IActionResult GetBooks() => Ok(bookService.GetAvailableBooks());
 }

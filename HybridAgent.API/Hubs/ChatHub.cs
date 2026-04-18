@@ -28,11 +28,13 @@ namespace HybridAgent.API.Hubs;
 public class ChatHub : Hub
 {
     private readonly AgentSessionService _sessions;
+    private readonly IHubContext<ChatHub> _hubContext;
     private readonly ILogger<ChatHub> _log;
 
-    public ChatHub(AgentSessionService sessions, ILogger<ChatHub> log)
+    public ChatHub(AgentSessionService sessions, IHubContext<ChatHub> hubContext, ILogger<ChatHub> log)
     {
         _sessions = sessions;
+        _hubContext = hubContext;
         _log = log;
     }
 
@@ -70,6 +72,14 @@ public class ChatHub : Hub
 
             await Clients.Caller.SendAsync("AgentSelected",
                 agentType, pipeline.CloudAvailable, status.ChunkCount);
+
+            if (pipeline.IsIndexing)
+            {
+                await Clients.Caller.SendAsync("RagIndexing",
+                    "Building index in background — chat is available now.");
+
+                AttachIndexingContinuation(pipeline, Context.ConnectionId);
+            }
         }
         catch (Exception ex)
         {
@@ -189,19 +199,53 @@ public class ChatHub : Hub
             return;
         }
 
-        await Clients.Caller.SendAsync("RagIndexing", "Indexing documents…");
+        await Clients.Caller.SendAsync("RagIndexing", "Re-indexing in background…");
 
         try
         {
             var result = await _sessions.ReindexAsync(
                 Context.ConnectionId, Context.ConnectionAborted);
 
-            await Clients.Caller.SendAsync("RagIndexed", result.Success, result.Message);
+            // Immediately acknowledge start; the continuation will send the final RagIndexed
+            await Clients.Caller.SendAsync("RagIndexing", result.Message);
+
+            var pipeline = _sessions.GetPipeline(Context.ConnectionId);
+            if (pipeline is not null && pipeline.IsIndexing)
+                AttachIndexingContinuation(pipeline, Context.ConnectionId);
+            else
+                await Clients.Caller.SendAsync("RagIndexed", true, "Index already up to date.");
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "[Hub] ReindexDocuments failed");
             await Clients.Caller.SendAsync("Error", $"Indexing failed: {ex.Message}");
         }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    private void AttachIndexingContinuation(HybridAgent.Core.HybridPipeline pipeline, string connectionId)
+    {
+        var hubContext = _hubContext;
+        var log = _log;
+
+        _ = pipeline.IndexingTask.ContinueWith(async t =>
+        {
+            var client = hubContext.Clients.Client(connectionId);
+            if (t.IsCanceled)
+            {
+                // Client disconnected — don't push anything
+                return;
+            }
+            if (t.IsFaulted)
+            {
+                log.LogError(t.Exception, "[Hub] Background indexing failed for {ConnId}", connectionId);
+                await client.SendAsync("RagIndexed", false,
+                    $"Indexing failed: {t.Exception?.InnerException?.Message ?? t.Exception?.Message}");
+                return;
+            }
+            await client.SendAsync("RagIndexed", true,
+                $"Index ready — {pipeline.IndexedChunks} chunks");
+        }, TaskScheduler.Default);
     }
 }

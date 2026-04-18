@@ -1,0 +1,153 @@
+<div class="book-reader-shell" [style]="'--book-font-size:' + prefs.fontSize() + 'px'">
+
+  <!-- ── Top bar ── -->
+  <div class="book-bar">
+
+    <!-- Book picker button -->
+    <div class="picker-wrap">
+      <button class="book-pick-btn" (click)="showBookPicker.set(!showBookPicker())">
+        @if (activeBook()) {
+          <span class="book-name">{{ activeBook()!.title }}</span>
+        } @else {
+          <span class="book-name book-name--empty">Select a book…</span>
+        }
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+
+      @if (showBookPicker()) {
+        <div class="book-dropdown">
+          @if (books().length === 0) {
+            <div class="dropdown-empty">No books available.</div>
+          }
+          @for (book of books(); track book.moduleId) {
+            <div class="book-option" (click)="selectBook(book)"
+                 [class.book-option--active]="book.moduleId === activeBook()?.moduleId">
+              <span class="book-opt-title">{{ book.title }}</span>
+              @if (book.author) {
+                <span class="book-opt-author">{{ book.author }}</span>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Chapter nav -->
+    <button class="bar-btn" [disabled]="!canGoPrev()" (click)="prevChapter()" title="Previous chapter">◀</button>
+    <button class="bar-btn" [disabled]="!canGoNext()" (click)="nextChapter()" title="Next chapter">▶</button>
+
+    <div class="bar-sep"></div>
+
+    <!-- Search toggle -->
+    <button class="bar-btn" [class.bar-btn--active]="showSearch()"
+            (click)="showSearch.set(!showSearch())" title="Search in book">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+        <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- ── Search panel ── -->
+  @if (showSearch() && activeBook()) {
+    <div class="search-bar">
+      <input class="search-input" type="text" placeholder="Search in {{ activeBook()!.title }}…"
+             [value]="searchQuery()"
+             (input)="onSearchInput($any($event.target).value)"
+             autofocus />
+      @if (searching()) {
+        <span class="searching-hint">Searching…</span>
+      }
+    </div>
+
+    @if (searchResults().length > 0) {
+      <div class="search-results">
+        @for (r of searchResults(); track r.chapterId) {
+          <div class="search-result" (click)="navigateToSearchResult(r.chapterId)">
+            <span class="sr-chapter">{{ r.chapterTitle }}</span>
+            <span class="sr-snippet" [innerHTML]="r.snippet"></span>
+          </div>
+        }
+      </div>
+    }
+  }
+
+  <!-- ── Main area ── -->
+  <div class="main-area">
+
+    <!-- Chapter sidebar -->
+    @if (activeBook()) {
+      <div class="chapter-sidebar">
+        <div class="sidebar-label">Chapters</div>
+        @if (loadingChapters()) {
+          <div class="sidebar-loading">
+            <div class="loading-dots"><span></span><span></span><span></span></div>
+          </div>
+        } @else {
+          <div class="chapter-list">
+            @for (ch of chapters(); track ch.id) {
+              <div class="chapter-item"
+                   [class.active]="ch.id === activeChapterId()"
+                   (click)="loadChapter(ch.id)"
+                   [title]="ch.title">
+                <span class="ch-num">{{ ch.chapterNumber }}</span>
+                <span class="ch-title">{{ ch.title }}</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Reading pane -->
+    <div class="reading-pane" #readingPane>
+
+      @if (!activeBook()) {
+        <div class="empty-state">
+          <div class="empty-icon">📖</div>
+          <p>Select a book from the dropdown above to start reading.</p>
+        </div>
+      } @else if (loadingContent()) {
+        <div class="empty-state">
+          <div class="loading-dots"><span></span><span></span><span></span></div>
+        </div>
+      } @else if (error()) {
+        <div class="empty-state">
+          <p class="error-text">{{ error() }}</p>
+        </div>
+      } @else {
+
+        @if (activeChapter()) {
+          <h2 class="chapter-heading">{{ activeChapter()!.title }}</h2>
+        }
+
+        @for (p of paragraphs(); track p.id) {
+          <div class="para"
+               [class.para--poem]="p.cssClass === 'poem-noindent'"
+               [class.para--poem-source]="p.cssClass === 'poem-source'"
+               [class.para--center]="p.cssClass === 'center'"
+               [class.para--list]="p.cssClass === 'list'"
+               [innerHTML]="p.content">
+          </div>
+        }
+
+        <!-- Chapter navigation footer -->
+        @if (paragraphs().length > 0) {
+          <div class="chapter-footer">
+            <button class="foot-btn" [disabled]="!canGoPrev()" (click)="prevChapter()">
+              ← {{ canGoPrev() ? chapters()[activeChapterIdx() - 1].title : '' }}
+            </button>
+            <button class="foot-btn foot-btn--next" [disabled]="!canGoNext()" (click)="nextChapter()">
+              {{ canGoNext() ? chapters()[activeChapterIdx() + 1].title : '' }} →
+            </button>
+          </div>
+        }
+
+      }
+    </div>
+
+  </div>
+
+</div>

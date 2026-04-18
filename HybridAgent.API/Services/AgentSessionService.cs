@@ -24,6 +24,8 @@ public class AgentSessionService
     private readonly ConcurrentDictionary<string, HybridPipeline> _sessions = new();
     private readonly ConcurrentDictionary<string, AgentType> _agentTypes = new();
     private readonly ConcurrentDictionary<string, string> _languages = new();
+    // Per-session CTS so RemoveSession() can cancel background indexing on disconnect
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _sessionCts = new();
 
     public AgentSessionService(ILoggerFactory logFactory, IConfiguration config)
     {
@@ -56,9 +58,21 @@ public class AgentSessionService
     public async Task<HybridPipeline> SelectAgentAsync(
         string connectionId,
         AgentType agentType,
-        CancellationToken ct = default)
+        CancellationToken connectionCt = default)
     {
         _log.LogInformation("[Session] {ConnId} selecting agent: {Agent}", connectionId, agentType);
+
+        // Cancel any previous session's background work for this connection
+        if (_sessionCts.TryRemove(connectionId, out var oldCts))
+        {
+            oldCts.Cancel();
+            oldCts.Dispose();
+        }
+
+        // New CTS linked to the connection abort token
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(connectionCt);
+        _sessionCts[connectionId] = cts;
+        var ct = cts.Token;
 
         var language = GetLanguage(connectionId);
 
@@ -109,6 +123,11 @@ public class AgentSessionService
 
     public void RemoveSession(string connectionId)
     {
+        if (_sessionCts.TryRemove(connectionId, out var cts))
+        {
+            cts.Cancel();
+            cts.Dispose();
+        }
         _sessions.TryRemove(connectionId, out _);
         _agentTypes.TryRemove(connectionId, out _);
         _languages.TryRemove(connectionId, out _);
@@ -116,7 +135,7 @@ public class AgentSessionService
     }
 
     public async Task<RagIndexResult> ReindexAsync(
-        string connectionId, CancellationToken ct = default)
+        string connectionId, CancellationToken connectionCt = default)
     {
         var agentType = GetAgentType(connectionId);
         if (agentType is null) return new RagIndexResult(false, "No agent selected.");
@@ -132,9 +151,9 @@ public class AgentSessionService
         if (ragConfig is not null && File.Exists(ragConfig.RagDbPath))
             File.Delete(ragConfig.RagDbPath);
 
-        await SelectAgentAsync(connectionId, agentType.Value, ct);
-        var pipeline = GetPipeline(connectionId)!;
-        return new RagIndexResult(true, $"Re-indexed {pipeline.IndexedChunks} chunks");
+        // SelectAgentAsync cancels the old session CTS and starts a new background task
+        await SelectAgentAsync(connectionId, agentType.Value, connectionCt);
+        return new RagIndexResult(true, "Re-index started in background.");
     }
 
     public RagStatusResult GetRagStatus(string connectionId)

@@ -162,6 +162,13 @@ public class RagPipeline
             chunks.Count, Path.GetFileName(sourcePath));
     }
 
+    /// <summary>
+    /// Embeds and stores pre-built chunks. Used by ApiIndexer.
+    /// </summary>
+    public Task IndexChunksAsync(
+        List<DocumentChunk> chunks, string sourceName, CancellationToken ct = default)
+        => EmbedAndStoreAsync(chunks, sourceName, ct);
+
     // ── Persistence ────────────────────────────────────────────────────────
 
     public Task SaveAsync(string? _ = null) => Task.CompletedTask;
@@ -255,7 +262,12 @@ public class RagPipeline
 
     // ── Factory ────────────────────────────────────────────────────────────
 
-    public static async Task<RagPipeline> CreateAsync(
+    /// <summary>
+    /// File-based factory. Returns the pipeline immediately; if indexing is needed
+    /// the second element of the tuple is the background indexing task.
+    /// The caller is responsible for tracking and cancelling it.
+    /// </summary>
+    public static async Task<(RagPipeline pipeline, Task indexingWork)> CreateAsync(
         AgentRagConfig config,
         ILoggerFactory logFactory,
         string embeddingModel = "nomic-embed-text",
@@ -266,7 +278,7 @@ public class RagPipeline
         var embedder = new EmbeddingService(embeddingModel, ollamaEndpoint);
         var store = new SqliteVectorStore(config.RagDbPath);
 
-        await store.InitialiseAsync(ct);  // also runs schema migration
+        await store.InitialiseAsync(ct);
 
         var pipeline = new RagPipeline(embedder, store, log);
 
@@ -274,7 +286,7 @@ public class RagPipeline
         {
             log.LogInformation("[RAG] Loaded {Count} chunks from {Db}",
                 pipeline.IndexedChunks, config.RagDbPath);
-            return pipeline;
+            return (pipeline, Task.CompletedTask);
         }
 
         var files = config.ResolveFiles().ToList();
@@ -282,18 +294,59 @@ public class RagPipeline
         if (files.Count == 0)
         {
             log.LogWarning("[RAG] No files found in '{Root}' matching [{Exts}]",
-                config.ModulesRootPath,
-                string.Join(", ", config.AllowedExtensions));
-            return pipeline;
+                config.ModulesRootPath, string.Join(", ", config.AllowedExtensions));
+            return (pipeline, Task.CompletedTask);
         }
 
-        log.LogInformation("[RAG] Indexing {Count} file(s) from '{Root}'",
-            files.Count, config.ModulesRootPath);
+        log.LogInformation("[RAG] Starting background indexing of {Count} file(s)", files.Count);
 
-        await pipeline.IndexFilesAsync(files, ct: ct);
-        log.LogInformation("[RAG] Complete — {Count} chunks indexed", pipeline.IndexedChunks);
+        var indexingWork = Task.Run(async () =>
+        {
+            await pipeline.IndexFilesAsync(files, ct: ct);
+            log.LogInformation("[RAG] Background indexing complete — {Count} chunks", pipeline.IndexedChunks);
+        }, ct);
 
-        return pipeline;
+        return (pipeline, indexingWork);
+    }
+
+    /// <summary>
+    /// API-driven factory. Returns the pipeline immediately; if indexing is needed
+    /// the second element of the tuple is the background indexing task.
+    /// </summary>
+    public static async Task<(RagPipeline pipeline, Task indexingWork)> CreateFromApiAsync(
+        AgentRagConfig config,
+        BereanResourceApiClient client,
+        ILoggerFactory logFactory,
+        string embeddingModel = "nomic-embed-text",
+        string ollamaEndpoint = "http://localhost:11434",
+        string language = "en",
+        CancellationToken ct = default)
+    {
+        var log = logFactory.CreateLogger<RagPipeline>();
+        var embedder = new EmbeddingService(embeddingModel, ollamaEndpoint);
+        var store = new SqliteVectorStore(config.RagDbPath);
+
+        await store.InitialiseAsync(ct);
+
+        var pipeline = new RagPipeline(embedder, store, log);
+
+        if (await pipeline.LoadAsync(ct))
+        {
+            log.LogInformation("[RAG] Loaded {Count} chunks from existing DB: {Db}",
+                pipeline.IndexedChunks, config.RagDbPath);
+            return (pipeline, Task.CompletedTask);
+        }
+
+        log.LogInformation("[RAG] Starting background indexing from API ({Url})…",
+            config.ResourceApiBaseUrl);
+
+        var indexingWork = Task.Run(async () =>
+        {
+            await ApiIndexer.IndexAllAsync(pipeline, client, language, ct: ct, log: log);
+            log.LogInformation("[RAG] Background indexing complete — {Count} chunks", pipeline.IndexedChunks);
+        }, ct);
+
+        return (pipeline, indexingWork);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

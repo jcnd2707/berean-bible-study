@@ -70,6 +70,8 @@ public class QueryRouter
         _log = log;
     }
 
+    public int ChunkCount => _rag.IndexedChunks;
+
     // ── Main entry point ───────────────────────────────────────────────────
 
     /// <summary>
@@ -175,11 +177,11 @@ public class QueryRouter
         string query,
         CancellationToken ct)
     {
-        // Fan-out across Bible, Commentary, and Topic indexes
+        // Fan-out across Bible, Commentary, Topic, and prose Books indexes
         var ctx = await _rag.BuildMultiSourceContextAsync(
             query,
-            sourceTypes: [SourceType.Bible, SourceType.Commentary, SourceType.Topic],
-            topKPerType: _ragConfig.TopK / 3 + 1,
+            sourceTypes: [SourceType.Bible, SourceType.Commentary, SourceType.Topic, SourceType.Book],
+            topKPerType: _ragConfig.TopK / 4 + 1,
             lambda: _ragConfig.MmrLambda,
             language: _language,
             ct: ct);

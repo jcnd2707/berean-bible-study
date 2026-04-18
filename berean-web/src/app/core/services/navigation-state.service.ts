@@ -22,6 +22,7 @@ export class NavigationStateService {
   private readonly _showCompare = signal<boolean>(false);
   private readonly _notedReferences = signal<Set<string>>(new Set());
   private readonly _showNotesList = signal<boolean>(false);
+  private readonly _showBooks = signal<boolean>(false);
 
   readonly location = this._location.asReadonly();
   readonly maxChapter = this._maxChapter.asReadonly();
@@ -35,6 +36,7 @@ export class NavigationStateService {
   readonly showCompare = this._showCompare.asReadonly();
   readonly notedReferences = this._notedReferences.asReadonly();
   readonly showNotesList = this._showNotesList.asReadonly();
+  readonly showBooks = this._showBooks.asReadonly();
 
   readonly moduleId = computed(() => this._location()?.moduleId ?? null);
   readonly book = computed(() => this._location()?.book ?? null);
@@ -74,9 +76,19 @@ export class NavigationStateService {
   }
   toggleNotesList(): void {
     this._showNotesList.update((v) => !v);
+    this._showBooks.set(false);
   }
   closeNotesList(): void {
     this._showNotesList.set(false);
+  }
+  toggleBooks(): void {
+    this._showBooks.update((v) => !v);
+    this._showNotesList.set(false);
+    this._showSearch.set(false);
+    this._showCompare.set(false);
+  }
+  closeBooks(): void {
+    this._showBooks.set(false);
   }
 
   setNotedReferences(refs: string[]): void {

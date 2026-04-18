@@ -31,6 +31,7 @@ import { PreferencesService } from "../../core/services/preferences.service";
 import { SearchPanelComponent } from "../search/search-panel.component";
 import { ComparePanelComponent } from "../compare/compare-panel.component";
 import { NotesListComponent } from "../notes/notes-list.component";
+import { BookReaderComponent } from "../books/book-reader.component";
 
 interface TabModule {
   moduleId: string;
@@ -47,6 +48,7 @@ interface TabModule {
     SearchPanelComponent,
     ComparePanelComponent,
     NotesListComponent,
+    BookReaderComponent,
   ],
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",

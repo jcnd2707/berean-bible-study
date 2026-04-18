@@ -1,7 +1,6 @@
 <div
   class="reader-shell"
   [class.reader-shell--dark]="prefs.readerTheme() === 'dark'"
-  [style]="'--reader-font-size:' + prefs.fontSize() + 'px'"
 >
   <!-- Translation tab bar -->
   <div class="trans-bar">
@@ -42,11 +41,19 @@
     </div>
   }
 
+  <!-- Books overlay -->
+  @if (navState.showBooks()) {
+    <div class="search-overlay">
+      <app-book-reader />
+    </div>
+  }
+
   <!-- Passage content -->
   @if (
     !navState.showSearch() &&
     !navState.showCompare() &&
-    !navState.showNotesList()
+    !navState.showNotesList() &&
+    !navState.showBooks()
   ) {
     <!-- Passage heading -->
     @if (passageTitle() && !loading()) {

@@ -17,7 +17,19 @@ public class SqliteVectorStore : IAsyncDisposable
     private readonly string _dbPath;
     private readonly List<DocumentChunk> _cache = [];
 
-    public int Count => _cache.Count;
+    // Guards _cache against concurrent reads (background indexing) and writes (query handlers).
+    // Lock is never held across await boundaries — only around synchronous cache mutations/reads.
+    private readonly ReaderWriterLockSlim _cacheLock = new(LockRecursionPolicy.NoRecursion);
+
+    public int Count
+    {
+        get
+        {
+            _cacheLock.EnterReadLock();
+            try { return _cache.Count; }
+            finally { _cacheLock.ExitReadLock(); }
+        }
+    }
 
     public SqliteVectorStore(string dbPath)
     {
@@ -111,7 +123,11 @@ public class SqliteVectorStore : IAsyncDisposable
             pLang.Value = chunk.Language;
 
             await cmd.ExecuteNonQueryAsync(ct);
-            _cache.Add(chunk);
+
+            // Write lock held only for the synchronous cache mutation, never across awaits
+            _cacheLock.EnterWriteLock();
+            try { _cache.Add(chunk); }
+            finally { _cacheLock.ExitWriteLock(); }
         }
 
         await tx.CommitAsync(ct);
@@ -135,13 +151,14 @@ public class SqliteVectorStore : IAsyncDisposable
             "       SourceType, Language " +
             "FROM Chunks";
 
-        _cache.Clear();
+        // Build new list without holding any lock across async reads
+        var loaded = new List<DocumentChunk>();
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))
         {
             var blob = (byte[])reader["Embedding"];
-            _cache.Add(new DocumentChunk
+            loaded.Add(new DocumentChunk
             {
                 Id = reader.GetString(0),
                 Source = reader.GetString(1),
@@ -158,12 +175,24 @@ public class SqliteVectorStore : IAsyncDisposable
             });
         }
 
+        // Swap into cache atomically
+        _cacheLock.EnterWriteLock();
+        try
+        {
+            _cache.Clear();
+            _cache.AddRange(loaded);
+        }
+        finally { _cacheLock.ExitWriteLock(); }
+
         return _cache.Count > 0;
     }
 
     public async Task ClearAsync(CancellationToken ct = default)
     {
-        _cache.Clear();
+        _cacheLock.EnterWriteLock();
+        try { _cache.Clear(); }
+        finally { _cacheLock.ExitWriteLock(); }
+
         if (!File.Exists(_dbPath)) return;
 
         await using var conn = OpenConnection();
@@ -187,10 +216,17 @@ public class SqliteVectorStore : IAsyncDisposable
         SourceType? sourceType = null,
         string? language = null)
     {
-        if (_cache.Count == 0) return [];
+        // Snapshot under read lock — LINQ runs on the snapshot, not the live list
+        List<DocumentChunk> snapshot;
+        _cacheLock.EnterReadLock();
+        try
+        {
+            if (_cache.Count == 0) return [];
+            snapshot = [.. _cache];
+        }
+        finally { _cacheLock.ExitReadLock(); }
 
-        // Apply optional filters before scoring
-        var pool = _cache.AsEnumerable();
+        var pool = snapshot.AsEnumerable();
         if (sourceType.HasValue) pool = pool.Where(c => c.SourceType == sourceType.Value);
         if (language is not null) pool = pool.Where(c => c.Language == language);
 
@@ -242,7 +278,12 @@ public class SqliteVectorStore : IAsyncDisposable
         SourceType? sourceType = null,
         string? language = null)
     {
-        var q = _cache.Where(c =>
+        List<DocumentChunk> snapshot;
+        _cacheLock.EnterReadLock();
+        try { snapshot = [.. _cache]; }
+        finally { _cacheLock.ExitReadLock(); }
+
+        var q = snapshot.Where(c =>
             c.BookNumber == bookNumber &&
             c.ChapterBegin == chapter &&
             c.VerseBegin <= verse &&
@@ -304,5 +345,9 @@ public class SqliteVectorStore : IAsyncDisposable
     private SqliteConnection OpenConnection() =>
         new($"Data Source={_dbPath};");
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public ValueTask DisposeAsync()
+    {
+        _cacheLock.Dispose();
+        return ValueTask.CompletedTask;
+    }
 }

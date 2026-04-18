@@ -7,7 +7,11 @@
     @if (hubState() === "disconnected") {
       <button class="reconnect-btn" (click)="reconnect()">Reconnect</button>
     }
-    @if (ragChunks() > 0) {
+    @if (isIndexing()) {
+      <span class="rag-badge rag-badge--indexing" [title]="indexingMessage()">
+        Indexing…
+      </span>
+    } @else if (ragChunks() > 0) {
       <span class="rag-badge">{{ ragChunks() }} chunks</span>
     }
     <div class="head-actions">

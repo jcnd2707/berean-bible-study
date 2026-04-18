@@ -14,6 +14,21 @@ export interface AgentSelectedEvent {
   ragChunks: number;
 }
 
+export interface RagIndexingEvent {
+  message: string;
+}
+
+export interface RagIndexedEvent {
+  success: boolean;
+  message: string;
+}
+
+export interface RagStatusEvent {
+  hasIndex: boolean;
+  chunkCount: number;
+  details: string;
+}
+
 @Injectable({ providedIn: "root" })
 export class AgentHubService implements OnDestroy {
   private readonly HUB_URL = "http://localhost:5050/hubs/chat";
@@ -26,6 +41,9 @@ export class AgentHubService implements OnDestroy {
   readonly agentSelected$ = new Subject<AgentSelectedEvent>();
   readonly error$ = new Subject<string>();
   readonly reset$ = new Subject<void>();
+  readonly ragIndexing$ = new Subject<RagIndexingEvent>();
+  readonly ragIndexed$ = new Subject<RagIndexedEvent>();
+  readonly ragStatus$ = new Subject<RagStatusEvent>();
 
   constructor(private zone: NgZone) {
     this.buildConnection();
@@ -61,6 +79,15 @@ export class AgentHubService implements OnDestroy {
     this.hub.on("ConversationReset", () =>
       this.zone.run(() => this.reset$.next()),
     );
+    this.hub.on("RagIndexing", (message: string) =>
+      this.zone.run(() => this.ragIndexing$.next({ message })),
+    );
+    this.hub.on("RagIndexed", (success: boolean, message: string) =>
+      this.zone.run(() => this.ragIndexed$.next({ success, message })),
+    );
+    this.hub.on("RagStatus", (hasIndex: boolean, chunkCount: number, details: string) =>
+      this.zone.run(() => this.ragStatus$.next({ hasIndex, chunkCount, details })),
+    );
 
     this.hub.onreconnecting(() =>
       this.zone.run(() => this.state$.next("reconnecting")),
@@ -95,6 +122,10 @@ export class AgentHubService implements OnDestroy {
 
   async resetConversation(): Promise<void> {
     await this.hub.send("ResetConversation");
+  }
+
+  async getRagStatus(): Promise<void> {
+    await this.hub.send("GetRagStatus");
   }
 
   async reconnect(): Promise<void> {

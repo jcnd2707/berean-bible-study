@@ -33,6 +33,7 @@ public class Program
         builder.Services.AddSingleton<DictionaryService>();
         builder.Services.AddSingleton<NotesService>();
         builder.Services.AddSingleton<CrossReferenceService>();
+        builder.Services.AddSingleton<BookService>();
 
         // ── MVC ───────────────────────────────────────────────────────────────
         builder.Services.AddControllers();

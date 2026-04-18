@@ -17,4 +17,5 @@ public class SubFolderConfig
     public string Dictionaries { get; set; } = "Dictionaries";
     public string Lexicons { get; set; } = "Lexicons";
     public string TopicNotes { get; set; } = "TopicNotes";
+    public string Books { get; set; } = "Books";
 }

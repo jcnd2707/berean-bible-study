@@ -67,6 +67,14 @@ import { PreferencesService } from "../../core/services/preferences.service";
       >
         My Notes
       </button>
+      <button
+        class="tb-btn"
+        [class.tb-btn--active]="nav.showBooks()"
+        (click)="nav.toggleBooks()"
+        title="Read books"
+      >
+        Books
+      </button>
 
       <div class="tb-sep"></div>
 

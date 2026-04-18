@@ -12,6 +12,7 @@ public enum SourceType
     Dictionary = 3,   // .dctx / .lexx
     Topic = 4,   // .topx / .devx / .refx
     PlainText = 5,   // .txt / .md / .cs etc.
+    Book = 6,    // prose books from BereanResource.Api /api/books
 }
 
 /// <summary>

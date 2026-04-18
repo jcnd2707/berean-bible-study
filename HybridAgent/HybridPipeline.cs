@@ -30,7 +30,10 @@ public class HybridPipeline
     private string _lastUserInput = string.Empty;
 
     public bool CloudAvailable => _verdict is not null;
-    public int IndexedChunks => _router is null ? 0 : -1; // -1 = router owns the store
+    public int IndexedChunks => _router?.ChunkCount ?? 0;
+
+    public Task IndexingTask { get; private set; } = Task.CompletedTask;
+    public bool IsIndexing => !IndexingTask.IsCompleted;
 
     public HybridPipeline(
         AgentConfig config,
@@ -112,6 +115,7 @@ public class HybridPipeline
 
     /// <summary>
     /// Generic factory for Car and CSharp agents (no router, optional plain-text RAG).
+    /// Returns immediately; indexing (if needed) runs in the background via IndexingTask.
     /// </summary>
     public static async Task<HybridPipeline> CreateAsync(
         AgentConfig agentConfig,
@@ -123,26 +127,31 @@ public class HybridPipeline
         CancellationToken ct = default)
     {
         QueryRouter? router = null;
+        Task indexingWork = Task.CompletedTask;
 
         if (ragConfig is not null)
         {
             Directory.CreateDirectory(
                 Path.GetDirectoryName(ragConfig.RagDbPath) ?? "index");
 
-            var rag = await RagPipeline.CreateAsync(
+            (var rag, indexingWork) = await RagPipeline.CreateAsync(
                 ragConfig, logFactory, embeddingModel, ollamaEndpoint, ct);
 
-            // Non-Bible agents use a simple conceptual-only router
             router = new QueryRouter(rag, ragConfig, ragConfig.Language,
                 logFactory.CreateLogger<QueryRouter>());
         }
 
-        return new HybridPipeline(agentConfig, registry, logFactory, router, ragConfig);
+        var pipeline = new HybridPipeline(agentConfig, registry, logFactory, router, ragConfig);
+        pipeline.IndexingTask = indexingWork;
+        return pipeline;
     }
 
     /// <summary>
-    /// Bible agent factory — builds the full router with language awareness
-    /// and wires dictionary files into the lookup_word tool.
+    /// Bible agent factory — builds the full router with language awareness.
+    ///
+    /// When <see cref="AgentRagConfig.ResourceApiBaseUrl"/> is set, indexing and
+    /// dictionary lookups are driven by BereanResource.Api (API mode).
+    /// Otherwise falls back to direct e-Sword file reading (legacy mode).
     /// </summary>
     public static async Task<HybridPipeline> CreateBibleAsync(
         AgentConfig agentConfig,
@@ -156,23 +165,46 @@ public class HybridPipeline
         Directory.CreateDirectory(
             Path.GetDirectoryName(ragConfig.RagDbPath) ?? "index");
 
-        var rag = await RagPipeline.CreateAsync(
-            ragConfig, logFactory, embeddingModel, ollamaEndpoint, ct);
-
-        // Resolve dictionary files for the lookup_word tool
-        var dictFiles = ragConfig.ResolveDictionaryFiles().ToList();
-
-        // Build tools with dictionary files injected
-        var (_, tools) = AgentFactory.CreateBibleAgent(
-            agentConfig.OpenAiApiKey, dictFiles);
-
-        // Build router with language from config (can be overridden at runtime)
         var routerLanguage = string.IsNullOrWhiteSpace(language)
             ? ragConfig.Language : language;
+
+        RagPipeline rag;
+        ToolRegistry tools;
+        Task indexingWork;
+
+        if (!string.IsNullOrWhiteSpace(ragConfig.ResourceApiBaseUrl))
+        {
+            // ── API mode ──────────────────────────────────────────────────
+            var client = new BereanResourceApiClient(ragConfig.ResourceApiBaseUrl);
+
+            (rag, indexingWork) = await RagPipeline.CreateFromApiAsync(
+                ragConfig, client, logFactory, embeddingModel, ollamaEndpoint,
+                routerLanguage, ct);
+
+            var dictModules = await client.GetDictionariesAsync(ct);
+            var moduleIds = dictModules.Select(m => m.ModuleId).ToList();
+
+            (_, tools) = AgentFactory.CreateBibleAgent(
+                agentConfig.OpenAiApiKey,
+                apiClient: client,
+                dictionaryModuleIds: moduleIds);
+        }
+        else
+        {
+            // ── Legacy file mode ──────────────────────────────────────────
+            (rag, indexingWork) = await RagPipeline.CreateAsync(
+                ragConfig, logFactory, embeddingModel, ollamaEndpoint, ct);
+
+            var dictFiles = ragConfig.ResolveDictionaryFiles().ToList();
+            (_, tools) = AgentFactory.CreateBibleAgent(
+                agentConfig.OpenAiApiKey, dictionaryFiles: dictFiles);
+        }
 
         var router = new QueryRouter(rag, ragConfig, routerLanguage,
             logFactory.CreateLogger<QueryRouter>());
 
-        return new HybridPipeline(agentConfig, tools, logFactory, router, ragConfig);
+        var pipeline = new HybridPipeline(agentConfig, tools, logFactory, router, ragConfig);
+        pipeline.IndexingTask = indexingWork;
+        return pipeline;
     }
 }

@@ -158,3 +158,38 @@ export interface SearchParams {
   testament?: Testament;
   book?: string; // book abbreviation e.g. "Rom"
 }
+
+// ── Books ─────────────────────────────────────────────────────────────────────
+
+export interface BookSummary {
+  moduleId: string;
+  title: string;
+  author?: string;
+  publisher?: string;
+  language?: string;
+}
+
+export interface BookMeta extends BookSummary {
+  isbn?: string;
+  rights?: string;
+  importedAt?: string;
+}
+
+export interface BookChapter {
+  id: number;
+  chapterNumber: number;
+  title: string;
+  orderIndex: number;
+}
+
+export interface BookParagraph {
+  id: number;
+  orderedIndex: number;
+  cssClass: string;
+  content: string; // inner HTML, safe to render
+}
+
+export interface BookChapterContent {
+  chapter: BookChapter;
+  paragraphs: BookParagraph[];
+}

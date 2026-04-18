@@ -23,6 +23,12 @@ public class AgentRagConfig
     /// </summary>
     public string DictionaryRootPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Base URL of the BereanResource.Api (e.g. "http://localhost:5000").
+    /// When set, RAG indexing is driven by the API instead of local e-Sword files.
+    /// </summary>
+    public string ResourceApiBaseUrl { get; set; } = string.Empty;
+
     // ── MMR tuning ─────────────────────────────────────────────────────────
     public int TopK { get; set; } = 8;
     public float MmrLambda { get; set; } = 0.6f;

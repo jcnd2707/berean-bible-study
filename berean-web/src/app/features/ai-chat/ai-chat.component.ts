@@ -17,6 +17,10 @@ import {
   AgentHubService,
   HubState,
 } from "../../core/services/agent-hub.service";
+import type {
+  RagIndexingEvent,
+  RagIndexedEvent,
+} from "../../core/services/agent-hub.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 
 export interface ChatMessage {
@@ -62,6 +66,8 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   readonly ragChunks = signal(0);
   readonly cloudAvail = signal(false);
   readonly error = signal<string | null>(null);
+  readonly isIndexing = signal(false);
+  readonly indexingMessage = signal("");
 
   readonly quickAsks = QUICK_ASKS;
 
@@ -138,6 +144,24 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.hub.reset$.subscribe(() => {
         this.messages.set([]);
         this.error.set(null);
+      }),
+
+      this.hub.ragIndexing$.subscribe((ev: RagIndexingEvent) => {
+        this.isIndexing.set(true);
+        this.indexingMessage.set(ev.message);
+      }),
+
+      this.hub.ragIndexed$.subscribe((ev: RagIndexedEvent) => {
+        this.isIndexing.set(false);
+        this.indexingMessage.set("");
+        if (ev.success) {
+          // Fetch the real chunk count now that indexing is done
+          this.hub.getRagStatus().catch(() => {});
+        }
+      }),
+
+      this.hub.ragStatus$.subscribe((ev) => {
+        this.ragChunks.set(ev.chunkCount);
       }),
     );
 

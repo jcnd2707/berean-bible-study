@@ -35,6 +35,11 @@ export class KeyboardShortcutsService implements OnDestroy {
         e.preventDefault();
         return;
       }
+      if (this.nav.showBooks()) {
+        this.nav.closeBooks();
+        e.preventDefault();
+        return;
+      }
       if (this.nav.verse()) {
         this.nav.clearVerse();
         e.preventDefault();

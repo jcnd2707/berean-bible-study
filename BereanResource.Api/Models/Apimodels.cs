@@ -135,3 +135,55 @@ public enum BibleFormat
     Scrollmapper,
     MySword
 }
+
+// ── Books ─────────────────────────────────────────────────────────────────────
+
+public record BookSummary(
+    string ModuleId,
+    string Title,
+    string Author,
+    string Publisher,
+    string Language
+);
+
+public record BookMeta(
+    string ModuleId,
+    string Title,
+    string Author,
+    string Publisher,
+    string Language,
+    string? Isbn,
+    string? Rights,
+    DateTime ImportedAt
+);
+
+public record BookChapterSummary(
+    int Id,
+    int ChapterNumber,
+    string Title,
+    int OrderIndex
+);
+
+public record BookParagraph(
+    int OrderIndex,
+    string CssClass,
+    string Content,
+    string PlainText
+);
+
+public record BookChapterContent(
+    string ModuleId,
+    int ChapterId,
+    int ChapterNumber,
+    string ChapterTitle,
+    List<BookParagraph> Paragraphs
+);
+
+public record BookSearchResult(
+    string ChapterTitle,
+    int ChapterNumber,
+    int ParagraphIndex,
+    string CssClass,
+    string Content,
+    string PlainText
+);
