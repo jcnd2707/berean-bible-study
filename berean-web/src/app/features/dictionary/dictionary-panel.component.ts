@@ -12,11 +12,12 @@ import {
   DictionaryLookupResult,
   DictionaryModuleDetails,
 } from "../../core/services/dictionary.service";
+import { ResourcesService } from "../../core/services/resources.service";
 import { WordSelectionService } from "../../core/services/word-selection.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { parseDefinition, ParsedDefinition } from "./definition-parser";
 import { catchError } from "rxjs/operators";
-import { EMPTY, forkJoin, of } from "rxjs";
+import { forkJoin, of, EMPTY } from "rxjs";
 
 interface DictTab {
   moduleId: string;
@@ -33,6 +34,7 @@ interface DictTab {
 })
 export class DictionaryPanelComponent implements OnInit {
   private readonly dictService = inject(DictionaryService);
+  private readonly resourcesService = inject(ResourcesService);
   readonly wordSelection = inject(WordSelectionService);
   private readonly nav = inject(NavigationStateService);
 
@@ -49,9 +51,6 @@ export class DictionaryPanelComponent implements OnInit {
     return parseDefinition(r.topic, r.definition);
   });
 
-  private readonly ALL_MODULES = ["strong", "bdb", "eastons"];
-  private readonly STRONGS_MODULES = ["strong", "bdb"];
-
   private readonly _lookupEffect = effect(() => {
     const sel = this.wordSelection.selection();
     if (!sel) return;
@@ -60,22 +59,40 @@ export class DictionaryPanelComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    forkJoin(
-      this.ALL_MODULES.map((id) =>
-        this.dictService.getDetails(id).pipe(catchError(() => of(null))),
-      ),
-    ).subscribe((details) => {
-      const tabs: DictTab[] = this.ALL_MODULES.map((id, i) => {
-        const d = details[i] as DictionaryModuleDetails | null;
-        return {
-          moduleId: id,
-          label: d?.abbreviation || id,
-          isStrongs: d?.isStrongs ?? this.STRONGS_MODULES.includes(id),
-        };
+    // Load all dictionaries and lexicons from the API
+    forkJoin({
+      dicts: this.resourcesService
+        .getDictionaries()
+        .pipe(catchError(() => of([]))),
+      lexicons: this.resourcesService
+        .getLexicons()
+        .pipe(catchError(() => of([]))),
+    }).subscribe(({ dicts, lexicons }) => {
+      const allModules = [...dicts, ...lexicons];
+      if (allModules.length === 0) return;
+
+      // Fetch details for each module to get isStrongs
+      forkJoin(
+        allModules.map((m) =>
+          this.dictService
+            .getDetails(m.moduleId)
+            .pipe(catchError(() => of(null))),
+        ),
+      ).subscribe((details) => {
+        const tabs: DictTab[] = allModules.map((m, i) => {
+          const d = details[i] as DictionaryModuleDetails | null;
+          return {
+            moduleId: m.moduleId,
+            label: d?.abbreviation || m.moduleId,
+            isStrongs: d?.isStrongs ?? false,
+          };
+        });
+        this.tabs.set(tabs);
+
+        // Default to first plain-word module, fallback to first tab
+        const plainFirst = tabs.find((t) => !t.isStrongs);
+        this.activeTabId.set(plainFirst?.moduleId ?? tabs[0]?.moduleId ?? "");
       });
-      this.tabs.set(tabs);
-      const eastons = tabs.find((t) => t.moduleId === "eastons");
-      this.activeTabId.set(eastons?.moduleId ?? tabs[0]?.moduleId ?? "");
     });
   }
 
@@ -106,7 +123,7 @@ export class DictionaryPanelComponent implements OnInit {
             this.rawResult.set(res);
             this.nav.setActiveWord({
               word: res.topic,
-              strongs: strongs ?? null,
+              strongs,
               definition: res.definition.slice(0, 400),
               source: `${t.label} ${strongs}`,
             });
@@ -120,7 +137,7 @@ export class DictionaryPanelComponent implements OnInit {
       } else {
         this.nav.setActiveWord(null);
         this.error.set(
-          `${t.label} requires a Strong's number. Switch to a translation with Strong's numbers, or use Easton's for a plain word lookup.`,
+          `${t.label} requires a Strong's number. Switch to a translation with Strong's numbers, or use a plain-word dictionary.`,
         );
         this.loading.set(false);
       }
