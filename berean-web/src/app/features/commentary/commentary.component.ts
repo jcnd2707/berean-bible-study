@@ -93,6 +93,7 @@ export class CommentaryComponent implements OnInit {
 
   selectModule(moduleId: string): void {
     this.activeModuleId.set(moduleId);
+    this.entries.set([]);
     const loc = this.nav.location();
     if (!loc) return;
     this.loading.set(true);

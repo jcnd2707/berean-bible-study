@@ -302,7 +302,10 @@ public class ResourceDiscoveryService(IOptions<BereanResourcesConfig> config, IL
                              .Concat(Directory.EnumerateFiles(folder, "*.bbl")))
         {
             var moduleId = Path.GetFileNameWithoutExtension(file);
-            var (name, language) = ReadScrollmapperMetadata(file, moduleId);
+            var isMySword = Path.GetExtension(file).Equals(".bbl", StringComparison.OrdinalIgnoreCase);
+            var (name, language) = isMySword
+                ? ReadESwordMetadata(file, moduleId)
+                : ReadScrollmapperMetadata(file, moduleId);
             results.Add(new ResourceModule(moduleId, name, language, file));
         }
 
@@ -315,6 +318,13 @@ public class ResourceDiscoveryService(IOptions<BereanResourcesConfig> config, IL
         {
             using var conn = new SqliteConnection($"Data Source={filePath};Mode=ReadOnly");
             conn.Open();
+
+            if (!TableExists(conn, "translations"))
+            {
+                logger.LogWarning(
+                    "No 'translations' table in {File} — skipping as non-Scrollmapper module.", filePath);
+                return (fallback, "en");
+            }
 
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT translation, title FROM translations LIMIT 1";
@@ -415,12 +425,20 @@ public class ResourceDiscoveryService(IOptions<BereanResourcesConfig> config, IL
 
     private static int GetMinCommentaryBook(string path)
     {
-        using var conn = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
-        conn.Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT MIN(book) FROM commentary";
-        var result = cmd.ExecuteScalar();
-        return result is DBNull or null ? int.MaxValue : Convert.ToInt32(result);
+        try
+        {
+            using var conn = new SqliteConnection($"Data Source={path};Mode=ReadOnly");
+            conn.Open();
+            if (!TableExists(conn, "commentary")) return int.MaxValue;
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT MIN(book) FROM commentary";
+            var result = cmd.ExecuteScalar();
+            return result is DBNull or null ? int.MaxValue : Convert.ToInt32(result);
+        }
+        catch
+        {
+            return int.MaxValue;
+        }
     }
 
     // ── Title / slug helpers ──────────────────────────────────────────────────
@@ -450,6 +468,14 @@ public class ResourceDiscoveryService(IOptions<BereanResourcesConfig> config, IL
         while (reader.Read())
             columns.Add(reader.GetString(1));
         return columns;
+    }
+
+    private static bool TableExists(SqliteConnection conn, string tableName)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name=$name";
+        cmd.Parameters.AddWithValue("$name", tableName);
+        return cmd.ExecuteScalar() is not null;
     }
 
     private static string InferLanguageFromAbbreviation(string abbr)

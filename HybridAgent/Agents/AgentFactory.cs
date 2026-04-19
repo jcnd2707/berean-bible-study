@@ -84,20 +84,32 @@ public static class AgentFactory
                 languages (Hebrew, Greek, Aramaic), and historical theology, with a
                 focus on Seventh-day Adventist beliefs and doctrine.
 
-                You receive pre-retrieved reference material before each response.
-                Your role is to synthesize that material into a clear, accurate answer.
+                Each user message includes the active translation, passage reference,
+                selected verse text, and any loaded commentary inside square brackets
+                at the top. These tags show you what the user is looking at. Use them
+                to identify the passage under discussion. Do NOT reproduce or restate
+                those tags in your response — jump straight into your answer.
 
-                Guidelines:
-                - Interpret passages in their historical and literary context
-                - Reference original language meaning when it illuminates understanding
-                - Present multiple scholarly perspectives on disputed passages
-                - Cite chapter and verse precisely
-                - Ground answers in SDA doctrinal understanding where relevant
-                - If reference material was provided, ground your answer in it and cite sources
-                - If no material was provided for a question, say so and answer from your training
+                Before answering any question about a specific verse, call
+                get_passage(book, chapter) to read the surrounding chapter. Use the
+                book and chapter from the [Passage:] tag. If the tool returns no
+                content, continue using the verse text already provided in the message.
+                Never ask the user for information already present in the tags.
 
-                When the user asks about a specific word, call lookup_word first.
-                When the user asks about a specific verse, call lookup_verse first.
+                Reference material from commentaries and EGW writings is provided
+                before each response. Ground your answer in that material and cite
+                every source you use. When citing EGW, use the format
+                "[Book Title], Chapter [N]". Use page numbers only as a last resort,
+                noting they may vary by edition.
+
+                Reason from the biblical text and its historical context first. Form
+                your own conclusion before consulting any SDA or EGW material in the
+                retrieved context. If your textual conclusion genuinely contradicts
+                an SDA position, state this respectfully with the textual basis. If
+                it aligns, just answer normally without noting the alignment.
+
+                When the user asks about a word, call lookup_word first.
+                Give one complete answer without a closing summary or restatement.
                 Remember the full conversation context for follow-up questions.
                 """,
         };
@@ -170,6 +182,41 @@ public static class AgentFactory
                     : $"Verse {book} {chapter}:{verse} not found in the configured Bible modules.";
             },
             "lookup_verse"
+        );
+
+        // ── get_passage ───────────────────────────────────────────────────────
+        tools.Register(
+            [Description(
+                "Fetches every verse in a chapter from the configured Bible translation(s). " +
+                "ALWAYS call this before analyzing any specific verse — read the full chapter " +
+                "for context before forming any answer. Provide the book name and chapter number.")]
+        async (
+            [Description("Book name, e.g. 'John', 'Genesis', 'Romans'")] string book,
+            [Description("Chapter number, e.g. 3")] int chapter) =>
+            {
+                if (apiClient is null || bibleModules.Count == 0)
+                    return "No Bible modules configured for passage lookup. Check AllowedBibleModules in appsettings.json.";
+
+                var sb = new System.Text.StringBuilder();
+                int found = 0;
+
+                foreach (var moduleId in bibleModules)
+                {
+                    var chapterRecord = await apiClient.GetBibleChapterAsync(moduleId, book, chapter);
+                    if (chapterRecord is null) continue;
+
+                    sb.AppendLine($"**{book} {chapter}** ({moduleId}):");
+                    foreach (var v in chapterRecord.Verses)
+                        sb.AppendLine($"{v.Reference} {v.Text}");
+                    sb.AppendLine();
+                    found++;
+                }
+
+                return found > 0
+                    ? sb.ToString()
+                    : $"Chapter {book} {chapter} not found in the configured Bible modules.";
+            },
+            "get_passage"
         );
 
         return (config, tools);
