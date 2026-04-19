@@ -22,7 +22,7 @@ public static class ApiIndexer
         ILogger? log = null,
         CancellationToken ct = default)
     {
-        await IndexBiblesAsync(pipeline, client, language, chunkSize, overlap, log, ct);
+        // Bibles are NOT indexed — verses are fetched on-demand via the lookup_verse tool.
         await IndexCommentariesAsync(pipeline, client, language, chunkSize, overlap, log, ct);
         await IndexBooksAsync(pipeline, client, chunkSize, overlap, log, ct);
     }

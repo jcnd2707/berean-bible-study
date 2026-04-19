@@ -139,10 +139,11 @@ namespace HybridAgent
                 BtnVerdict.IsEnabled = cloudAvailable;
                 SetInitBadge("⬤  Ready", "#4ADE80");
                 SetUiEnabled(true);
+                SetRagStatus(ragChunks > 0, ragChunks);
 
                 AddSystemMessage($"Agent '{agentName}' loaded." +
                     (cloudAvailable ? " Cloud verdict available." : "") +
-                    (ragChunks > 0 ? $" {ragChunks} RAG chunks indexed." : " No RAG index."));
+                    (ragChunks > 0 ? $" {ragChunks:N0} RAG chunks indexed." : " No RAG index."));
             });
 
             // Streaming — tokens append to the current streaming bubble
@@ -188,15 +189,29 @@ namespace HybridAgent
                 TxtMessageCount.Text = "0 messages";
             });
 
-            // RAG events — surface as system messages
+            // RAG events
             _hub.RagStatus += (hasIndex, chunks, details) => Dispatch(() =>
-                AddSystemMessage($"RAG: {(hasIndex ? $"{chunks} chunks" : "no index")} — {details}"));
+                SetRagStatus(hasIndex, chunks));
 
             _hub.RagIndexing += msg => Dispatch(() =>
-                AddSystemMessage(msg));
+            {
+                TxtRagStatus.Text = "indexing…";
+                TxtRagStatus.Foreground =
+                    new SolidColorBrush(Color.FromRgb(0xFB, 0xBF, 0x24));
+            });
 
-            _hub.RagIndexed += (success, message) => Dispatch(() =>
-                AddSystemMessage(message));
+            _hub.RagIndexed += (success, message) => Dispatch(async () =>
+            {
+                AddSystemMessage(message);
+                if (success)
+                    await _hub.GetRagStatusAsync();
+                else
+                {
+                    TxtRagStatus.Text = "failed";
+                    TxtRagStatus.Foreground =
+                        new SolidColorBrush(Color.FromRgb(0xF8, 0x71, 0x71));
+                }
+            });
 
             // Errors
             _hub.ErrorReceived += msg => Dispatch(() =>
@@ -585,6 +600,22 @@ namespace HybridAgent
             TxtInitStatus.Text = text;
             TxtInitStatus.Foreground =
                 (SolidColorBrush)new BrushConverter().ConvertFrom(hex)!;
+        }
+
+        private void SetRagStatus(bool hasIndex, int chunks)
+        {
+            if (hasIndex)
+            {
+                TxtRagStatus.Text = $"{chunks:N0} chunks";
+                TxtRagStatus.Foreground =
+                    new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));
+            }
+            else
+            {
+                TxtRagStatus.Text = "no index";
+                TxtRagStatus.Foreground =
+                    new SolidColorBrush(Color.FromRgb(0x78, 0x78, 0xA0));
+            }
         }
 
         private void UpdateMessageCount() =>

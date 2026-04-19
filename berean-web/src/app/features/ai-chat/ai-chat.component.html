@@ -49,6 +49,14 @@
     </div>
   </div>
 
+  <!-- Indexing status bar -->
+  @if (isIndexing()) {
+    <div class="index-bar">
+      <span class="index-dot"></span>
+      <span class="index-msg">{{ indexingMessage() || 'Building index…' }}</span>
+    </div>
+  }
+
   <!-- Messages -->
   <div class="msg-list" #msgList>
     @if (messages().length === 0 && agentReady()) {

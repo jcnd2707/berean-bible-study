@@ -29,6 +29,13 @@ public class AgentRagConfig
     /// </summary>
     public string ResourceApiBaseUrl { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Bible module IDs available for on-demand verse lookup via the lookup_verse tool.
+    /// Bibles are NOT embedded into the vector store — they are fetched per-request.
+    /// Example: ["KJV", "NKJV"]
+    /// </summary>
+    public List<string> AllowedBibleModules { get; set; } = [];
+
     // ── MMR tuning ─────────────────────────────────────────────────────────
     public int TopK { get; set; } = 8;
     public float MmrLambda { get; set; } = 0.6f;

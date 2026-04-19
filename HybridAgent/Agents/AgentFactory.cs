@@ -72,7 +72,8 @@ public static class AgentFactory
         string? openAiKey = null,
         IEnumerable<string>? dictionaryFiles = null,
         BereanResourceApiClient? apiClient = null,
-        IEnumerable<string>? dictionaryModuleIds = null)
+        IEnumerable<string>? dictionaryModuleIds = null,
+        IEnumerable<string>? bibleModuleIds = null)
     {
         var config = new AgentConfig
         {
@@ -80,7 +81,8 @@ public static class AgentFactory
             OpenAiApiKey = openAiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
             SystemPrompt = """
                 You are a biblical scholar with expertise in hermeneutics, biblical
-                languages (Hebrew, Greek, Aramaic), and historical theology.
+                languages (Hebrew, Greek, Aramaic), and historical theology, with a
+                focus on Seventh-day Adventist beliefs and doctrine.
 
                 You receive pre-retrieved reference material before each response.
                 Your role is to synthesize that material into a clear, accurate answer.
@@ -90,18 +92,19 @@ public static class AgentFactory
                 - Reference original language meaning when it illuminates understanding
                 - Present multiple scholarly perspectives on disputed passages
                 - Cite chapter and verse precisely
-                - Respect all Christian traditions without favouring any denomination
+                - Ground answers in SDA doctrinal understanding where relevant
                 - If reference material was provided, ground your answer in it and cite sources
                 - If no material was provided for a question, say so and answer from your training
 
                 When the user asks about a specific word, call lookup_word first.
-                When the user asks about a specific verse, the context has already been retrieved.
+                When the user asks about a specific verse, call lookup_verse first.
                 Remember the full conversation context for follow-up questions.
                 """,
         };
 
         var tools = new ToolRegistry();
         var moduleIds = dictionaryModuleIds?.ToList() ?? [];
+        var bibleModules = bibleModuleIds?.ToList() ?? [];
 
         // ── lookup_word: API-based (preferred) or SQLite fallback ─────────────
         tools.Register(
@@ -129,6 +132,44 @@ public static class AgentFactory
             ([Description("Verse reference, e.g. 'John 3:16' or 'Romans 8:28'")] string verse = "John 3:16")
                 => $"Cross-references for {verse}: https://www.biblegateway.com/passage/?search={Uri.EscapeDataString(verse)}&version=NIV",
             "get_cross_references"
+        );
+
+        // ── lookup_verse ──────────────────────────────────────────────────────
+        tools.Register(
+            [Description(
+                "Fetches the text of a specific Bible verse from the configured Bible translation(s). " +
+                "Call this whenever the user asks about a specific verse or passage. " +
+                "Provide the book name, chapter number, and verse number.")]
+        async (
+            [Description("Book name, e.g. 'John', 'Genesis', 'Romans'")] string book,
+            [Description("Chapter number, e.g. 3")] int chapter,
+            [Description("Verse number, e.g. 16")] int verse) =>
+            {
+                if (apiClient is null || bibleModules.Count == 0)
+                    return "No Bible modules configured for verse lookup. Check AllowedBibleModules in appsettings.json.";
+
+                var sb = new System.Text.StringBuilder();
+                int found = 0;
+
+                foreach (var moduleId in bibleModules)
+                {
+                    var chapterRecord = await apiClient.GetBibleChapterAsync(moduleId, book, chapter);
+                    if (chapterRecord is null) continue;
+
+                    var verseRecord = chapterRecord.Verses.FirstOrDefault(v => v.Verse == verse);
+                    if (verseRecord is null) continue;
+
+                    sb.AppendLine($"**{verseRecord.Reference}** ({moduleId}):");
+                    sb.AppendLine(verseRecord.Text);
+                    sb.AppendLine();
+                    found++;
+                }
+
+                return found > 0
+                    ? sb.ToString()
+                    : $"Verse {book} {chapter}:{verse} not found in the configured Bible modules.";
+            },
+            "lookup_verse"
         );
 
         return (config, tools);

@@ -160,6 +160,34 @@
   }
 }
 
+// ── Indexing status bar ──────────────────────────────────────────────────────
+.index-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px;
+  background: rgba(255, 180, 50, 0.05);
+  border-bottom: 0.5px solid rgba(255, 180, 50, 0.12);
+  flex-shrink: 0;
+}
+
+.index-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 200, 80, 0.85);
+  flex-shrink: 0;
+  animation: rag-pulse 1.4s ease-in-out infinite;
+}
+
+.index-msg {
+  font-size: 9px;
+  color: rgba(255, 200, 80, 0.7);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // ── Messages ────────────────────────────────────────────────────────────────
 .msg-list {
   flex: 1;

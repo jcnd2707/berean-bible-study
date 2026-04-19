@@ -187,7 +187,8 @@ public class HybridPipeline
             (_, tools) = AgentFactory.CreateBibleAgent(
                 agentConfig.OpenAiApiKey,
                 apiClient: client,
-                dictionaryModuleIds: moduleIds);
+                dictionaryModuleIds: moduleIds,
+                bibleModuleIds: ragConfig.AllowedBibleModules);
         }
         else
         {
