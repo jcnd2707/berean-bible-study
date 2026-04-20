@@ -89,26 +89,29 @@ public static class AgentFactory
                 loaded commentary. Use those tags to identify what passage is being
                 discussed. Do not reproduce them in your response.
 
-                REFERENCE MATERIAL: Relevant excerpts from commentaries and EGW
-                writings are injected before each message under the heading
-                "## Relevant reference material". When answering any question about
-                doctrine, EGW perspective, or SDA interpretation, read that material
-                first and cite every source you draw from. When citing EGW, use the
-                format "[Book Title], Chapter [N]". Use page numbers only as a last
-                resort, noting they may vary by edition. If the reference material
-                does not cover the question, say so and answer from your training.
+                VERSE TEXT: The [Verse text:] tag contains the exact verse text from
+                the user's Bible. Always quote from that tag verbatim — never generate
+                or recall verse text from memory.
 
-                TOOLS: Call lookup_word when the user asks about the meaning of a
-                Hebrew or Greek word. Call get_passage(book, chapter) only when you
-                need the full surrounding chapter for context and it was not already
-                provided — use the book and chapter from the [Passage:] tag. Never
-                ask for information that is already present in the message.
+                REFERENCE MATERIAL: After the question you will find a "REFERENCE MATERIAL:"
+                block containing excerpts from commentaries and EGW writings. You MUST read
+                and draw from that material when answering questions about doctrine, EGW
+                perspective, or SDA interpretation. Cite every source you use. When citing
+                EGW write "[Book Title], Chapter [N]". Do not copy the "REFERENCE MATERIAL:"
+                heading or the numbered source labels into your answer — paraphrase and cite
+                naturally. If the material does not cover the question, say so and answer
+                from your training.
 
-                REASONING: Analyze the biblical text first. Form your own conclusion
-                from the text before drawing on any SDA or EGW material. If your
-                textual analysis genuinely contradicts an SDA position, say so
-                respectfully with the textual basis explained. If it aligns, just
-                answer normally.
+                TOOLS: Call lookup_word with the parameter "word" when the user asks about
+                the meaning of a Hebrew or Greek word. Call get_passage only when you need
+                surrounding context that is not already in the message — use the book and
+                chapter from the [Passage:] tag and the verse from the [Selected verse:] tag.
+                Never ask for information that is already present in the message tags.
+
+                REASONING: Analyze the biblical text first using the verse text provided.
+                Form your own conclusion before drawing on SDA or EGW material. If your
+                textual analysis contradicts an SDA position say so respectfully with the
+                textual basis explained. If it aligns, answer normally.
 
                 Give one complete answer. Do not add a closing summary or restatement.
                 Remember the full conversation context for follow-up questions.
@@ -126,12 +129,12 @@ public static class AgentFactory
                 "Use this when the user asks about the meaning of a Greek or Hebrew word, a theological " +
                 "concept, a biblical name, or a Strong's number (e.g. G25, H430). " +
                 "Returns the definition from all available dictionaries.")]
-        async ([Description("Word, term, name, or Strong's number to look up (e.g. 'agape', 'pneuma', 'G25', 'hesed')")] string term) =>
+        async ([Description("Word, term, name, or Strong's number to look up (e.g. 'agape', 'pneuma', 'G25', 'hesed')")] string word) =>
             {
                 if (apiClient is not null)
-                    return await LookupWordViaApiAsync(apiClient, moduleIds, term);
+                    return await LookupWordViaApiAsync(apiClient, moduleIds, word);
 
-                return await LookupWordViaFilesAsync(dictionaryFiles?.ToList() ?? [], term);
+                return await LookupWordViaFilesAsync(dictionaryFiles?.ToList() ?? [], word);
             },
             "lookup_word"
         );
@@ -188,26 +191,35 @@ public static class AgentFactory
         // ── get_passage ───────────────────────────────────────────────────────
         tools.Register(
             [Description(
-                "Fetches every verse in a chapter from the configured Bible translation(s). " +
-                "ALWAYS call this before analyzing any specific verse — read the full chapter " +
-                "for context before forming any answer. Provide the book name and chapter number.")]
+                "Fetches verses from a Bible chapter for surrounding context. " +
+                "Call this only when you need more context than the [Verse text:] tag already provides. " +
+                "Returns up to 20 verses centred on the passage of interest.")]
         async (
             [Description("Book name, e.g. 'John', 'Genesis', 'Romans'")] string book,
-            [Description("Chapter number, e.g. 3")] int chapter) =>
+            [Description("Chapter number, e.g. 3")] int chapter,
+            [Description("Starting verse to focus on (optional, defaults to 1)")] int startVerse = 1) =>
             {
                 if (apiClient is null || bibleModules.Count == 0)
                     return "No Bible modules configured for passage lookup. Check AllowedBibleModules in appsettings.json.";
 
                 var sb = new System.Text.StringBuilder();
                 int found = 0;
+                const int window = 20;
 
                 foreach (var moduleId in bibleModules)
                 {
                     var chapterRecord = await apiClient.GetBibleChapterAsync(moduleId, book, chapter);
                     if (chapterRecord is null) continue;
 
-                    sb.AppendLine($"**{book} {chapter}** ({moduleId}):");
-                    foreach (var v in chapterRecord.Verses)
+                    // Return a window of verses centred on startVerse to avoid flooding context
+                    var windowStart = Math.Max(1, startVerse - window / 2);
+                    var verses = chapterRecord.Verses
+                        .Where(v => v.Verse >= windowStart)
+                        .Take(window)
+                        .ToList();
+
+                    sb.AppendLine($"{book} {chapter} ({moduleId}):");
+                    foreach (var v in verses)
                         sb.AppendLine($"{v.Reference} {v.Text}");
                     sb.AppendLine();
                     found++;
@@ -228,7 +240,7 @@ public static class AgentFactory
     private static async Task<string> LookupWordViaApiAsync(
         BereanResourceApiClient client,
         List<string> moduleIds,
-        string term)
+        string word)
     {
         if (moduleIds.Count == 0)
             return "No dictionary modules configured for API lookup.";
@@ -239,11 +251,11 @@ public static class AgentFactory
         foreach (var moduleId in moduleIds)
         {
             // Try exact / Strong's lookup first, then fall back to search
-            var entry = await client.LookupWordAsync(moduleId, term);
+            var entry = await client.LookupWordAsync(moduleId, word);
 
             if (entry is null)
             {
-                var hits = await client.SearchDictionaryAsync(moduleId, term, limit: 3);
+                var hits = await client.SearchDictionaryAsync(moduleId, word, limit: 3);
                 foreach (var hit in hits)
                 {
                     AppendEntry(sb, hit.Topic, hit.Definition, moduleId);
@@ -259,7 +271,7 @@ public static class AgentFactory
 
         return found > 0
             ? sb.ToString()
-            : $"No definition found for '{term}' in the available dictionaries.";
+            : $"No definition found for '{word}' in the available dictionaries.";
 
         static void AppendEntry(System.Text.StringBuilder sb, string topic, string def, string source)
         {
@@ -271,10 +283,11 @@ public static class AgentFactory
     }
 
     private static async Task<string> LookupWordViaFilesAsync(
-        List<string> dictFiles, string term)
+        List<string> dictFiles, string word)
     {
         if (dictFiles.Count == 0)
             return "No dictionary files configured. Check DictionaryRootPath in appsettings.json.";
+
 
         var sb = new System.Text.StringBuilder();
         int found = 0;
@@ -300,9 +313,9 @@ public static class AgentFactory
                     WHERE Topic LIKE @contains AND Topic NOT LIKE @prefix AND Topic != @exact
                     LIMIT 5
                     """;
-                cmd.Parameters.AddWithValue("@exact", term);
-                cmd.Parameters.AddWithValue("@prefix", term + "%");
-                cmd.Parameters.AddWithValue("@contains", "%" + term + "%");
+                cmd.Parameters.AddWithValue("@exact", word);
+                cmd.Parameters.AddWithValue("@prefix", word + "%");
+                cmd.Parameters.AddWithValue("@contains", "%" + word + "%");
 
                 var dictName = Path.GetFileNameWithoutExtension(file);
                 await using var reader = await cmd.ExecuteReaderAsync();
@@ -324,7 +337,7 @@ public static class AgentFactory
 
         return found > 0
             ? sb.ToString()
-            : $"No definition found for '{term}' in the available dictionaries.";
+            : $"No definition found for '{word}' in the available dictionaries.";
     }
 
     // ── C# Troubleshooting ────────────────────────────────────────────────

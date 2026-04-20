@@ -415,7 +415,7 @@ public class RagPipeline
     private static string FormatContext(List<DocumentChunk> chunks)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("## Relevant reference material");
+        sb.AppendLine("REFERENCE MATERIAL:");
         sb.AppendLine();
 
         for (int i = 0; i < chunks.Count; i++)
@@ -424,14 +424,11 @@ public class RagPipeline
             var label = c.BookNumber is not null
                 ? $"{c.Source} [{c.SourceType}] — Book {c.BookNumber}, Ch {c.ChapterBegin}, v{c.VerseBegin}"
                 : $"{c.Source} [{c.SourceType}]";
-            sb.AppendLine($"### [{i + 1}] {label}");
+            sb.AppendLine($"[{i + 1}] {label}:");
             sb.AppendLine(c.Text);
             sb.AppendLine();
         }
 
-        sb.AppendLine("---");
-        sb.AppendLine("Use the material above to inform your answer. " +
-                      "If it does not cover the question, say so clearly.");
-        return sb.ToString();
+        return sb.ToString().TrimEnd();
     }
 }

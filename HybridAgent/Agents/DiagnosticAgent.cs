@@ -44,8 +44,10 @@ public class DiagnosticAgent
             _initialized = true;
         }
 
+        // Question first so the model knows what's being asked;
+        // RAG context follows immediately so it's the freshest content in the user turn.
         var userMessage = ragContext is not null
-            ? $"{ragContext}\n\n---\n\nUser question: {userInput}"
+            ? $"User question: {userInput}\n\n{ragContext}"
             : userInput;
 
         _history.Add(new ChatMessage(ChatRole.User, userMessage));
@@ -57,7 +59,7 @@ public class DiagnosticAgent
             ToolMode = ChatToolMode.Auto,
         };
 
-        return await RunLoopAsync(options, ct);
+        return await RunLoopAsync(options, ragContext, ct);
     }
 
     public async Task<DiagnosisSummary> BuildSummaryAsync(
@@ -113,9 +115,10 @@ public class DiagnosticAgent
 
     // ── Tool loop ──────────────────────────────────────────────────────────
 
-    private async Task<string> RunLoopAsync(ChatOptions options, CancellationToken ct)
+    private async Task<string> RunLoopAsync(ChatOptions options, string? ragContext, CancellationToken ct)
     {
         int rounds = 0;
+        bool ragReminderAdded = false;
 
         while (rounds++ < _config.MaxToolRounds)
         {
@@ -178,6 +181,17 @@ public class DiagnosticAgent
                 [
                     new FunctionResultContent(call.CallId, resultText)
                 ]));
+            }
+
+            // After the first batch of tool results, remind the model to use
+            // the reference material from the user message — counters recency bias.
+            // Use ChatRole.Assistant so Ollama accepts it mid-conversation.
+            if (ragContext is not null && !ragReminderAdded)
+            {
+                _history.Add(new ChatMessage(ChatRole.Assistant,
+                    "I have the tool results. Now I will answer using the REFERENCE MATERIAL " +
+                    "and the exact verse text from the [Verse text:] tag."));
+                ragReminderAdded = true;
             }
         }
 
