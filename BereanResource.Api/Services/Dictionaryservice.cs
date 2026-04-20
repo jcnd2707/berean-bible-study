@@ -171,7 +171,7 @@ public class DictionaryService(
         if (path is not null)
         {
             var hasOrder = DctHasRelativeOrder(path);
-            logger.LogDebug(
+            logger.LogInformation(
                 "Resolved '{ModuleId}' → MySword .dct at {Path} (relativeorder={HasOrder})",
                 moduleId, path, hasOrder);
             return new ModuleInfo(path, ModuleFormat.MySword, hasOrder);
@@ -180,7 +180,7 @@ public class DictionaryService(
         path = discovery.ResolvePath(_cfg.SubFolders.Lexicons, moduleId, ".lexi", ".lexh");
         if (path is not null)
         {
-            logger.LogDebug("Resolved '{ModuleId}' → e-Sword lexicon at {Path}", moduleId, path);
+            logger.LogInformation("Resolved '{ModuleId}' → e-Sword lexicon at {Path}", moduleId, path);
             return new ModuleInfo(path, ModuleFormat.ESword, false);
         }
 

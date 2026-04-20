@@ -37,7 +37,7 @@ public class EmbeddingService
     private string? _workingEndpoint;
 
     public EmbeddingService(
-        string model = "nomic-embed-text",
+        string model = "mxbai-embed-large",
         string baseUrl = "http://localhost:11434",
         int batchSize = 32,
         int maxConcurrency = 4)

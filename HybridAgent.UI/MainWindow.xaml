@@ -185,7 +185,7 @@
                                  Checked="AgentRadio_Checked">
                         <StackPanel>
                             <TextBlock Text="🔧  Car Diagnostics" FontSize="13"/>
-                            <TextBlock Text="llama3.2:3b" FontSize="10"
+                            <TextBlock Text="llama3.1:8b" FontSize="10"
                                        Foreground="{StaticResource TxtMuted}" Margin="22,2,0,0"/>
                         </StackPanel>
                     </RadioButton>
@@ -193,7 +193,7 @@
                                  GroupName="Agent" Checked="AgentRadio_Checked">
                         <StackPanel>
                             <TextBlock Text="📖  Bible Research" FontSize="13"/>
-                            <TextBlock Text="llama3.2:3b" FontSize="10"
+                            <TextBlock Text="llama3.1:8b" FontSize="10"
                                        Foreground="{StaticResource TxtMuted}" Margin="22,2,0,0"/>
                         </StackPanel>
                     </RadioButton>
@@ -305,7 +305,7 @@
                                 Background="#1A1A30" BorderBrush="{StaticResource Border}"
                                 BorderThickness="1" CornerRadius="4"
                                 Padding="8,3" Margin="12,0,0,0">
-                            <TextBlock x:Name="TxtModelBadge" Text="llama3.2:3b"
+                            <TextBlock x:Name="TxtModelBadge" Text="llama3.1:8b"
                                        Foreground="{StaticResource Accent}" FontSize="11"/>
                         </Border>
                     </StackPanel>

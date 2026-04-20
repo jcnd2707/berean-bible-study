@@ -14,7 +14,7 @@ public static class AgentFactory
     {
         var config = new AgentConfig
         {
-            OllamaModel = "llama3.2:3b",
+            OllamaModel = "llama3.1:8b",
             OpenAiApiKey = openAiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
             SystemPrompt = """
                 You are an ASE-certified master mechanic with 20 years of experience.
@@ -77,7 +77,7 @@ public static class AgentFactory
     {
         var config = new AgentConfig
         {
-            OllamaModel = "llama3.2:3b",
+            OllamaModel = "llama3.1:8b",
             OpenAiApiKey = openAiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
             SystemPrompt = """
                 You are a biblical scholar with expertise in hermeneutics, biblical
@@ -99,8 +99,20 @@ public static class AgentFactory
                 perspective, or SDA interpretation. Cite every source you use. When citing
                 EGW write "[Book Title], Chapter [N]". Do not copy the "REFERENCE MATERIAL:"
                 heading or the numbered source labels into your answer — paraphrase and cite
-                naturally. If the material does not cover the question, say so and answer
-                from your training.
+                naturally. If the material does not cover the question, say so explicitly and
+                answer from your training — but never invent citations or fabricate quotes.
+
+                SDA DOCTRINE: When stating what Seventh-day Adventists believe, only use
+                what the REFERENCE MATERIAL explicitly says. Do not generate SDA doctrine
+                from memory — your training data on SDA beliefs may be incorrect. If the
+                reference material does not cover the SDA position on a topic, say
+                "I don't have SDA-specific material on this in my reference database."
+
+                PASSAGE CONTEXT: The [Passage:] and [Verse text:] tags show what the user
+                is currently reading. Only bring that passage into your answer if the user's
+                question is directly about that passage or if it genuinely illuminates the
+                question. Do not force the tagged passage into an unrelated theological
+                question just because it is present in the context.
 
                 TOOLS: Call lookup_word with the parameter "word" when the user asks about
                 the meaning of a Hebrew or Greek word. Call get_passage only when you need
@@ -145,7 +157,7 @@ public static class AgentFactory
                 "Returns cross-references and related passages for a Bible verse. " +
                 "ALWAYS provide the 'verse' parameter — e.g. 'John 3:16'. " +
                 "Do not call this tool without a verse.")]
-            ([Description("Verse reference, e.g. 'John 3:16' or 'Romans 8:28'")] string verse = "John 3:16")
+        ([Description("Verse reference, e.g. 'John 3:16' or 'Romans 8:28'")] string verse = "John 3:16")
                 => $"Cross-references for {verse}: https://www.biblegateway.com/passage/?search={Uri.EscapeDataString(verse)}&version=NIV",
             "get_cross_references"
         );
@@ -190,47 +202,38 @@ public static class AgentFactory
 
         // ── get_passage ───────────────────────────────────────────────────────
         tools.Register(
-            [Description(
-                "Fetches verses from a Bible chapter for surrounding context. " +
-                "Call this only when you need more context than the [Verse text:] tag already provides. " +
-                "Returns up to 20 verses centred on the passage of interest.")]
+    [Description(
+        "Fetches all verses from a Bible chapter to provide surrounding context. " +
+        "ALWAYS call this before analyzing any specific verse — read the full chapter " +
+        "first, then answer about the verse. Returns the complete chapter text.")]
         async (
-            [Description("Book name, e.g. 'John', 'Genesis', 'Romans'")] string book,
-            [Description("Chapter number, e.g. 3")] int chapter,
-            [Description("Starting verse to focus on (optional, defaults to 1)")] int startVerse = 1) =>
-            {
-                if (apiClient is null || bibleModules.Count == 0)
-                    return "No Bible modules configured for passage lookup. Check AllowedBibleModules in appsettings.json.";
+    [Description("Book name, e.g. 'John', 'Genesis', 'Romans'")] string book,
+    [Description("Chapter number, e.g. 3")] int chapter) =>
+    {
+        if (apiClient is null || bibleModules.Count == 0)
+            return "No Bible modules configured for passage lookup.";
 
-                var sb = new System.Text.StringBuilder();
-                int found = 0;
-                const int window = 20;
+        var sb = new System.Text.StringBuilder();
+        int found = 0;
 
-                foreach (var moduleId in bibleModules)
-                {
-                    var chapterRecord = await apiClient.GetBibleChapterAsync(moduleId, book, chapter);
-                    if (chapterRecord is null) continue;
+        foreach (var moduleId in bibleModules)
+        {
+            var chapterRecord = await apiClient.GetBibleChapterAsync(moduleId, book, chapter);
+            if (chapterRecord is null) continue;
 
-                    // Return a window of verses centred on startVerse to avoid flooding context
-                    var windowStart = Math.Max(1, startVerse - window / 2);
-                    var verses = chapterRecord.Verses
-                        .Where(v => v.Verse >= windowStart)
-                        .Take(window)
-                        .ToList();
+            sb.AppendLine($"{book} {chapter} ({moduleId}):");
+            foreach (var v in chapterRecord.Verses.OrderBy(v => v.Verse))
+                sb.AppendLine($"{v.Reference} {v.Text}");
+            sb.AppendLine();
+            found++;
+        }
 
-                    sb.AppendLine($"{book} {chapter} ({moduleId}):");
-                    foreach (var v in verses)
-                        sb.AppendLine($"{v.Reference} {v.Text}");
-                    sb.AppendLine();
-                    found++;
-                }
-
-                return found > 0
-                    ? sb.ToString()
-                    : $"Chapter {book} {chapter} not found in the configured Bible modules.";
-            },
-            "get_passage"
-        );
+        return found > 0
+            ? sb.ToString()
+            : $"Chapter {book} {chapter} not found in the configured Bible modules.";
+    },
+    "get_passage"
+);
 
         return (config, tools);
     }

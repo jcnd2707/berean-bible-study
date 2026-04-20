@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 using System.Runtime.InteropServices;
 
 namespace HybridAgent.Core.RAG;
@@ -16,6 +17,7 @@ public class SqliteVectorStore : IAsyncDisposable
 {
     private readonly string _dbPath;
     private readonly List<DocumentChunk> _cache = [];
+    private readonly ILogger<SqliteVectorStore> _log;
 
     // Guards _cache against concurrent reads (background indexing) and writes (query handlers).
     // Lock is never held across await boundaries — only around synchronous cache mutations/reads.
@@ -31,9 +33,10 @@ public class SqliteVectorStore : IAsyncDisposable
         }
     }
 
-    public SqliteVectorStore(string dbPath)
+    public SqliteVectorStore(string dbPath, ILogger<SqliteVectorStore> log)
     {
         _dbPath = dbPath;
+        _log = log;
     }
 
     // ── Schema init ────────────────────────────────────────────────────────
@@ -45,7 +48,6 @@ public class SqliteVectorStore : IAsyncDisposable
         await using var conn = OpenConnection();
         await conn.OpenAsync(ct);
 
-        // Create table with full v2 schema
         var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS Chunks (
@@ -69,7 +71,6 @@ public class SqliteVectorStore : IAsyncDisposable
             """;
         await cmd.ExecuteNonQueryAsync(ct);
 
-        // Migrate existing databases that have the old schema (no SourceType/Language)
         await AddColumnIfMissingAsync(conn, "SourceType", "INTEGER NOT NULL DEFAULT 0", ct);
         await AddColumnIfMissingAsync(conn, "Language", "TEXT    NOT NULL DEFAULT 'en'", ct);
     }
@@ -124,7 +125,6 @@ public class SqliteVectorStore : IAsyncDisposable
 
             await cmd.ExecuteNonQueryAsync(ct);
 
-            // Write lock held only for the synchronous cache mutation, never across awaits
             _cacheLock.EnterWriteLock();
             try { _cache.Add(chunk); }
             finally { _cacheLock.ExitWriteLock(); }
@@ -151,7 +151,6 @@ public class SqliteVectorStore : IAsyncDisposable
             "       SourceType, Language " +
             "FROM Chunks";
 
-        // Build new list without holding any lock across async reads
         var loaded = new List<DocumentChunk>();
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -175,7 +174,6 @@ public class SqliteVectorStore : IAsyncDisposable
             });
         }
 
-        // Swap into cache atomically
         _cacheLock.EnterWriteLock();
         try
         {
@@ -204,10 +202,6 @@ public class SqliteVectorStore : IAsyncDisposable
 
     // ── Semantic search with MMR ───────────────────────────────────────────
 
-    /// <summary>
-    /// MMR search with optional source-type and language filters.
-    /// Pass null filters to search all chunks (default behaviour).
-    /// </summary>
     public List<DocumentChunk> Search(
         float[] queryEmbedding,
         int topK = 8,
@@ -216,7 +210,6 @@ public class SqliteVectorStore : IAsyncDisposable
         SourceType? sourceType = null,
         string? language = null)
     {
-        // Snapshot under read lock — LINQ runs on the snapshot, not the live list
         List<DocumentChunk> snapshot;
         _cacheLock.EnterReadLock();
         try
@@ -237,6 +230,14 @@ public class SqliteVectorStore : IAsyncDisposable
             .ToList();
 
         if (candidates.Count == 0) return [];
+
+        // Log top 10 candidates to diagnose retrieval quality
+        _log.LogInformation("[Store] Top {Count} candidates (type={Type}):\n{Scores}",
+            Math.Min(10, candidates.Count),
+            sourceType?.ToString() ?? "all",
+            string.Join("\n", candidates.Take(10).Select((x, i) =>
+                $"  [{i + 1}] {x.chunk.Source[..Math.Min(50, x.chunk.Source.Length)]} " +
+                $"= {x.score:F3}")));
 
         // MMR greedy selection
         var selected = new List<(DocumentChunk chunk, float score)>();
@@ -268,9 +269,6 @@ public class SqliteVectorStore : IAsyncDisposable
 
     // ── Verse-pinned retrieval ─────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns chunks covering a specific verse, optionally filtered by type and language.
-    /// </summary>
     public List<DocumentChunk> SearchByVerse(
         int bookNumber,
         int chapter,
@@ -317,7 +315,8 @@ public class SqliteVectorStore : IAsyncDisposable
         SqliteConnection conn, string column, string definition, CancellationToken ct)
     {
         var check = conn.CreateCommand();
-        check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('Chunks') WHERE name='{column}'";
+        check.CommandText =
+            $"SELECT COUNT(*) FROM pragma_table_info('Chunks') WHERE name='{column}'";
         var exists = (long)(await check.ExecuteScalarAsync(ct))! > 0;
         if (exists) return;
 

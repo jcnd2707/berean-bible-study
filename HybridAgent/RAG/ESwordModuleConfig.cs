@@ -36,6 +36,16 @@ public class AgentRagConfig
     /// </summary>
     public List<string> AllowedBibleModules { get; set; } = [];
 
+    // ── Indexing ───────────────────────────────────────────────────────────
+    /// <summary>
+    /// Commentary module IDs to include in the RAG vector store.
+    /// Only these will be embedded — all others are served directly via API tools.
+    /// Example: ["egw-commentary"]
+    /// </summary>
+    public List<string> AllowedCommentaryModules { get; set; } = [];
+    public int ChunkSize { get; set; } = 200;
+    public int ChunkOverlap { get; set; } = 50;
+
     // ── MMR tuning ─────────────────────────────────────────────────────────
     public int TopK { get; set; } = 8;
     public float MmrLambda { get; set; } = 0.6f;

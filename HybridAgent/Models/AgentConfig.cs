@@ -7,7 +7,7 @@ public class AgentConfig
 {
     // Local
     public string OllamaEndpoint { get; set; } = "http://localhost:11434";
-    public string OllamaModel { get; set; } = "llama3.2:3b";
+    public string OllamaModel { get; set; } = "llama3.1:8b";
     public int MaxToolRounds { get; set; } = 10;
 
     // Cloud

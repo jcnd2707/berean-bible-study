@@ -44,6 +44,12 @@ public class DiagnosticAgent
             _initialized = true;
         }
 
+        if (ragContext is not null)
+            _log.LogInformation("[Agent] RAG context ({Len} chars):\n{Ctx}",
+                ragContext.Length, ragContext.Length > 2000 ? ragContext[..2000] + "…" : ragContext);
+        else
+            _log.LogInformation("[Agent] No RAG context for this query");
+
         // Question first so the model knows what's being asked;
         // RAG context follows immediately so it's the freshest content in the user turn.
         var userMessage = ragContext is not null
@@ -122,7 +128,7 @@ public class DiagnosticAgent
 
         while (rounds++ < _config.MaxToolRounds)
         {
-            _log.LogDebug("[Agent] Round {Round}, {Len} messages in history", rounds, _history.Count);
+            _log.LogInformation("[Agent] Round {Round}, {Len} messages in history", rounds, _history.Count);
 
             var response = await _client.GetResponseAsync(_history, options, ct);
 
@@ -168,7 +174,7 @@ public class DiagnosticAgent
                             call.Arguments ?? new Dictionary<string, object?>());
                         var raw = await fn.InvokeAsync(args, ct);
                         resultText = raw?.ToString() ?? "(null)";
-                        _log.LogDebug("[Tool] {Name} → {Result}", call.Name, resultText);
+                        _log.LogInformation("[Tool] {Name} → {Result}", call.Name, resultText);
                     }
                     catch (Exception ex)
                     {
