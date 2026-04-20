@@ -147,8 +147,21 @@ public class QueryRouter
         if (cmtCtx is not null)
             sb.AppendLine(cmtCtx);
 
-        _log.LogInformation("[Router] Verse {Ref}: bible={HasBible} commentary={HasCmt}",
-            verseRef.OriginalText, bibleCtx is not null, cmtCtx is not null);
+        // 3. EGW / prose books — semantic search (books are prose, not verse-pinned)
+        var booksCtx = await _rag.BuildContextAsync(
+            verseRef.OriginalText,
+            topK: 3,
+            lambda: _ragConfig.MmrLambda,
+            candidateK: 30,
+            sourceType: SourceType.Book,
+            language: _language,
+            ct: ct);
+
+        if (booksCtx is not null)
+            sb.AppendLine(booksCtx);
+
+        _log.LogInformation("[Router] Verse {Ref}: bible={HasBible} commentary={HasCmt} books={HasBooks}",
+            verseRef.OriginalText, bibleCtx is not null, cmtCtx is not null, booksCtx is not null);
 
         return new RetrievalResult(QueryIntent.Verse,
             sb.Length > 0 ? sb.ToString() : null, verseRef);

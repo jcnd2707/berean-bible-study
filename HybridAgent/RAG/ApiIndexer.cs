@@ -23,7 +23,7 @@ public static class ApiIndexer
         CancellationToken ct = default)
     {
         // Bibles are NOT indexed — verses are fetched on-demand via the lookup_verse tool.
-        await IndexCommentariesAsync(pipeline, client, language, chunkSize, overlap, log, ct);
+        //await IndexCommentariesAsync(pipeline, client, language, chunkSize, overlap, log, ct); //just index books.
         await IndexBooksAsync(pipeline, client, chunkSize, overlap, log, ct);
     }
 
