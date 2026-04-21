@@ -319,6 +319,8 @@ public class BibleService(
         try
         {
             using var conn = Open(path);
+            if (!TableExists(conn, "translations"))
+                return DiscoverScrollmapperTranslation(conn, fallback);
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT translation FROM translations LIMIT 1";
             return cmd.ExecuteScalar()?.ToString() ?? fallback;
@@ -327,6 +329,25 @@ public class BibleService(
         {
             return fallback;
         }
+    }
+
+    // When the translations table is absent, infer the abbreviation from the
+    // verse table name (e.g. "KJV_verses" → "KJV").
+    private static string DiscoverScrollmapperTranslation(SqliteConnection conn, string fallback)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_verses' LIMIT 1";
+        var tableName = cmd.ExecuteScalar()?.ToString();
+        if (tableName is null) return fallback;
+        return tableName[..^"_verses".Length];
+    }
+
+    private static bool TableExists(SqliteConnection conn, string tableName)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name=$name";
+        cmd.Parameters.AddWithValue("$name", tableName);
+        return cmd.ExecuteScalar() is not null;
     }
 
     private static bool ProbeScrollmapperStrongs(SqliteConnection conn, string translation)

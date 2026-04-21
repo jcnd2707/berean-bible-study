@@ -1,6 +1,5 @@
 ﻿using System.Globalization;
 using System.Text.RegularExpressions;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
 namespace HybridAgent.Core.RAG;
@@ -28,24 +27,17 @@ public class QueryRouter
     private readonly AgentRagConfig _ragConfig;
 
     // ── Verse detection pattern ────────────────────────────────────────────
-    // Matches: "John 3:16", "1 Cor 13:4-7", "Rom 8", "Juan 3:16", "Salmos 23:1"
-    // Requires at least a book name + chapter to avoid matching common words.
     private static readonly Regex VersePattern = new(
-    @"(?<!\w)" +
-    @"(?!(?:on|in|of|at|to|by|as|is|do|an|a|the|and|for|but|or|what|does|about|mean|talk|say|tell)\b)" +
-    @"(?<book>(?:[1-3]\s*)?[A-Za-z]+(?:\s[A-Za-z]+){0,2})\s+" +
-    @"(?<ch>\d{1,3})(?::(?<vs>\d{1,3})(?:-(?<ve>\d{1,3})|(?:,\d{1,3})+)?)?\b",
-    RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-    // After capturing ch and vs groups, extract the full verse segment separately
-    private static readonly Regex VerseSegmentPattern = new(
-        @"(?<ch>\d{1,3})(?::(?<vs>[\d,\-]+))?",
-        RegexOptions.Compiled);
+        @"(?<!\w)" +
+        @"(?!(?:on|in|of|at|to|by|as|is|do|an|a|the|and|for|but|or|what|does|about|mean|talk|say|tell)\b)" +
+        @"(?<book>(?:[1-3]\s*)?[A-Za-z]+(?:\s[A-Za-z]+){0,2})\s+" +
+        @"(?<ch>\d{1,3})(?::(?<vs>\d{1,3})(?:-(?<ve>\d{1,3})|(?:,\d{1,3})+)?)?\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex LooseVerseHint = new(
-    @"\b(?:in|from|at|on)\s+(?<book>(?:[1-3]\s*)?[A-Za-záéíóúüñÁÉÍÓÚÜÑ]+(?:\s[A-Za-záéíóúüñÁÉÍÓÚÜÑ]+){0,2})\s+" +
-    @"(?<ch>\d{1,3})(?::(?<vs>\d{1,3}))?\b",
-    RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"\b(?:in|from|at|on)\s+(?<book>(?:[1-3]\s*)?[A-Za-z]+(?:\s[A-Za-záéíóúüñÁÉÍÓÚÜÑ]+){0,2})\s+" +
+        @"(?<ch>\d{1,3})(?::(?<vs>\d{1,3}))?\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // ── Definition detection patterns ──────────────────────────────────────
     private static readonly Regex DefinitionPattern = new(
@@ -54,15 +46,26 @@ public class QueryRouter
         @"strongs?|strong'?s?)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // Strong's number: G25, H430, G4151
     private static readonly Regex StrongsPattern = new(
-    @"\b[GH][1-9]\d{0,3}\b",
-    RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"\b[GH][1-9]\d{0,3}\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // ── Context tag pattern ────────────────────────────────────────────────
+    private static readonly Regex ContextTagPattern = new(
+        @"\[[^\]]*\]",
+        RegexOptions.Compiled);
+
+    private static readonly Regex WhitespacePattern = new(
+        @"\s+",
+        RegexOptions.Compiled);
 
     // ── Constructor ────────────────────────────────────────────────────────
 
-    public QueryRouter(RagPipeline rag, AgentRagConfig ragConfig,
-        string language, ILogger log)
+    public QueryRouter(
+        RagPipeline rag,
+        AgentRagConfig ragConfig,
+        string language,
+        ILogger log)
     {
         _rag = rag;
         _ragConfig = ragConfig;
@@ -74,10 +77,6 @@ public class QueryRouter
 
     // ── Main entry point ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// Classify the query and return pre-fetched context.
-    /// Returns null context when nothing relevant is found.
-    /// </summary>
     public async Task<RetrievalResult> RouteAsync(
         string query,
         CancellationToken ct = default)
@@ -98,7 +97,7 @@ public class QueryRouter
 
         return intent switch
         {
-            QueryIntent.Verse => await HandleVerseAsync(verseRef!, ct),
+            QueryIntent.Verse => await HandleVerseAsync(verseRef!, query, ct),
             QueryIntent.Definition => HandleDefinition(query),
             QueryIntent.Mixed => await HandleMixedAsync(verseRef!, query, ct),
             QueryIntent.Conceptual => await HandleConceptualAsync(query, ct),
@@ -110,16 +109,17 @@ public class QueryRouter
 
     private async Task<RetrievalResult> HandleVerseAsync(
         VerseReference verseRef,
+        string query,
         CancellationToken ct)
     {
         var sb = new System.Text.StringBuilder();
 
-        // 1. Verse text — from Bible chunks
+        // 1. Bible — verse-pinned
         var bibleCtx = _rag.BuildVerseContext(
             verseRef.BookNumber, verseRef.Chapter, verseRef.Verse ?? 1,
             SourceType.Bible, _language);
 
-        // Fallback: try other language if primary language returns nothing
+        // Fallback to English if primary language returns nothing
         if (bibleCtx is null && _language != "en")
             bibleCtx = _rag.BuildVerseContext(
                 verseRef.BookNumber, verseRef.Chapter, verseRef.Verse ?? 1,
@@ -128,48 +128,78 @@ public class QueryRouter
         if (bibleCtx is not null)
             sb.AppendLine(bibleCtx);
 
-        // 2. Commentary — verse-pinned, with semantic fallback
+        // 2. Commentary — verse-pinned with semantic fallback
         var cmtCtx = _rag.BuildVerseContext(
             verseRef.BookNumber, verseRef.Chapter, verseRef.Verse ?? 1,
             SourceType.Commentary, _language);
 
         if (cmtCtx is null && verseRef.Verse.HasValue)
         {
-            // Semantic fallback for commentary when no pinned entry exists
+            var cmtQuery = BuildBookQuery(verseRef, query: null);
+            _log.LogInformation("[Router] Commentary embedding query: {Query}", cmtQuery);
+
             cmtCtx = await _rag.BuildContextAsync(
-                $"commentary on {verseRef.OriginalText}",
-                topK: 3, lambda: _ragConfig.MmrLambda,
+                cmtQuery,
+                topK: 3,
+                lambda: _ragConfig.MmrLambda,
                 candidateK: 30,
                 sourceType: SourceType.Commentary,
-                language: _language, ct: ct);
+                language: _language,
+                ct: ct);
         }
 
         if (cmtCtx is not null)
             sb.AppendLine(cmtCtx);
 
-        _log.LogInformation("[Router] Verse {Ref}: bible={HasBible} commentary={HasCmt}",
-            verseRef.OriginalText, bibleCtx is not null, cmtCtx is not null);
+        // 3. EGW / prose books — semantically enriched query
+        // A bare verse reference embeds poorly against EGW prose.
+        // Combining the full book name, chapter, and user question produces
+        // far more relevant retrieval from the EGW corpus.
+        var booksQuery = BuildBookQuery(verseRef, query);
+        _log.LogInformation("[Router] Books embedding query: {Query}", booksQuery);
 
-        return new RetrievalResult(QueryIntent.Verse,
-            sb.Length > 0 ? sb.ToString() : null, verseRef);
+        var booksCtx = await _rag.BuildContextAsync(
+       booksQuery,
+       topK: 5,
+       lambda: _ragConfig.MmrLambda,
+       candidateK: 200,
+       sourceType: SourceType.Book,
+       language: _language,
+       ct: ct);
+
+        if (booksCtx is not null)
+            sb.AppendLine(booksCtx);
+
+        _log.LogInformation(
+            "[Router] Verse {Ref}: bible={HasBible} commentary={HasCmt} books={HasBooks}",
+            verseRef.OriginalText,
+            bibleCtx is not null,
+            cmtCtx is not null,
+            booksCtx is not null);
+
+        return new RetrievalResult(
+            QueryIntent.Verse,
+            sb.Length > 0 ? sb.ToString() : null,
+            verseRef);
     }
 
     private RetrievalResult HandleDefinition(string query)
     {
-        // Definition queries are handled by the lookup_word / lookup_strongs
-        // tools registered in AgentFactory — we signal the intent but don't
-        // pre-fetch here, because the tool will be called in the agent loop.
+        // Definition queries are handled entirely by the lookup_word tool
+        // registered in AgentFactory — signal the intent but don't pre-fetch,
+        // because the tool call in the agent loop will do the actual retrieval.
         _log.LogInformation("[Router] Definition query — delegating to lookup tools");
         return new RetrievalResult(QueryIntent.Definition, null);
     }
 
     private async Task<RetrievalResult> HandleMixedAsync(
-        VerseReference verseRef,
-        string query,
-        CancellationToken ct)
+      VerseReference verseRef,
+      string query,
+      CancellationToken ct)
     {
-        // Verse + definition: get the verse context, then let tools handle the definition
-        var verseResult = await HandleVerseAsync(verseRef, ct);
+        // Verse retrieval already handles bible + commentary + books.
+        // No extra pass needed — avoids duplicate reference material.
+        var verseResult = await HandleVerseAsync(verseRef, query, ct);
         return verseResult with { Intent = QueryIntent.Mixed };
     }
 
@@ -177,10 +207,15 @@ public class QueryRouter
         string query,
         CancellationToken ct)
     {
-        // Fan-out across Bible, Commentary, Topic, and prose Books indexes
+        // Strip context strip tags before embedding — tags like
+        // [Translation: akjvstrong] add noise that degrades retrieval quality
+        // because they embed as content rather than query intent.
+        var cleanQuery = StripContextTags(query);
+        _log.LogInformation("[Router] Conceptual embedding query: {Query}", cleanQuery);
+
         var ctx = await _rag.BuildMultiSourceContextAsync(
-            query,
-            sourceTypes: [SourceType.Bible, SourceType.Commentary, SourceType.Topic, SourceType.Book],
+            cleanQuery,
+            sourceTypes: [SourceType.Commentary, SourceType.Topic, SourceType.Book],
             topKPerType: _ragConfig.TopK / 4 + 1,
             lambda: _ragConfig.MmrLambda,
             language: _language,
@@ -213,7 +248,8 @@ public class QueryRouter
 
             var (verse, verseEnd, verses) = ParseVerseSegment(m.Groups["vs"].Value);
 
-            return new VerseReference(bookNum.Value, chapter, verse, verseEnd, verses, m.Value.Trim());
+            return new VerseReference(
+                bookNum.Value, chapter, verse, verseEnd, verses, m.Value.Trim());
         }
 
         return null;
@@ -227,10 +263,10 @@ public class QueryRouter
         if (vs.Contains(',') && !vs.Contains('-'))
         {
             var list = vs.Split(',')
-                         .Select(v => int.TryParse(v.Trim(), out var n) ? n : (int?)null)
-                         .Where(n => n.HasValue)
-                         .Select(n => n!.Value)
-                         .ToList();
+                .Select(v => int.TryParse(v.Trim(), out var n) ? n : (int?)null)
+                .Where(n => n.HasValue)
+                .Select(n => n!.Value)
+                .ToList();
             return (list.First(), null, list);
         }
 
@@ -249,6 +285,51 @@ public class QueryRouter
 
     private static bool IsDefinitionQuery(string query) =>
         DefinitionPattern.IsMatch(query) || StrongsPattern.IsMatch(query);
+
+    // ── Query builders ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a semantically rich query for EGW book retrieval by combining
+    /// the full canonical book name, chapter, and cleaned user question.
+    ///
+    /// A bare reference like "Mat 24:34" embeds poorly against EGW prose.
+    /// "Matthew chapter 24 verse 34 generation pass fulfilled end times"
+    /// retrieves far more relevant passages from the EGW corpus.
+    /// </summary>
+    private static string BuildBookQuery(VerseReference verseRef, string? query)
+    {
+        var parts = new List<string>();
+
+        var fullBookName = BibleBookMap.GetFullName(verseRef.BookNumber)
+                           ?? verseRef.OriginalText;
+
+        parts.Add($"{fullBookName} chapter {verseRef.Chapter}");
+
+        if (verseRef.Verse.HasValue)
+            parts.Add($"verse {verseRef.Verse}");
+
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var clean = StripContextTags(query);
+            if (!string.IsNullOrWhiteSpace(clean))
+                parts.Add(clean);
+        }
+
+        var result = string.Join(" ", parts);
+        return result;
+    }
+
+    /// <summary>
+    /// Removes square-bracket context strip tags from the query before
+    /// embedding. Tags like [Translation: akjvstrong] and [Passage: Mat 24]
+    /// add noise that degrades semantic retrieval quality — the embedding
+    /// model encodes them as content rather than ignoring them.
+    /// </summary>
+    private static string StripContextTags(string query)
+    {
+        var stripped = ContextTagPattern.Replace(query, " ");
+        return WhitespacePattern.Replace(stripped, " ").Trim();
+    }
 }
 
 // ── Supporting types ───────────────────────────────────────────────────────
@@ -258,9 +339,9 @@ public enum QueryIntent { Verse, Definition, Conceptual, Mixed }
 public record VerseReference(
     int BookNumber,
     int Chapter,
-    int? Verse,        // single or range start
-    int? VerseEnd,     // range end (e.g. 18 in 3:16-18)
-    List<int>? Verses, // discrete list (e.g. [16,20] in 3:16,20)
+    int? Verse,
+    int? VerseEnd,
+    List<int>? Verses,
     string OriginalText)
 {
     public bool IsRange => Verse.HasValue && VerseEnd.HasValue;

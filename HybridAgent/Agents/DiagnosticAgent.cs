@@ -44,8 +44,16 @@ public class DiagnosticAgent
             _initialized = true;
         }
 
+        if (ragContext is not null)
+            _log.LogInformation("[Agent] RAG context ({Len} chars):\n{Ctx}",
+                ragContext.Length, ragContext.Length > 2000 ? ragContext[..2000] + "…" : ragContext);
+        else
+            _log.LogInformation("[Agent] No RAG context for this query");
+
+        // Question first so the model knows what's being asked;
+        // RAG context follows immediately so it's the freshest content in the user turn.
         var userMessage = ragContext is not null
-            ? $"{ragContext}\n\n---\n\nUser question: {userInput}"
+            ? $"User question: {userInput}\n\n{ragContext}"
             : userInput;
 
         _history.Add(new ChatMessage(ChatRole.User, userMessage));
@@ -57,7 +65,7 @@ public class DiagnosticAgent
             ToolMode = ChatToolMode.Auto,
         };
 
-        return await RunLoopAsync(options, ct);
+        return await RunLoopAsync(options, ragContext, ct);
     }
 
     public async Task<DiagnosisSummary> BuildSummaryAsync(
@@ -113,13 +121,14 @@ public class DiagnosticAgent
 
     // ── Tool loop ──────────────────────────────────────────────────────────
 
-    private async Task<string> RunLoopAsync(ChatOptions options, CancellationToken ct)
+    private async Task<string> RunLoopAsync(ChatOptions options, string? ragContext, CancellationToken ct)
     {
         int rounds = 0;
+        bool ragReminderAdded = false;
 
         while (rounds++ < _config.MaxToolRounds)
         {
-            _log.LogDebug("[Agent] Round {Round}, {Len} messages in history", rounds, _history.Count);
+            _log.LogInformation("[Agent] Round {Round}, {Len} messages in history", rounds, _history.Count);
 
             var response = await _client.GetResponseAsync(_history, options, ct);
 
@@ -165,7 +174,7 @@ public class DiagnosticAgent
                             call.Arguments ?? new Dictionary<string, object?>());
                         var raw = await fn.InvokeAsync(args, ct);
                         resultText = raw?.ToString() ?? "(null)";
-                        _log.LogDebug("[Tool] {Name} → {Result}", call.Name, resultText);
+                        _log.LogInformation("[Tool] {Name} → {Result}", call.Name, resultText);
                     }
                     catch (Exception ex)
                     {
@@ -178,6 +187,17 @@ public class DiagnosticAgent
                 [
                     new FunctionResultContent(call.CallId, resultText)
                 ]));
+            }
+
+            // After the first batch of tool results, remind the model to use
+            // the reference material from the user message — counters recency bias.
+            // Use ChatRole.Assistant so Ollama accepts it mid-conversation.
+            if (ragContext is not null && !ragReminderAdded)
+            {
+                _history.Add(new ChatMessage(ChatRole.Assistant,
+                    "I have the tool results. Now I will answer using the REFERENCE MATERIAL " +
+                    "and the exact verse text from the [Verse text:] tag."));
+                ragReminderAdded = true;
             }
         }
 

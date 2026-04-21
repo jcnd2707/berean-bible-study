@@ -380,4 +380,7 @@ public static class BibleBookMap
 
     /// <summary>All known aliases, for use in regex building.</summary>
     public static IEnumerable<string> AllAliases => _map.Keys;
+
+    public static string? GetFullName(int bookNumber) =>
+    _map.FirstOrDefault(kvp => kvp.Value == bookNumber).Key;
 }

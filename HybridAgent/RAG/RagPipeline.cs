@@ -154,7 +154,7 @@ public class RagPipeline
         await _embedder.EmbedChunksAsync(chunks, ct, (done, total) =>
         {
             if (done % 50 == 0 || done == total)
-                _log.LogDebug("[RAG] Embedded {Done}/{Total}", done, total);
+                _log.LogInformation("[RAG] Embedded {Done}/{Total}", done, total);
         });
 
         await _store.AddAsync(chunks, ct);
@@ -201,7 +201,7 @@ public class RagPipeline
         if (results.Count == 0) return null;
 
         var sources = results.Select(r => r.Source).Distinct().Count();
-        _log.LogDebug("[RAG] {Count} chunks from {Sources} source(s) | type={Type} lang={Lang}",
+        _log.LogInformation("[RAG] {Count} chunks from {Sources} source(s) | type={Type} lang={Lang}",
             results.Count, sources, sourceType?.ToString() ?? "all", language ?? "all");
 
         return FormatContext(results);
@@ -237,7 +237,7 @@ public class RagPipeline
         var finalResults = ApplyMmr(queryEmbedding, allResults, topKPerType * sourceTypes.Count, lambda);
 
         var sources = finalResults.Select(r => r.Source).Distinct().Count();
-        _log.LogDebug("[RAG] Multi-source: {Count} chunks from {Sources} source(s)",
+        _log.LogInformation("[RAG] Multi-source: {Count} chunks from {Sources} source(s)",
             finalResults.Count, sources);
 
         return FormatContext(finalResults);
@@ -255,7 +255,7 @@ public class RagPipeline
     {
         var results = _store.SearchByVerse(bookNumber, chapter, verse, sourceType, language);
         if (results.Count == 0) return null;
-        _log.LogDebug("[RAG] Verse-pinned: {Count} chunks for {Book}:{Ch}:{V}",
+        _log.LogInformation("[RAG] Verse-pinned: {Count} chunks for {Book}:{Ch}:{V}",
             results.Count, bookNumber, chapter, verse);
         return FormatContext(results);
     }
@@ -270,13 +270,15 @@ public class RagPipeline
     public static async Task<(RagPipeline pipeline, Task indexingWork)> CreateAsync(
         AgentRagConfig config,
         ILoggerFactory logFactory,
-        string embeddingModel = "nomic-embed-text",
+        string embeddingModel = "mxbai-embed-large",
         string ollamaEndpoint = "http://localhost:11434",
         CancellationToken ct = default)
     {
         var log = logFactory.CreateLogger<RagPipeline>();
         var embedder = new EmbeddingService(embeddingModel, ollamaEndpoint);
-        var store = new SqliteVectorStore(config.RagDbPath);
+        var store = new SqliteVectorStore(
+    config.RagDbPath,
+    logFactory.CreateLogger<SqliteVectorStore>());
 
         await store.InitialiseAsync(ct);
 
@@ -317,14 +319,16 @@ public class RagPipeline
         AgentRagConfig config,
         BereanResourceApiClient client,
         ILoggerFactory logFactory,
-        string embeddingModel = "nomic-embed-text",
+        string embeddingModel = "mxbai-embed-large",
         string ollamaEndpoint = "http://localhost:11434",
         string language = "en",
         CancellationToken ct = default)
     {
         var log = logFactory.CreateLogger<RagPipeline>();
         var embedder = new EmbeddingService(embeddingModel, ollamaEndpoint);
-        var store = new SqliteVectorStore(config.RagDbPath);
+        var store = new SqliteVectorStore(
+    config.RagDbPath,
+    logFactory.CreateLogger<SqliteVectorStore>());
 
         await store.InitialiseAsync(ct);
 
@@ -342,8 +346,18 @@ public class RagPipeline
 
         var indexingWork = Task.Run(async () =>
         {
-            await ApiIndexer.IndexAllAsync(pipeline, client, language, ct: ct, log: log);
-            log.LogInformation("[RAG] Background indexing complete — {Count} chunks", pipeline.IndexedChunks);
+            await ApiIndexer.IndexAllAsync(
+                pipeline,
+                client,
+                language,
+                chunkSize: config.ChunkSize,
+                overlap: config.ChunkOverlap,
+                allowedCommentaryModuleIds: config.AllowedCommentaryModules,
+                log: log,
+                ct: ct);
+
+            log.LogInformation("[RAG] Background indexing complete — {Count} chunks",
+                pipeline.IndexedChunks);
         }, ct);
 
         return (pipeline, indexingWork);
@@ -415,7 +429,7 @@ public class RagPipeline
     private static string FormatContext(List<DocumentChunk> chunks)
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("## Relevant reference material");
+        sb.AppendLine("REFERENCE MATERIAL:");
         sb.AppendLine();
 
         for (int i = 0; i < chunks.Count; i++)
@@ -424,14 +438,11 @@ public class RagPipeline
             var label = c.BookNumber is not null
                 ? $"{c.Source} [{c.SourceType}] — Book {c.BookNumber}, Ch {c.ChapterBegin}, v{c.VerseBegin}"
                 : $"{c.Source} [{c.SourceType}]";
-            sb.AppendLine($"### [{i + 1}] {label}");
+            sb.AppendLine($"[{i + 1}] {label}:");
             sb.AppendLine(c.Text);
             sb.AppendLine();
         }
 
-        sb.AppendLine("---");
-        sb.AppendLine("Use the material above to inform your answer. " +
-                      "If it does not cover the question, say so clearly.");
-        return sb.ToString();
+        return sb.ToString().TrimEnd();
     }
 }

@@ -2,39 +2,31 @@ using Microsoft.Extensions.Logging;
 
 namespace HybridAgent.Core.RAG;
 
-/// <summary>
-/// Fetches content from BereanResource.Api and feeds it into the RAG pipeline.
-/// Replaces direct e-Sword file reading for agents configured with ResourceApiBaseUrl.
-///
-/// Indexing strategy per source type:
-///   Bible       — one chunk per verse, with exact (book, chapter, verse) coordinates
-///   Commentary  — one chunk per entry, with verse coordinates when available
-///   Books       — overlapping chunks within each chapter (prose, no verse coords)
-/// </summary>
 public static class ApiIndexer
 {
     public static async Task IndexAllAsync(
         RagPipeline pipeline,
         BereanResourceApiClient client,
         string language = "en",
-        int chunkSize = 500,
-        int overlap = 100,
+        int chunkSize = 200,
+        int overlap = 50,
+        IEnumerable<string>? allowedCommentaryModuleIds = null,
         ILogger? log = null,
         CancellationToken ct = default)
     {
-        // Bibles are NOT indexed — verses are fetched on-demand via the lookup_verse tool.
-        await IndexCommentariesAsync(pipeline, client, language, chunkSize, overlap, log, ct);
+        await IndexCommentariesAsync(pipeline, client, language, chunkSize, overlap,
+            allowedCommentaryModuleIds, log, ct);
         await IndexBooksAsync(pipeline, client, chunkSize, overlap, log, ct);
     }
 
-    // ── Bible ─────────────────────────────────────────────────────────────────
+    // ── Bible ─────────────────────────────────────────────────────────────
 
     public static async Task IndexBiblesAsync(
         RagPipeline pipeline,
         BereanResourceApiClient client,
         string language = "en",
-        int chunkSize = 500,
-        int overlap = 100,
+        int chunkSize = 200,
+        int overlap = 50,
         ILogger? log = null,
         CancellationToken ct = default)
     {
@@ -53,7 +45,8 @@ public static class ApiIndexer
                 ct.ThrowIfCancellationRequested();
                 for (int ch = 1; ch <= book.ChapterCount; ch++)
                 {
-                    var chapter = await client.GetBibleChapterAsync(module.ModuleId, book.Name, ch, ct);
+                    var chapter = await client.GetBibleChapterAsync(
+                        module.ModuleId, book.Name, ch, ct);
                     if (chapter is null || chapter.Verses.Count == 0) continue;
 
                     var chunks = new List<DocumentChunk>();
@@ -76,21 +69,40 @@ public static class ApiIndexer
         }
     }
 
-    // ── Commentary ────────────────────────────────────────────────────────────
+    // ── Commentary ────────────────────────────────────────────────────────
 
     public static async Task IndexCommentariesAsync(
         RagPipeline pipeline,
         BereanResourceApiClient client,
         string language = "en",
-        int chunkSize = 500,
-        int overlap = 100,
+        int chunkSize = 200,
+        int overlap = 50,
+        IEnumerable<string>? allowedModuleIds = null,
         ILogger? log = null,
         CancellationToken ct = default)
     {
         var modules = await client.GetCommentariesAsync(ct);
-        log?.LogInformation("[ApiIndexer] Commentaries: {Count} module(s)", modules.Count);
 
-        // Reuse the canonical 66-book list from the first available English Bible
+        // Filter to only allowed modules if specified — prevents indexing
+        // commentaries that should be served as direct tool calls instead
+        if (allowedModuleIds is not null)
+        {
+            var allowed = allowedModuleIds
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            modules = modules
+                .Where(m => allowed.Contains(m.ModuleId))
+                .ToList();
+        }
+
+        log?.LogInformation("[ApiIndexer] Commentaries to index: {Count} module(s)",
+            modules.Count);
+
+        if (modules.Count == 0)
+        {
+            log?.LogWarning("[ApiIndexer] No commentary modules matched the allowed list");
+            return;
+        }
+
         var bookList = await GetCanonicalBooksAsync(client, ct);
         if (bookList.Count == 0)
         {
@@ -131,13 +143,13 @@ public static class ApiIndexer
         }
     }
 
-    // ── Books ─────────────────────────────────────────────────────────────────
+    // ── Books ─────────────────────────────────────────────────────────────
 
     public static async Task IndexBooksAsync(
         RagPipeline pipeline,
         BereanResourceApiClient client,
-        int chunkSize = 500,
-        int overlap = 100,
+        int chunkSize = 200,
+        int overlap = 50,
         ILogger? log = null,
         CancellationToken ct = default)
     {
@@ -150,20 +162,23 @@ public static class ApiIndexer
             log?.LogInformation("[ApiIndexer] Indexing book: {Title}", book.Title);
 
             var chapters = await client.GetBookChaptersAsync(book.ModuleId, ct);
+            int chapterIndex = 0;
 
             foreach (var chapter in chapters)
             {
+                chapterIndex++;
                 var content = await client.GetBookChapterAsync(book.ModuleId, chapter.Id, ct);
                 if (content is null || content.Paragraphs.Count == 0) continue;
 
-                // Join paragraph plain text; use chapter title as source label for context
                 var text = string.Join("\n\n", content.Paragraphs
                     .Where(p => !string.IsNullOrWhiteSpace(p.PlainText))
                     .Select(p => p.PlainText));
 
                 if (string.IsNullOrWhiteSpace(text)) continue;
 
-                var source = $"{book.Title} — {chapter.Title}";
+                // Include explicit chapter number so the agent can cite
+                // "Book Title, Chapter N" reliably regardless of chapter title content
+                var source = $"{book.Title}, Chapter {chapterIndex} — {chapter.Title}";
                 var chunks = DocumentChunker.Chunk(
                     text, source, chunkSize, overlap,
                     sourceType: SourceType.Book,
@@ -177,7 +192,7 @@ public static class ApiIndexer
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────
 
     private static async Task<List<ApiBibleBook>> GetCanonicalBooksAsync(
         BereanResourceApiClient client, CancellationToken ct)

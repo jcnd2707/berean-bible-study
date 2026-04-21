@@ -55,7 +55,7 @@
 
 //    /// <summary>
 //    /// Save the index to a JSON file so you don't have to re-embed on every startup.
-//    /// Embeddings are large — expect ~1 MB per 500 chunks with nomic-embed-text.
+//    /// Embeddings are large — expect ~1 MB per 500 chunks with mxbai-embed-large.
 //    /// </summary>
 //    public async Task SaveAsync(string? path = null)
 //    {

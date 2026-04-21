@@ -240,11 +240,27 @@ public class CommentaryService(
 
     private static bool VolumeContainsBook(string path, int bookNumber)
     {
-        using var conn = Open(path);
+        try
+        {
+            using var conn = Open(path);
+            if (!TableExists(conn, "commentary")) return false;
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(1) FROM commentary WHERE book = $book LIMIT 1";
+            cmd.Parameters.AddWithValue("$book", bookNumber);
+            return Convert.ToInt64(cmd.ExecuteScalar()!) > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool TableExists(SqliteConnection conn, string tableName)
+    {
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(1) FROM commentary WHERE book = $book LIMIT 1";
-        cmd.Parameters.AddWithValue("$book", bookNumber);
-        return Convert.ToInt64(cmd.ExecuteScalar()!) > 0;
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name=$name";
+        cmd.Parameters.AddWithValue("$name", tableName);
+        return cmd.ExecuteScalar() is not null;
     }
 
     // ── Raw DB helpers ────────────────────────────────────────────────────────

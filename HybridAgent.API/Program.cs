@@ -47,8 +47,8 @@ namespace HybridAgent.API
             // List available agents
             app.MapGet("/agents", () => Results.Ok(new[]
             {
-    new { id = "Car",    name = "Car Diagnostics",    model = "llama3.2:3b" },
-    new { id = "Bible",  name = "Bible Research",     model = "llama3.2:3b" },
+    new { id = "Car",    name = "Car Diagnostics",    model = "llama3.1:8b" },
+    new { id = "Bible",  name = "Bible Research",     model = "llama3.1:8b" },
     new { id = "CSharp", name = "C# Troubleshooting", model = "deepseek-coder:6.7b" },
 }));
 

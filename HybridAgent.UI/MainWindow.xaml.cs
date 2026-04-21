@@ -107,8 +107,8 @@ namespace HybridAgent
                 };
                 string modelName = type switch
                 {
-                    "Car" => "llama3.2:3b",
-                    "Bible" => "llama3.2:3b",
+                    "Car" => "llama3.1:8b",
+                    "Bible" => "llama3.1:8b",
                     "CSharp" => "deepseek-coder:6.7b",
                     _ => type
                 };
