@@ -17,6 +17,7 @@ public class AgentSessionService
     private readonly string _openAiApiKey;
     private readonly string _ollamaEndpoint;
     private readonly string _embeddingModel;
+    private readonly string _defaultModel;
     private readonly AgentRagConfig? _bibleRagConfig;
     private readonly AgentRagConfig? _carRagConfig;
     private readonly AgentRagConfig? _codeRagConfig;
@@ -24,6 +25,7 @@ public class AgentSessionService
     private readonly ConcurrentDictionary<string, HybridPipeline> _sessions = new();
     private readonly ConcurrentDictionary<string, AgentType> _agentTypes = new();
     private readonly ConcurrentDictionary<string, string> _languages = new();
+    private readonly ConcurrentDictionary<string, string> _models = new();
     // Per-session CTS so RemoveSession() can cancel background indexing on disconnect
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _sessionCts = new();
 
@@ -35,7 +37,8 @@ public class AgentSessionService
                           ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
                           ?? string.Empty;
         _ollamaEndpoint = config["Ollama:Endpoint"] ?? "http://localhost:11434";
-        _embeddingModel = config["Ollama:EmbeddingModel"] ?? "nomic-embed-text";
+        _embeddingModel = config["Ollama:EmbeddingModel"] ?? "mxbai-embed-large";
+        _defaultModel = config["Ollama:DefaultModel"] ?? "llama3.1:8b";
         _bibleRagConfig = BindRagConfig(config, "BibleAgent");
         _carRagConfig = BindRagConfig(config, "CarAgent");
         _codeRagConfig = BindRagConfig(config, "CodeAgent");
@@ -58,6 +61,7 @@ public class AgentSessionService
     public async Task<HybridPipeline> SelectAgentAsync(
         string connectionId,
         AgentType agentType,
+        string? modelId = null,
         CancellationToken connectionCt = default)
     {
         _log.LogInformation("[Session] {ConnId} selecting agent: {Agent}", connectionId, agentType);
@@ -74,6 +78,10 @@ public class AgentSessionService
         _sessionCts[connectionId] = cts;
         var ct = cts.Token;
 
+        var resolvedModel = string.IsNullOrWhiteSpace(modelId) ? _defaultModel : modelId;
+        _models[connectionId] = resolvedModel;
+        _log.LogInformation("[Session] {ConnId} model: {Model}", connectionId, resolvedModel);
+
         var language = GetLanguage(connectionId);
 
         HybridPipeline pipeline;
@@ -81,7 +89,7 @@ public class AgentSessionService
         if (agentType == AgentType.Bible && _bibleRagConfig is not null)
         {
             // Bible agent uses the dedicated factory with router + language
-            var (agentConfig, _) = AgentFactory.CreateBibleAgent(_openAiApiKey);
+            var (agentConfig, _) = AgentFactory.CreateBibleAgent(_openAiApiKey, modelId: resolvedModel);
 
             pipeline = await HybridPipeline.CreateBibleAsync(
                 agentConfig, _logFactory, _bibleRagConfig,
@@ -131,6 +139,7 @@ public class AgentSessionService
         _sessions.TryRemove(connectionId, out _);
         _agentTypes.TryRemove(connectionId, out _);
         _languages.TryRemove(connectionId, out _);
+        _models.TryRemove(connectionId, out _);
         _log.LogInformation("[Session] {ConnId} removed", connectionId);
     }
 
@@ -151,8 +160,8 @@ public class AgentSessionService
         if (ragConfig is not null && File.Exists(ragConfig.RagDbPath))
             File.Delete(ragConfig.RagDbPath);
 
-        // SelectAgentAsync cancels the old session CTS and starts a new background task
-        await SelectAgentAsync(connectionId, agentType.Value, connectionCt);
+        var currentModel = _models.GetValueOrDefault(connectionId);
+        await SelectAgentAsync(connectionId, agentType.Value, currentModel, connectionCt);
         return new RagIndexResult(true, "Re-index started in background.");
     }
 

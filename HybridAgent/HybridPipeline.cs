@@ -123,7 +123,7 @@ public class HybridPipeline
         ILoggerFactory logFactory,
         AgentRagConfig? ragConfig = null,
         string ollamaEndpoint = "http://localhost:11434",
-        string embeddingModel = "mxbai-embed-large",
+        string embeddingModel = "",
         CancellationToken ct = default)
     {
         QueryRouter? router = null;

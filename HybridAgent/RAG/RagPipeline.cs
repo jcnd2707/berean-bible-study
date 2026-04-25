@@ -270,7 +270,7 @@ public class RagPipeline
     public static async Task<(RagPipeline pipeline, Task indexingWork)> CreateAsync(
         AgentRagConfig config,
         ILoggerFactory logFactory,
-        string embeddingModel = "mxbai-embed-large",
+        string embeddingModel,
         string ollamaEndpoint = "http://localhost:11434",
         CancellationToken ct = default)
     {
@@ -319,7 +319,7 @@ public class RagPipeline
         AgentRagConfig config,
         BereanResourceApiClient client,
         ILoggerFactory logFactory,
-        string embeddingModel = "mxbai-embed-large",
+        string embeddingModel,
         string ollamaEndpoint = "http://localhost:11434",
         string language = "en",
         CancellationToken ct = default)

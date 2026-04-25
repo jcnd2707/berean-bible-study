@@ -22,6 +22,7 @@ import type {
   RagIndexedEvent,
 } from "../../core/services/agent-hub.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
+import { ModelService } from "../../core/services/model.service";
 
 export interface ChatMessage {
   role: "user" | "agent";
@@ -56,6 +57,7 @@ const QUICK_ASKS = [
 export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   private readonly hub = inject(AgentHubService);
   readonly nav = inject(NavigationStateService);
+  readonly modelService = inject(ModelService);
 
   @ViewChild("msgList") msgListRef!: ElementRef<HTMLElement>;
 
@@ -183,9 +185,21 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   private async initAgent(): Promise<void> {
     try {
-      await this.hub.selectBibleAgent();
+      await this.modelService.ready;
+      await this.hub.selectBibleAgent(this.modelService.selectedModelId());
     } catch {
       this.error.set("Failed to initialise the Bible agent.");
+    }
+  }
+
+  async onModelChange(modelId: string): Promise<void> {
+    this.modelService.selectModel(modelId);
+    this.agentReady.set(false);
+    this.error.set(null);
+    try {
+      await this.hub.selectBibleAgent(modelId);
+    } catch {
+      this.error.set("Failed to switch model.");
     }
   }
 

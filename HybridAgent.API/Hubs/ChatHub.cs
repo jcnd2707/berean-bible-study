@@ -55,7 +55,7 @@ public class ChatHub : Hub
 
     // ── SelectAgent ────────────────────────────────────────────────────────
 
-    public async Task SelectAgent(string agentType)
+    public async Task SelectAgent(string agentType, string? modelId = null)
     {
         if (!Enum.TryParse<AgentType>(agentType, ignoreCase: true, out var type))
         {
@@ -66,7 +66,7 @@ public class ChatHub : Hub
         try
         {
             var pipeline = await _sessions.SelectAgentAsync(
-                Context.ConnectionId, type, Context.ConnectionAborted);
+                Context.ConnectionId, type, modelId, Context.ConnectionAborted);
 
             var status = _sessions.GetRagStatus(Context.ConnectionId);
 

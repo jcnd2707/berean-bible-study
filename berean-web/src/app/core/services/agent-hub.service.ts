@@ -1,6 +1,7 @@
 import { Injectable, NgZone, OnDestroy } from "@angular/core";
 import * as signalR from "@microsoft/signalr";
 import { Subject, BehaviorSubject } from "rxjs";
+import { environment } from "../../../environments/environment";
 
 export type HubState =
   | "disconnected"
@@ -31,7 +32,7 @@ export interface RagStatusEvent {
 
 @Injectable({ providedIn: "root" })
 export class AgentHubService implements OnDestroy {
-  private readonly HUB_URL = "http://localhost:5050/hubs/chat";
+  private readonly HUB_URL = `${environment.agentApiUrl}/hubs/chat`;
 
   private hub!: signalR.HubConnection;
 
@@ -112,8 +113,8 @@ export class AgentHubService implements OnDestroy {
     }
   }
 
-  async selectBibleAgent(): Promise<void> {
-    await this.hub.send("SelectAgent", "Bible");
+  async selectBibleAgent(modelId: string): Promise<void> {
+    await this.hub.send("SelectAgent", "Bible", modelId);
   }
 
   async sendMessage(text: string): Promise<void> {

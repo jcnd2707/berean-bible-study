@@ -1,6 +1,5 @@
 ﻿using HybridAgent.API.Hubs;
 using HybridAgent.API.Services;
-using Microsoft.Extensions.Options;
 
 
 namespace HybridAgent.API
@@ -20,6 +19,7 @@ namespace HybridAgent.API
 
             // AgentSessionService is Singleton — it holds all active pipelines
             builder.Services.AddSingleton<AgentSessionService>();
+            builder.Services.AddSingleton<ModelRegistryService>();
 
             // CORS — required for WPF SignalR client (it uses HTTP for the handshake)
             builder.Services.AddCors(opts => opts.AddDefaultPolicy(p => p
@@ -44,13 +44,12 @@ namespace HybridAgent.API
             // Health check
             app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
 
-            // List available agents
-            app.MapGet("/agents", () => Results.Ok(new[]
+            // List tool-compatible models available for the Bible agent
+            app.MapGet("/api/models", async (ModelRegistryService registry, CancellationToken ct) =>
             {
-    new { id = "Car",    name = "Car Diagnostics",    model = "llama3.1:8b" },
-    new { id = "Bible",  name = "Bible Research",     model = "llama3.1:8b" },
-    new { id = "CSharp", name = "C# Troubleshooting", model = "deepseek-coder:6.7b" },
-}));
+                var models = await registry.GetToolCompatibleModelsAsync(ct);
+                return Results.Ok(models);
+            });
 
             // ── SignalR hub ────────────────────────────────────────────────────────────
 
@@ -61,7 +60,7 @@ namespace HybridAgent.API
             app.Logger.LogInformation("HybridAgent API starting...");
             app.Logger.LogInformation("SignalR hub  : /hubs/chat");
             app.Logger.LogInformation("Health check : /health");
-            app.Logger.LogInformation("Agent list   : /agents");
+            app.Logger.LogInformation("Model list   : /api/models");
 
             var key = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
             app.Logger.LogInformation("Cloud model  : {Status}",

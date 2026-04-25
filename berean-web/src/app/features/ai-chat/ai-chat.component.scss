@@ -92,6 +92,34 @@
   50%       { opacity: 0.45; }
 }
 
+.model-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  cursor: default;
+}
+
+.model-select {
+  font-size: 9px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  max-width: 130px;
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  option {
+    background: #16143a;
+    color: rgba(255, 255, 255, 0.8);
+  }
+}
+
 .reconnect-btn {
   font-size: 9px;
   padding: 2px 8px;

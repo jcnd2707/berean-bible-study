@@ -73,11 +73,12 @@ public static class AgentFactory
         IEnumerable<string>? dictionaryFiles = null,
         BereanResourceApiClient? apiClient = null,
         IEnumerable<string>? dictionaryModuleIds = null,
-        IEnumerable<string>? bibleModuleIds = null)
+        IEnumerable<string>? bibleModuleIds = null,
+        string? modelId = null)
     {
         var config = new AgentConfig
         {
-            OllamaModel = "llama3.1:8b",
+            OllamaModel = modelId ?? "llama3.1:8b",
             OpenAiApiKey = openAiKey ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY"),
             SystemPrompt = """
                 You are a biblical scholar with expertise in hermeneutics, biblical

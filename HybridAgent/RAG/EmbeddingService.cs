@@ -37,7 +37,7 @@ public class EmbeddingService
     private string? _workingEndpoint;
 
     public EmbeddingService(
-        string model = "mxbai-embed-large",
+        string model,
         string baseUrl = "http://localhost:11434",
         int batchSize = 32,
         int maxConcurrency = 4)

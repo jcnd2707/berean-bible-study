@@ -14,6 +14,22 @@
     } @else if (ragChunks() > 0) {
       <span class="rag-badge">{{ ragChunks() }} chunks</span>
     }
+    @if (modelService.models().length > 0) {
+      <span
+        class="model-select-wrap"
+        [title]="messages().length > 0 ? 'Start a new conversation to switch models' : ''"
+      >
+        <select
+          class="model-select"
+          (change)="onModelChange($any($event.target).value)"
+          [disabled]="messages().length > 0 || isStreaming()"
+        >
+          @for (m of modelService.models(); track m.id) {
+            <option [value]="m.id" [selected]="m.id === modelService.selectedModelId()">{{ m.name }}</option>
+          }
+        </select>
+      </span>
+    }
     <div class="head-actions">
       @for (qa of quickAsks; track qa.label) {
         <button
