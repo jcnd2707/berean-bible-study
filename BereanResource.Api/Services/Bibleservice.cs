@@ -292,16 +292,31 @@ public class BibleService(
         {
             using var conn = Open(path);
             string translation;
-            string? title, license;
+            string? title = null, license = null;
 
-            using (var cmd = conn.CreateCommand())
+            if (TableExists(conn, "translations"))
             {
+                using var cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT translation, title, license FROM translations LIMIT 1";
                 using var r = cmd.ExecuteReader();
-                if (!r.Read()) return null;
-                translation = r.IsDBNull(0) ? string.Empty : r.GetString(0);
-                title = r.IsDBNull(1) ? null : r.GetString(1).TrimStart('#', ' ');
-                license = r.IsDBNull(2) ? null : r.GetString(2);
+                if (r.Read())
+                {
+                    translation = r.IsDBNull(0) ? string.Empty : r.GetString(0);
+                    title = r.IsDBNull(1) ? null : r.GetString(1).TrimStart('#', ' ');
+                    license = r.IsDBNull(2) ? null : r.GetString(2);
+                }
+                else
+                {
+                    // translations table exists but is empty
+                    translation = DiscoverScrollmapperTranslation(
+                        conn, Path.GetFileNameWithoutExtension(path));
+                }
+            }
+            else
+            {
+                // No translations table — infer translation id from verse table name
+                translation = DiscoverScrollmapperTranslation(
+                    conn, Path.GetFileNameWithoutExtension(path));
             }
 
             var hasStrongs = ProbeScrollmapperStrongs(conn, translation);

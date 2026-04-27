@@ -30,11 +30,10 @@ export interface ChatMessage {
   streaming?: boolean;
 }
 
-const QUICK_ASKS = [
+const QUICK_ASKS_NEUTRAL = [
   {
     label: "Explain ↗",
-    prompt:
-      "Explain the theological significance of this passage in SDA context.",
+    prompt: "Explain the theological significance of this passage.",
   },
   {
     label: "Orig. lang ↗",
@@ -42,8 +41,19 @@ const QUICK_ASKS = [
       "Show me the original Hebrew or Greek words for the selected verse and explain their meaning.",
   },
   {
+    label: "Context ↗",
+    prompt: "What is the historical and cultural context of this passage?",
+  },
+];
+
+const QUICK_ASKS_SDA = [
+  {
     label: "EGW ↗",
     prompt: "What does Ellen G. White say about this passage?",
+  },
+  {
+    label: "SDA view ↗",
+    prompt: "What is the Seventh-day Adventist interpretation of this passage?",
   },
 ];
 
@@ -70,8 +80,14 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   readonly error = signal<string | null>(null);
   readonly isIndexing = signal(false);
   readonly indexingMessage = signal("");
+  readonly isQuickMode = signal(true);
+  readonly includeSDA = signal(false);
 
-  readonly quickAsks = QUICK_ASKS;
+  readonly quickAsks = computed(() =>
+    this.includeSDA()
+      ? [...QUICK_ASKS_NEUTRAL, ...QUICK_ASKS_SDA]
+      : QUICK_ASKS_NEUTRAL,
+  );
 
   readonly contextLabel = computed(() => {
     const loc = this.nav.location();
@@ -215,10 +231,18 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.shouldScroll = true;
 
     try {
-      await this.hub.sendMessage(withContext);
+      await this.hub.sendMessage(withContext, this.isQuickMode() ? "Quick" : "Deep", this.includeSDA());
     } catch {
       this.error.set("Failed to send message.");
     }
+  }
+
+  setMode(quick: boolean): void {
+    this.isQuickMode.set(quick);
+  }
+
+  toggleSDA(): void {
+    this.includeSDA.update((v) => !v);
   }
 
   quickAsk(prompt: string): void {

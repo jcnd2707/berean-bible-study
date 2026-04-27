@@ -135,11 +135,29 @@ export class DictionaryPanelComponent implements OnInit {
           },
         });
       } else {
-        this.nav.setActiveWord(null);
-        this.error.set(
-          `${t.label} requires a Strong's number. Switch to a translation with Strong's numbers, or use a plain-word dictionary.`,
-        );
-        this.loading.set(false);
+        // No Strong's number in the verse — search the lexicon by word as fallback
+        this.dictService
+          .search(t.moduleId, word, 1)
+          .pipe(catchError(() => of([] as DictionaryLookupResult[])))
+          .subscribe({
+            next: (results) => {
+              if (results.length > 0) {
+                this.rawResult.set(results[0]);
+                this.nav.setActiveWord({
+                  word: results[0].topic,
+                  strongs: null,
+                  definition: results[0].definition.slice(0, 400),
+                  source: t.label,
+                });
+              } else {
+                this.nav.setActiveWord(null);
+                this.error.set(
+                  `"${word}" not found in ${t.label}. For full lexicon access use a Strong's-tagged translation.`,
+                );
+              }
+              this.loading.set(false);
+            },
+          });
       }
     } else {
       this.dictService

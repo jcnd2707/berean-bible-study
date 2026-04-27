@@ -11,7 +11,6 @@ export interface ModelOption {
 
 @Injectable({ providedIn: "root" })
 export class ModelService {
-  private readonly STORAGE_KEY = "berean_bible_model";
   private readonly http = inject(HttpClient);
 
   readonly models = signal<ModelOption[]>([]);
@@ -26,10 +25,8 @@ export class ModelService {
         .subscribe({
           next: (models) => {
             this.models.set(models);
-            const stored = localStorage.getItem(this.STORAGE_KEY);
-            const found = models.find((m) => m.id === stored);
             const defaultModel = models.find((m) => m.isDefault) ?? models[0];
-            this.selectedModelId.set((found ?? defaultModel)?.id ?? "");
+            this.selectedModelId.set(defaultModel?.id ?? "");
             resolve();
           },
           error: () => resolve(),
@@ -39,6 +36,5 @@ export class ModelService {
 
   selectModel(id: string): void {
     this.selectedModelId.set(id);
-    localStorage.setItem(this.STORAGE_KEY, id);
   }
 }

@@ -78,8 +78,16 @@ public class BereanResourceApiClient : IDisposable
 
     public Task<ApiDictionaryEntry?> LookupWordAsync(
         string moduleId, string word, CancellationToken ct = default)
-        => GetAsync<ApiDictionaryEntry>(
-            $"api/dictionary/{Uri.EscapeDataString(moduleId)}/lookup?word={Uri.EscapeDataString(word)}", ct);
+    {
+        var param = IsStrongsNumber(word) ? "strongs" : "word";
+        return GetAsync<ApiDictionaryEntry>(
+            $"api/dictionary/{Uri.EscapeDataString(moduleId)}/lookup?{param}={Uri.EscapeDataString(word)}", ct);
+    }
+
+    private static bool IsStrongsNumber(string word) =>
+        word.Length >= 2 &&
+        word[0] is 'G' or 'H' or 'g' or 'h' &&
+        word[1..].All(char.IsDigit);
 
     public Task<List<ApiDictionaryEntry>> SearchDictionaryAsync(
         string moduleId, string query, int limit = 5, CancellationToken ct = default)

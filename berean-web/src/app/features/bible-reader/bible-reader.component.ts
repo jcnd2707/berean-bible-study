@@ -21,7 +21,6 @@ import { ResourcesService } from "../../core/services/resources.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { WordSelectionService } from "../../core/services/word-selection.service";
 import {
-  BibleModule,
   BibleModuleDetails,
   ChapterResponse,
   Verse,
@@ -204,24 +203,11 @@ export class BibleReaderComponent implements OnInit {
     const clean = word.replace(/[^a-zA-Z'-]/g, "").toLowerCase();
     if (!clean) return;
 
-    const loc = this.navState.location();
-    if (this.navState.hasStrongs() && loc) {
-      const verseNum = this.verseNumberAt(event);
-      this.bibleService
-        .getVerse(loc.moduleId, loc.book, loc.chapter, verseNum)
-        .subscribe({
-          next: (verseDetail) => {
-            const strongs = this.findStrongs(
-              clean,
-              verseDetail.strongsWords ?? [],
-            );
-            this.wordSelection.select(clean, strongs);
-          },
-          error: () => this.wordSelection.select(clean, null),
-        });
-    } else {
-      this.wordSelection.select(clean, null);
-    }
+    const verseNum = this.verseNumberAt(event);
+    const verseData = this.passage()?.verses.find((v) => v.verse === verseNum);
+    const strongs = this.findStrongs(clean, verseData?.strongsWords ?? []);
+    console.debug('[strongs]', { clean, verseNum, strongsWords: verseData?.strongsWords, strongs });
+    this.wordSelection.select(clean, strongs);
   }
 
   private findStrongs(

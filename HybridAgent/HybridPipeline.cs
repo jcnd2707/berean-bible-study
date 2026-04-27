@@ -74,23 +74,24 @@ public class HybridPipeline
 
     public async Task<string> ChatAsync(
         string userInput,
+        QueryMode mode = QueryMode.Deep,
+        bool includeSDA = false,
         CancellationToken ct = default)
     {
         _lastUserInput = userInput;
 
         string? ragContext = null;
 
-        if (_router is not null)
+        if (mode == QueryMode.Deep && _router is not null)
         {
-            // Step 4: pre-router classifies and retrieves targeted context
             var result = await _router.RouteAsync(userInput, ct);
             ragContext = result.Context;
 
-            _log.LogInformation("[Pipeline] Intent={Intent} context={HasCtx}",
-                result.Intent, ragContext is not null);
+            _log.LogInformation("[Pipeline] Intent={Intent} includeSDA={SDA} context={HasCtx}",
+                result.Intent, includeSDA, ragContext is not null);
         }
 
-        return await _diagnostic.ChatAsync(userInput, ragContext, ct);
+        return await _diagnostic.ChatAsync(userInput, ragContext, includeSDA, ct);
     }
 
     // ── Verdict ────────────────────────────────────────────────────────────
@@ -209,3 +210,5 @@ public class HybridPipeline
         return pipeline;
     }
 }
+
+public enum QueryMode { Quick, Deep }

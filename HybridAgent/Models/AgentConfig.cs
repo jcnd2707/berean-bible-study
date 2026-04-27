@@ -16,6 +16,7 @@ public class AgentConfig
 
     // Domain identity
     public string? SystemPrompt { get; set; }
+    public string? SdaSystemPromptAddendum { get; set; }
 
     // RAG — set both to enable document retrieval for this agent
     public string? RagDocsDirectory { get; set; } = "D:\\Bible Study\\bible-docs"; // folder with your .txt documents

@@ -120,6 +120,88 @@
   }
 }
 
+.mode-toggle {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 0.5px solid rgba(123, 110, 245, 0.25);
+  flex-shrink: 0;
+}
+
+.mode-btn {
+  font-size: 9px;
+  padding: 2px 8px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, color 0.1s;
+  letter-spacing: 0.2px;
+
+  &--active {
+    background: rgba(123, 110, 245, 0.25);
+    color: rgba(175, 165, 255, 0.9);
+  }
+
+  &:hover:not(:disabled):not(.mode-btn--active) {
+    background: rgba(123, 110, 245, 0.1);
+    color: rgba(175, 165, 255, 0.6);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.sda-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: transparent;
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.2px;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+  flex-shrink: 0;
+
+  &__dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+    transition: background 0.1s;
+  }
+
+  &--on {
+    background: rgba(200, 146, 42, 0.15);
+    border-color: rgba(200, 146, 42, 0.4);
+    color: rgba(255, 200, 80, 0.9);
+
+    .sda-toggle__dot {
+      background: rgba(200, 146, 42, 0.9);
+      box-shadow: 0 0 4px rgba(200, 146, 42, 0.5);
+    }
+  }
+
+  &:hover:not(:disabled):not(.sda-toggle--on) {
+    border-color: rgba(200, 146, 42, 0.25);
+    color: rgba(255, 200, 80, 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
 .reconnect-btn {
   font-size: 9px;
   padding: 2px 8px;

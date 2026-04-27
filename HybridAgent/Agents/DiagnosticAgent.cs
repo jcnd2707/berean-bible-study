@@ -18,6 +18,7 @@ public class DiagnosticAgent
     private readonly ILogger _log;
     private readonly List<ChatMessage> _history = [];
     private bool _initialized = false;
+    private bool _lastIncludeSDA = false;
 
     public DiagnosticAgent(
         IChatClient client,
@@ -36,12 +37,20 @@ public class DiagnosticAgent
     public async Task<string> ChatAsync(
         string userInput,
         string? ragContext = null,
+        bool includeSDA = false,
         CancellationToken ct = default)
     {
         if (!_initialized)
         {
-            _history.Add(new ChatMessage(ChatRole.System, BuildSystemPrompt(_config.SystemPrompt)));
+            _history.Add(new ChatMessage(ChatRole.System, BuildSystemPrompt(_config.SystemPrompt, includeSDA, _config.SdaSystemPromptAddendum)));
             _initialized = true;
+            _lastIncludeSDA = includeSDA;
+        }
+        else if (includeSDA != _lastIncludeSDA)
+        {
+            _history[0] = new ChatMessage(ChatRole.System, BuildSystemPrompt(_config.SystemPrompt, includeSDA, _config.SdaSystemPromptAddendum));
+            _lastIncludeSDA = includeSDA;
+            _log.LogInformation("[Agent] System prompt updated — SDA={SDA}", includeSDA);
         }
 
         if (ragContext is not null)
@@ -205,10 +214,16 @@ public class DiagnosticAgent
         return "Reached the maximum number of tool calls. Please rephrase your question.";
     }
 
-    private static string BuildSystemPrompt(string? domainPrompt) =>
-        domainPrompt ?? """
+    private static string BuildSystemPrompt(string? domainPrompt, bool includeSDA = false, string? sdaAddendum = null)
+    {
+        var base_ = domainPrompt ?? """
             You are a precise and helpful assistant. Use your tools to gather facts
             before answering. Be concise and factual. Always remember the full
             context of the conversation when answering follow-up questions.
             """;
+
+        return includeSDA && !string.IsNullOrWhiteSpace(sdaAddendum)
+            ? base_ + "\n\n" + sdaAddendum
+            : base_;
+    }
 }

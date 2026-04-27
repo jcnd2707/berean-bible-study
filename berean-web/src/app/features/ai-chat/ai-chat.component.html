@@ -14,6 +14,33 @@
     } @else if (ragChunks() > 0) {
       <span class="rag-badge">{{ ragChunks() }} chunks</span>
     }
+    <!-- Mode toggle -->
+    <div class="mode-toggle">
+      <button
+        class="mode-btn"
+        [class.mode-btn--active]="isQuickMode()"
+        [disabled]="isStreaming()"
+        (click)="setMode(true)"
+      >Quick</button>
+      <button
+        class="mode-btn"
+        [class.mode-btn--active]="!isQuickMode()"
+        [disabled]="isStreaming()"
+        (click)="setMode(false)"
+      >Deep</button>
+    </div>
+
+    <!-- SDA context toggle -->
+    <button
+      class="sda-toggle"
+      [class.sda-toggle--on]="includeSDA()"
+      [disabled]="isStreaming()"
+      (click)="toggleSDA()"
+      [title]="includeSDA() ? 'SDA context on — click to disable' : 'SDA context off — click to enable'"
+    >
+      <span class="sda-toggle__dot"></span>SDA
+    </button>
+
     @if (modelService.models().length > 0) {
       <span
         class="model-select-wrap"
@@ -21,17 +48,18 @@
       >
         <select
           class="model-select"
-          (change)="onModelChange($any($event.target).value)"
+          [ngModel]="modelService.selectedModelId()"
+          (ngModelChange)="onModelChange($event)"
           [disabled]="messages().length > 0 || isStreaming()"
         >
           @for (m of modelService.models(); track m.id) {
-            <option [value]="m.id" [selected]="m.id === modelService.selectedModelId()">{{ m.name }}</option>
+            <option [value]="m.id">{{ m.name }}</option>
           }
         </select>
       </span>
     }
     <div class="head-actions">
-      @for (qa of quickAsks; track qa.label) {
+      @for (qa of quickAsks(); track qa.label) {
         <button
           class="chip"
           [disabled]="!agentReady() || isStreaming()"

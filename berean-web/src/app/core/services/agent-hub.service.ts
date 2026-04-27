@@ -117,8 +117,8 @@ export class AgentHubService implements OnDestroy {
     await this.hub.send("SelectAgent", "Bible", modelId);
   }
 
-  async sendMessage(text: string): Promise<void> {
-    await this.hub.send("SendMessage", text);
+  async sendMessage(text: string, mode: "Quick" | "Deep" = "Quick", includeSDA = false): Promise<void> {
+    await this.hub.send("SendMessage", text, mode, includeSDA);
   }
 
   async resetConversation(): Promise<void> {

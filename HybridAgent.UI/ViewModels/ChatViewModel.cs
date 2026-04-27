@@ -21,6 +21,7 @@ public partial class ChatViewModel : ObservableObject, IAsyncDisposable
 
     [ObservableProperty] private string _inputText = string.Empty;
     [ObservableProperty] private string _selectedAgent = "Car";
+    [ObservableProperty] private bool _isQuickMode = true;
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _statusText = "Disconnected";
@@ -74,7 +75,7 @@ public partial class ChatViewModel : ObservableObject, IAsyncDisposable
         AddUserMessage(text);
         StartStreamingMessage();
 
-        await _hub.SendMessageAsync(text);
+        await _hub.SendMessageAsync(text, IsQuickMode ? "Quick" : "Deep");
     }
 
     private bool CanSend() => IsConnected && !IsBusy && !string.IsNullOrWhiteSpace(InputText);

@@ -49,6 +49,7 @@ export interface Verse {
   verse: number;
   reference: string;
   text: string;
+  strongsWords?: StrongsWord[];
 }
 
 export interface VerseResponse extends Verse {

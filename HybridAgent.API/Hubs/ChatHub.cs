@@ -90,7 +90,7 @@ public class ChatHub : Hub
 
     // ── SendMessage ────────────────────────────────────────────────────────
 
-    public async Task SendMessage(string text)
+    public async Task SendMessage(string text, string mode = "Deep", bool includeSDA = false)
     {
         var pipeline = _sessions.GetPipeline(Context.ConnectionId);
         if (pipeline is null)
@@ -99,15 +99,19 @@ public class ChatHub : Hub
             return;
         }
 
-        _log.LogInformation("[Hub] {Id} → {Preview}",
-            Context.ConnectionId, text.Length > 60 ? text[..60] + "…" : text);
+        var queryMode = mode.Equals("Quick", StringComparison.OrdinalIgnoreCase)
+            ? HybridAgent.Core.QueryMode.Quick
+            : HybridAgent.Core.QueryMode.Deep;
+
+        _log.LogInformation("[Hub] {Id} mode={Mode} sda={SDA} → {Preview}",
+            Context.ConnectionId, queryMode, includeSDA, text.Length > 60 ? text[..60] + "…" : text);
 
         try
         {
             // Signal start
             await Clients.Caller.SendAsync("TokenReceived", "");
 
-            var fullReply = await pipeline.ChatAsync(text, Context.ConnectionAborted);
+            var fullReply = await pipeline.ChatAsync(text, queryMode, includeSDA, Context.ConnectionAborted);
 
             // Simulate word-by-word streaming — replace with true streaming
             // once DiagnosticAgent exposes IAsyncEnumerable<string>

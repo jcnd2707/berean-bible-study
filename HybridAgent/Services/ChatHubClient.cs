@@ -82,8 +82,8 @@ public class ChatHubClient : IAsyncDisposable
     public Task SelectAgentAsync(string agentType) =>
         _hub.SendAsync("SelectAgent", agentType);
 
-    public Task SendMessageAsync(string text) =>
-        _hub.SendAsync("SendMessage", text);
+    public Task SendMessageAsync(string text, string mode = "Deep") =>
+        _hub.SendAsync("SendMessage", text, mode);
 
     public Task GetVerdictAsync() =>
         _hub.SendAsync("GetVerdict");

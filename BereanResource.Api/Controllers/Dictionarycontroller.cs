@@ -18,8 +18,11 @@ public class DictionaryController(DictionaryService dictionaryService) : Control
             return BadRequest(new { error = "Provide either 'word' or 'strongs' query parameter." });
         try
         {
-            var result = strongs is not null
-                ? dictionaryService.LookupByStrongs(moduleId, strongs)
+            // Route to LookupByStrongs when ?strongs= is explicit, or when ?word=
+            // looks like a Strong's number (G/H followed by digits) — handles clients
+            // that don't distinguish the two parameters.
+            var result = strongs is not null || IsStrongsNumber(word!)
+                ? dictionaryService.LookupByStrongs(moduleId, strongs ?? word!)
                 : dictionaryService.LookupByWord(moduleId, word!);
 
             return result is null
@@ -80,4 +83,9 @@ public class DictionaryController(DictionaryService dictionaryService) : Control
         }
         catch (FileNotFoundException ex) { return NotFound(new { error = ex.Message }); }
     }
+
+    private static bool IsStrongsNumber(string word) =>
+        word.Length >= 2 &&
+        word[0] is 'G' or 'H' or 'g' or 'h' &&
+        word[1..].All(char.IsDigit);
 }
