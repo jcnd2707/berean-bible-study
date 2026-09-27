@@ -59,18 +59,10 @@ public class Program
 
         builder.Services.AddCors(options =>
         {
-            //options.AddDefaultPolicy(policy =>
-            //    policy.WithOrigins(allowedOrigins)
-            //          .AllowAnyHeader()
-            //          .AllowAnyMethod());
-
-            //for testing
             options.AddDefaultPolicy(policy =>
-                policy
-            .AllowAnyOrigin()
-            .AllowAnyHeader()
-            .AllowAnyMethod());
-
+                policy.WithOrigins(allowedOrigins)
+                      .AllowAnyHeader()
+                      .AllowAnyMethod());
         });
     }
 
