@@ -13,7 +13,7 @@ A Bible study app with an AI study assistant. The assistant answers from your ow
 | `Berean.Core/` | .NET 8 class library | The study agent: query routing, retrieval, tradition-aware indexing, prompts, tools, and the model providers |
 | `Berean.Agent.Api/` | ASP.NET Core 8 | SignalR hub (`/hubs/chat`): conversations, streaming answers, sources, saved chats |
 | `BereanResource.Api/` | ASP.NET Core 8 Web API | REST access to your Bible study modules: Bible, commentary, dictionary, cross-references, books, notes, Strong's occurrences, module profiles |
-| `berean-web/` | Angular 19 + Tailwind 4 | Web client: Bible reader, commentary, dictionary, cross-references, notes, compare, AI chat |
+| `berean-web/` | Angular 20 + Tailwind 4 | Web client: Bible reader, commentary, dictionary, cross-references, notes, compare, AI chat |
 | `Berean.Core.Tests/` | xUnit | Unit tests (router, retrieval, indexing, agent, Claude Code client, conversation store) |
 | `eval/Berean.Eval/` | console | The evaluation harness (see below) |
 | `tests-support/FakeClaude/` | console | A stand-in for the `claude` CLI, used only by the tests |

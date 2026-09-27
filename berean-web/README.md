@@ -1,6 +1,6 @@
 # Berean Web
 
-Angular 19 client for the Berean Bible study app. Run it after the two APIs; see the [root README](../README.md) for what everything does and how to configure it.
+Angular 20 client for the Berean Bible study app. Run it after the two APIs; see the [root README](../README.md) for what everything does and how to configure it.
 
 ## Setup
 
