@@ -238,12 +238,29 @@ public sealed class ClaudeCodeChatClientTests : IDisposable
     public async Task Cancelling_StopsTheRun()
     {
         var c = Client();
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(400));
+        using var cts = new CancellationTokenSource();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        var run = Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
         {
             await foreach (var _ in c.GetStreamingResponseAsync([Sys(), User("SLEEP")], new ChatOptions { ConversationId = "z" }, cts.Token)) { }
         });
+
+        // Wait for FakeClaude to actually record the call (it logs before sleeping) instead of
+        // racing a fixed delay against process startup, which flaked under load.
+        await WaitUntilLogged();
+        cts.Cancel();
+
+        await run;
+    }
+
+    private async Task WaitUntilLogged()
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (Calls().Count == 0)
+        {
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("FakeClaude never logged the call.");
+            await Task.Delay(10);
+        }
     }
 
     [Fact]
