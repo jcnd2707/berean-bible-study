@@ -1,103 +1,103 @@
 {
-  "_comment": "Eval question set. 'rubric' is what a good answer must include; use it for the manual pass/fail column in summary.md. 'includeSda' turns the SDA toggle on.",
+  "_comment": "Eval question set. 'rubric' is what a good answer must include; use it for the manual pass/fail column in summary.md. 'perspectives' selects the conversation's perspective(s) by id, matching Berean.Agent.Api's configured Perspectives (e.g. [\"adventist\"]); empty means none selected.",
   "questions": [
     {
-      "id": "state-of-dead", "group": "contested", "includeSda": false,
+      "id": "state-of-dead", "group": "contested", "perspectives": [],
       "question": "What does the Bible teach about the state of the dead? Consider Ecclesiastes 9:5 and Luke 16:19-31.",
       "rubric": "Presents both the conditional-immortality (soul sleep) and the conscious-existence readings, ties each to the text (Eccl 9, Luke 16, Phil 1:23, 2 Cor 5), and does not declare one settled."
     },
     {
-      "id": "sabbath", "group": "contested", "includeSda": false,
+      "id": "sabbath", "group": "contested", "perspectives": [],
       "question": "Is the seventh-day Sabbath still binding on Christians? Consider Colossians 2:16 and Romans 14:5.",
       "rubric": "Presents the continuing-Sabbath, Lord's-Day / rest-fulfilled-in-Christ, and freedom-of-conscience readings with their textual basis; explains what 'shadow' and 'esteemeth every day' are taken to mean."
     },
     {
-      "id": "daniel-8-14", "group": "contested", "includeSda": false,
+      "id": "daniel-8-14", "group": "contested", "perspectives": [],
       "question": "What does Daniel 8:14 mean by 'the sanctuary shall be cleansed'?",
       "rubric": "Covers the Antiochus IV / Maccabean reading, the futurist reading and the year-day / heavenly-sanctuary reading; grounds each in the text (2300 evening-mornings, Dan 8 context) without presenting one as the only view."
     },
     {
-      "id": "beast-rev-13", "group": "contested", "includeSda": false,
+      "id": "beast-rev-13", "group": "contested", "perspectives": [],
       "question": "Who or what is the beast of Revelation 13?",
       "rubric": "Presents preterist (Rome/Nero), historicist, futurist and idealist readings, names the textual features each relies on, and separates what the text states from inference."
     },
     {
-      "id": "hell", "group": "contested", "includeSda": false,
+      "id": "hell", "group": "contested", "perspectives": [],
       "question": "Is hell eternal conscious torment? Consider Matthew 25:46.",
       "rubric": "Presents traditional eternal-torment, annihilationist/conditionalist and universalist-leaning readings, with attention to aionios, kolasis and the imagery of destruction; does not declare one settled."
     },
     {
-      "id": "sanctuary-heb-9", "group": "contested", "includeSda": false,
+      "id": "sanctuary-heb-9", "group": "contested", "perspectives": [],
       "question": "What is the significance of the heavenly sanctuary in Hebrews 9?",
       "rubric": "Explains the text's own argument (Christ's once-for-all offering, the better tabernacle), and notes where readers differ on whether it implies ongoing ministry in a heavenly sanctuary."
     },
     {
-      "id": "law-grace-gal-3", "group": "contested", "includeSda": false,
+      "id": "law-grace-gal-3", "group": "contested", "perspectives": [],
       "question": "What is the relationship between law and grace in Galatians 3?",
       "rubric": "Explains the law as tutor/paidagogos, the promise vs. law contrast, and the main views on which 'law' Paul means (Mosaic vs. moral vs. ceremonial) with textual basis."
     },
     {
-      "id": "millennium-rev-20", "group": "contested", "includeSda": false,
+      "id": "millennium-rev-20", "group": "contested", "perspectives": [],
       "question": "What is the millennium of Revelation 20, and when does it occur?",
       "rubric": "Presents premillennial, postmillennial and amillennial readings (and the Adventist heavenly-millennium variant if sourced) with their textual basis; notes the disputed points in Rev 20:1-6."
     },
     {
-      "id": "agape-phileo", "group": "word-study", "includeSda": false,
+      "id": "agape-phileo", "group": "word-study", "perspectives": [],
       "question": "What is the difference between agape and phileo in John 21:15-17?",
       "rubric": "Uses lexicon data for both words, quotes the passage, and notes the scholarly debate over whether the switch is meaningful or stylistic."
     },
     {
-      "id": "hesed", "group": "word-study", "includeSda": false,
+      "id": "hesed", "group": "word-study", "perspectives": [],
       "question": "What does the Hebrew word hesed mean?",
       "rubric": "Gives the Strong's/BDB gloss (H2617), range of translations (mercy, lovingkindness, steadfast love), covenant sense, and a sample of uses."
     },
     {
-      "id": "nephesh", "group": "word-study", "includeSda": false,
+      "id": "nephesh", "group": "word-study", "perspectives": [],
       "question": "What does nephesh mean in the Old Testament?",
       "rubric": "Gives the H5315 range (soul, life, person, appetite), shows usage variety, and does not import a doctrine of the soul beyond what usage shows."
     },
     {
-      "id": "metanoeo", "group": "word-study", "includeSda": false,
+      "id": "metanoeo", "group": "word-study", "perspectives": [],
       "question": "What does G3340 mean?",
       "rubric": "Identifies metanoeo, its literal sense (change of mind), its NT usage as repentance, and quotes the lexicon."
     },
     {
-      "id": "john-1-1", "group": "verse", "includeSda": false,
+      "id": "john-1-1", "group": "verse", "perspectives": [],
       "question": "Explain John 1:1.",
       "rubric": "Quotes the verse; treats logos, the pros ton theon relation and theos without article; notes the main readings (e.g. Trinitarian, 'a god' / qualitative) and their grammar."
     },
     {
-      "id": "phil-2-6-7", "group": "verse", "includeSda": false,
+      "id": "phil-2-6-7", "group": "verse", "perspectives": [],
       "question": "What does Philippians 2:6-7 teach about Christ?",
       "rubric": "Quotes the passage; addresses morphe theou, harpagmos and kenosis, and the main readings of 'emptied himself'."
     },
     {
-      "id": "gen-1-2", "group": "verse", "includeSda": false,
+      "id": "gen-1-2", "group": "verse", "perspectives": [],
       "question": "What does Genesis 1:2 mean?",
       "rubric": "Quotes the verse; addresses tohu wabohu, the Spirit hovering, and the gap / initial-chaos / ex-nihilo readings."
     },
     {
-      "id": "isa-7-14", "group": "verse", "includeSda": false,
+      "id": "isa-7-14", "group": "verse", "perspectives": [],
       "question": "What is the meaning of Isaiah 7:14?",
       "rubric": "Quotes the verse; addresses almah vs. parthenos, the Ahaz context and Matthew's use; presents the dual-fulfilment and single-fulfilment readings."
     },
     {
-      "id": "sda-state-of-dead", "group": "sda", "includeSda": true,
+      "id": "sda-state-of-dead", "group": "perspective", "perspectives": ["adventist"],
       "question": "What does the Bible teach about the state of the dead? Consider Ecclesiastes 9:5 and Luke 16:19-31.",
       "rubric": "Neutral analysis first (as in state-of-dead), then a separate labelled Adventist section citing only [A#] sources; no Adventist material in the neutral part."
     },
     {
-      "id": "sda-sabbath", "group": "sda", "includeSda": true,
+      "id": "sda-sabbath", "group": "perspective", "perspectives": ["adventist"],
       "question": "Is the seventh-day Sabbath still binding on Christians? Consider Colossians 2:16 and Romans 14:5.",
       "rubric": "Neutral analysis first, then a separate labelled Adventist section citing only [A#] sources."
     },
     {
-      "id": "sda-daniel-8-14", "group": "sda", "includeSda": true,
+      "id": "sda-daniel-8-14", "group": "perspective", "perspectives": ["adventist"],
       "question": "What does Daniel 8:14 mean by 'the sanctuary shall be cleansed'?",
       "rubric": "Neutral analysis first, then a separate labelled Adventist section citing only [A#] sources."
     },
     {
-      "id": "sda-hell", "group": "sda", "includeSda": true,
+      "id": "sda-hell", "group": "perspective", "perspectives": ["adventist"],
       "question": "Is hell eternal conscious torment? Consider Matthew 25:46.",
       "rubric": "Neutral analysis first, then a separate labelled Adventist section citing only [A#] sources."
     }

@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml/badge.svg)](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml)
 
-A Bible study app with an AI study assistant. The assistant answers from your own e-Sword modules (Bibles, commentaries, dictionaries, prose books) and is built to be **even-handed**: it shows what the text says first, then how different traditions have read it, and it only brings in Adventist material when you turn that on.
+A Bible study app with an AI study assistant. The assistant answers from your own Bible study modules (Bibles, commentaries, dictionaries, prose books) and is built to be **even-handed**: it shows what the text says first, then how different traditions have read it, and it only brings in Adventist material when you turn that on.
+
+> Imported from a private repository; the app itself, `Berean`, hasn't changed — only where the code lives.
 
 ## Solution layout
 
@@ -10,7 +12,7 @@ A Bible study app with an AI study assistant. The assistant answers from your ow
 |---|---|---|
 | `Berean.Core/` | .NET 8 class library | The study agent: query routing, retrieval, tradition-aware indexing, prompts, tools, and the model providers |
 | `Berean.Agent.Api/` | ASP.NET Core 8 | SignalR hub (`/hubs/chat`): conversations, streaming answers, sources, saved chats |
-| `BereanResource.Api/` | ASP.NET Core 8 Web API | REST access to the e-Sword modules: Bible, commentary, dictionary, cross-references, books, notes, Strong's occurrences, module profiles |
+| `BereanResource.Api/` | ASP.NET Core 8 Web API | REST access to your Bible study modules: Bible, commentary, dictionary, cross-references, books, notes, Strong's occurrences, module profiles |
 | `berean-web/` | Angular 19 + Tailwind 4 | Web client: Bible reader, commentary, dictionary, cross-references, notes, compare, AI chat |
 | `Berean.Core.Tests/` | xUnit | Unit tests (router, retrieval, indexing, agent, Claude Code client, conversation store) |
 | `eval/Berean.Eval/` | console | The evaluation harness (see below) |
@@ -18,7 +20,7 @@ A Bible study app with an AI study assistant. The assistant answers from your ow
 
 
 ```
- berean-web (4200) ──REST──▶ BereanResource.Api (5121) ──▶ e-Sword modules, notes.db
+ berean-web (4200) ──REST──▶ BereanResource.Api (5121) ──▶ Bible study modules, notes.db
         │                             ▲
         └───SignalR──▶ Berean.Agent.Api (5050) ── uses Berean.Core
                           ├─▶ BereanResource.Api : verse text, commentary, word lookups, module profiles
@@ -29,10 +31,10 @@ A Bible study app with an AI study assistant. The assistant answers from your ow
 ## How an answer is built
 
 1. **Route.** [QueryRouter](Berean.Core/Routing/QueryRouter.cs) reads the question with regexes (no model call): a verse reference (any number of them, with ranges), a word to look up, or a general question.
-2. **Retrieve, in two passes.**
-   - *Main pass (neutral):* the exact verse text and every commentary's entry for the verse, read straight from the Resource API (so each tradition counts equally); plus semantic search of the vector index, excluding Adventist sources and capping how much any one module can add (`MaxPerModule`, default 2). Dictionary and lexicon entries are looked up for the words asked about.
-   - *Adventist pass:* only when the SDA toggle is on. The same question restricted to Adventist modules, returned as a separate `ADVENTIST SOURCES` block.
-3. **Label.** Every source is numbered and tagged with its tradition and era, e.g. `[S1] Barnes' Notes on the Bible (Evangelical, 19th c.) — John 3:16`. Adventist sources are `[A1]…`.
+2. **Retrieve, in passes.**
+   - *Main pass (neutral):* the exact verse text and every commentary's entry for the verse, read straight from the Resource API (so each tradition counts equally); plus semantic search of the vector index, excluding every configured [perspective's](#perspectives) tradition and capping how much any one module can add (`MaxPerModule`, default 2). Dictionary and lexicon entries are looked up for the words asked about.
+   - *Perspective pass:* one per perspective selected for the conversation (see [Perspectives](#perspectives) below). The same question restricted to that perspective's tradition, returned as its own `<LABEL> SOURCES` block, with its own citation prefix and its own budget on top of the neutral material.
+3. **Label.** Every source is numbered and tagged with its tradition and era, e.g. `[S1] Barnes' Notes on the Bible (Evangelical, 19th c.) — John 3:16`. A perspective's sources use its own prefix, e.g. `[ADV1]…`.
 4. **Answer.** The model gets the material *before* the question. The system prompt ([system.md](Berean.Core/Agent/Prompts/system.md)) is about method: text first, then the main views at their strongest with who holds each, keeping what the text states apart from inference and dispute, never treating one tradition as "the" view, citing only sources it was given.
 5. **Modes.** *Quick* skips retrieval. *Deep* retrieves. *Compare* sets the interpretive traditions side by side in a fixed structure.
 
@@ -47,6 +49,19 @@ Each module's tradition comes from `ModuleProfiles` in `BereanResource.Api/appse
 ```
 
 Traditions: `Adventist`, `Reformed`, `Wesleyan`, `Baptist`, `Lutheran`, `Evangelical`, `Catholic`, `Orthodox`, `Jewish`, `Academic`, `Lexical`, `Unclassified`. `GET /api/resources/profiles/unclassified` lists modules that still need a label. Tags are stored on every chunk in the index; changing a label is applied to the index at the next start (no re-embedding).
+
+### Perspectives
+
+Any tradition can be set up as a separate, opt-in section — the public config ships with none configured. Add one under `Perspectives` in `Berean.Agent.Api/appsettings.json` (or your local `appsettings.Development.json`):
+
+```json
+"Perspectives": [
+  { "Id": "adventist", "Tradition": "Adventist", "Label": "Seventh-day Adventist", "CitationPrefix": "ADV", "TopK": 4 }
+],
+"MaxPerspectivesPerQuestion": 1
+```
+
+A perspective is chosen once, when a conversation starts (the web client's "Perspective" dropdown, shown only when at least one is configured), and is locked for that conversation's lifetime — a different perspective means a new conversation. `GET /api/perspectives` lists what's configured. Whether or not one is selected, every configured perspective's tradition is always held out of the neutral pass, so switching a perspective on never changes what the neutral analysis draws on.
 
 ## Choosing the model
 
@@ -66,7 +81,7 @@ Claude Code runs locked down for plain text generation: no built-in tools, no MC
 - .NET 8 SDK
 - Node.js 20+ and npm 10+
 - [Ollama](https://ollama.com) with the embedding model: `ollama pull mxbai-embed-large`
-- e-Sword modules in a folder with `Bibles`, `Commentaries`, `Dictionaries`, `Lexicons` and `TopicNotes` subfolders (and `Books`) — or point `BereanResources:RootPath` at [`samples/`](samples/README.md) to try the app without sourcing your own library first
+- Bible study modules in a folder with `Bibles`, `Commentaries`, `Dictionaries`, `Lexicons` and `TopicNotes` subfolders (and `Books`): scrollmapper `.db` or MySword `.bbl` Bibles, MySword `.cmt` commentaries, MySword `.dct` dictionaries, and e-Sword `.lexi`/`.lexh` lexicons — or point `BereanResources:RootPath` at [`samples/`](samples/README.md) to try the app without sourcing your own library first
 - For the default provider: the Claude Code CLI, logged in (`claude` on your PATH)
 
 ## Configuration
@@ -78,7 +93,8 @@ Committed `appsettings.json` files hold placeholders; put machine-specific value
 **`Berean.Agent.Api`**
 - `Llm`: `Provider`, `Model`, `Models` (the ones the UI offers), `Effort`, `HistoryTurns`, and `ClaudeCode` (`ExecutablePath`, `WorkingDirectory`, `TimeoutSeconds`, `Effort`). On Windows an npm install of Claude Code puts a `claude.cmd` shim on the PATH; the real `claude.exe` beside it is used automatically.
 - `Ollama`: `Endpoint`, `EmbeddingModel`, `DefaultModel`, `ToolCompatibleModels`.
-- `Agents:BibleAgent`: `RagDbPath`, `ResourceApiBaseUrl` (required), `AllowedBibleModules`, `AllowedCommentaryModules` (empty = all), `MaxPerModule`, `AdventistTopK`, `TopK`, `MaxContextTokens`, `AutoIndexMissingModules`, chunk sizes.
+- `Agents:BibleAgent`: `RagDbPath`, `ResourceApiBaseUrl` (required), `AllowedBibleModules`, `AllowedCommentaryModules` (empty = all), `MaxPerModule`, `TopK`, `MaxContextTokens`, `AutoIndexMissingModules`, chunk sizes.
+- `Perspectives`, `MaxPerspectivesPerQuestion`: see [Perspectives](#perspectives) above.
 
 ## Running
 
@@ -97,6 +113,10 @@ The vector index (`bible.rag.db`, next to it `chat.db` for saved conversations) 
 
 Indexing missing modules is **off by default** (`AutoIndexMissingModules: false`) because embedding runs at only a few chunks a second on CPU and a full commentary is hours of work. Verse questions don't need it: they read every commentary directly from the API. Semantic search over a commentary needs it indexed. Turn the setting on, or send `ReindexDocuments` from the hub, to build what's missing; nothing already indexed is touched, and an interrupted module is redone from scratch.
 
+## Security model
+
+Berean has **no authentication or authorization** anywhere: any request that reaches an API is served. There's no multi-user support — notes, saved conversations and RAG state are shared by whoever can reach the app. Run it on `localhost` or on a trusted private network only, behind your own reverse proxy and auth if you need to expose it further. CORS is restricted to the origins in `Cors:AllowedOrigins`, but that only stops browsers from other sites from calling in on a victim's behalf — it isn't a substitute for real access control.
+
 ## Deployment
 
 For running the three apps continuously on a Windows machine, instead of `dotnet run`/`npm start` in a terminal:
@@ -113,7 +133,7 @@ dotnet run --project eval/Berean.Eval -- --label baseline                  # use
 dotnet run --project eval/Berean.Eval -- --label check --retrieval-only    # no model: measures retrieval only
 ```
 
-`eval/questions.json` holds 20 questions (contested doctrine, word studies, verse exegesis, SDA on) with a rubric each. A run writes `eval/runs/<date>-<label>/` with every answer, exactly what the model was given, and a summary: the share of sources by tradition, the largest number any one module supplied, whether Adventist sources leaked with the toggle off, and whether the citations in each answer point at sources that were really in the prompt. Only runs named `*-baseline` are committed.
+`eval/questions.json` holds 20 questions (contested doctrine, word studies, verse exegesis, a perspective group) with a rubric each. A run writes `eval/runs/<date>-<label>/` with every answer, exactly what the model was given, and a summary: the share of sources by tradition, the largest number any one module supplied, whether a held-out perspective's sources leaked into the neutral pass, and whether the citations in each answer point at sources that were really in the prompt. Only runs named `*-baseline` are committed.
 
 Options: `--only id1,id2`, `--provider`, `--model`, `--mode compare`, `--db <index copy>`, `--api <url>`, `--index`.
 
@@ -127,7 +147,7 @@ The Claude Code client is tested against a fake `claude` executable (built with 
 
 ## Hub reference
 
-Client → server: `StartConversation(modelId?)`, `ResumeConversation(id)`, `ListConversations()`, `DeleteConversation(id)`, `SendMessage(text, mode, includeSDA)`, `SetLanguage`, `ResetConversation`, `GetRagStatus`, `ReindexDocuments`.
+Client → server: `StartConversation(modelId?, perspectives?)` (locked for the conversation's lifetime), `ResumeConversation(id)`, `ListConversations()`, `DeleteConversation(id)`, `SendMessage(text, mode)`, `SetLanguage`, `ResetConversation`, `GetRagStatus`, `ReindexDocuments`.
 
 Server → client, for one answer in order: `TokenReceived("")`, `Sources(list)`, `ToolActivity(name, text)`, `TokenReceived(chunk)`…, `MessageComplete(text)`. Also `SessionStarted`, `ConversationStarted`, `ConversationLoaded`, `ConversationList`, `ConversationDeleted`, `RagStatus`, `RagIndexing`, `RagIndexed`, `Error`.
 
@@ -138,3 +158,7 @@ REST: `Berean.Agent.Api`: `GET /health`, `GET /api/models`. `BereanResource.Api`
 - The library is mostly 17th–19th-century Protestant commentary, so "balanced" is limited by what is in it. Catholic, Orthodox, Jewish and modern critical sources would help most (add the module, label it in `ModuleProfiles`).
 - The Anthropic and OpenAI providers are covered by unit tests but have not been run against the live APIs.
 - Small local models (via Ollama) follow the answering method poorly.
+
+## License & content
+
+The code in this repository is [MIT licensed](LICENSE). That covers the app only: Berean doesn't bundle any Bible module files. You point it at your own e-Sword/MySword modules (see [Configuration](#configuration)), and those modules keep whatever license they were distributed under — check before redistributing anything you export from them.

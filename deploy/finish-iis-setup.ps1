@@ -1,27 +1,39 @@
 <#
   One-time IIS setup for the Berean sites. Run in an ELEVATED PowerShell:
 
-      powershell -ExecutionPolicy Bypass -File .\deploy\finish-iis-setup.ps1
+      powershell -ExecutionPolicy Bypass -File .\deploy\finish-iis-setup.ps1 [-InstallRoot <path>] [-ResourceSiteName <name>] [-AgentSiteName <name>] [-WebSiteName <name>] [-ResourcePort <port>] [-AgentPort <port>] [-WebPort <port>]
+
+  This is a reference setup for one Windows machine (see deploy/README.md), not a general-purpose
+  installer; every default below matches this repo's own deployment.
 
   Assumes the two API sites already exist and the new builds are in their folders:
-      "Resource API"  http://localhost:5121   D:\Bible Study\ResourceAPI
-      "BibleAgent"    http://localhost:5050   D:\Bible Study\Agent
-  and creates the web app site (static files in D:\Bible Study\Web, built from berean-web):
-      "Berean Web"    http://localhost:4200   D:\Bible Study\Web
+      -ResourceSiteName  http://localhost:<ResourcePort>   <InstallRoot>\ResourceAPI
+      -AgentSiteName     http://localhost:<AgentPort>      <InstallRoot>\Agent
+  and creates the web app site (static files in <InstallRoot>\Web, built from berean-web):
+      -WebSiteName       http://localhost:<WebPort>        <InstallRoot>\Web
 
   What it does (IIS configuration needs administrator rights, which is why it is a script):
-    1. Runs the BibleAgent app pool as YOUR Windows account. The Claude Code provider reads your
+    1. Runs the Agent app pool as YOUR Windows account. The Claude Code provider reads your
        Claude login from your user profile, which the default pool identity cannot see.
     2. Stops both pools from idling out after 20 minutes. The Agent keeps the search index in
        memory, and the default would unload it (and reload it on the next question).
-    3. Creates the "Berean Web" site (port 4200) if it doesn't exist.
+    3. Creates the web app site if it doesn't exist.
     4. Starts everything and checks that each site answers.
 #>
 #Requires -RunAsAdministrator
+param(
+    [string]$InstallRoot = 'D:\Bible Study',
+    [string]$ResourceSiteName = 'Resource API',
+    [string]$AgentSiteName = 'BibleAgent',
+    [string]$WebSiteName = 'Berean Web',
+    [int]$ResourcePort = 5121,
+    [int]$AgentPort = 5050,
+    [int]$WebPort = 4200
+)
 Import-Module WebAdministration
 $ErrorActionPreference = 'Stop'
 
-$resourceSite = 'Resource API'; $agentSite = 'BibleAgent'
+$resourceSite = $ResourceSiteName; $agentSite = $AgentSiteName
 $resourcePool = (Get-Item "IIS:\Sites\$resourceSite").applicationPool
 $agentPool    = (Get-Item "IIS:\Sites\$agentSite").applicationPool
 
@@ -68,14 +80,14 @@ foreach ($site in $resourceSite, $agentSite) {
 }
 
 # 3. The web app site ------------------------------------------------------------------------
-$webSite = 'Berean Web'; $webPath = 'D:\Bible Study\Web'
+$webSite = $WebSiteName; $webPath = Join-Path $InstallRoot 'Web'
 if (-not (Test-Path "IIS:\AppPools\$webSite")) {
     New-WebAppPool -Name $webSite | Out-Null
     Set-ItemProperty "IIS:\AppPools\$webSite" -Name managedRuntimeVersion -Value ''   # static files only: no .NET
 }
 if (-not (Get-Website -Name $webSite)) {
-    if (Get-WebBinding -Port 4200) { throw 'Port 4200 is already bound by another site; stop it or change the port (and Cors origins).' }
-    New-Website -Name $webSite -PhysicalPath $webPath -ApplicationPool $webSite -Port 4200 | Out-Null
+    if (Get-WebBinding -Port $WebPort) { throw "Port $WebPort is already bound by another site; stop it or change the port (and Cors origins)." }
+    New-Website -Name $webSite -PhysicalPath $webPath -ApplicationPool $webSite -Port $WebPort | Out-Null
 }
 $webPool = (Get-Item "IIS:\Sites\$webSite").applicationPool
 
@@ -89,11 +101,11 @@ foreach ($site in $resourceSite, $agentSite, $webSite) {
 
 Start-Sleep -Seconds 5
 $checks = @(
-    @{ Name = 'Resource API'; Url = 'http://localhost:5121/api/resources/profiles/unclassified' },
-    @{ Name = 'Agent health'; Url = 'http://localhost:5050/health' },
-    @{ Name = 'Agent models'; Url = 'http://localhost:5050/api/models' },
-    @{ Name = 'Web app';      Url = 'http://localhost:4200/' },
-    @{ Name = 'Web app route'; Url = 'http://localhost:4200/some/deep/link' }   # must fall back to index.html
+    @{ Name = 'Resource API'; Url = "http://localhost:$ResourcePort/api/resources/profiles/unclassified" },
+    @{ Name = 'Agent health'; Url = "http://localhost:$AgentPort/health" },
+    @{ Name = 'Agent models'; Url = "http://localhost:$AgentPort/api/models" },
+    @{ Name = 'Web app';      Url = "http://localhost:$WebPort/" },
+    @{ Name = 'Web app route'; Url = "http://localhost:$WebPort/some/deep/link" }   # must fall back to index.html
 )
 foreach ($c in $checks) {
     try {

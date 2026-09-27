@@ -27,6 +27,7 @@ import type {
 } from "../../core/services/agent-hub.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { ModelService } from "../../core/services/model.service";
+import { PerspectiveService } from "../../core/services/perspective.service";
 import { NotesService } from "../../core/services/notes.service";
 import { renderAnswerHtml } from "./answer-html";
 
@@ -59,14 +60,10 @@ const QUICK_ASKS_NEUTRAL = [
   },
 ];
 
-const QUICK_ASKS_SDA = [
+const perspectiveQuickAsk = (label: string) => [
   {
-    label: "EGW ↗",
-    prompt: "What does Ellen G. White say about this passage?",
-  },
-  {
-    label: "SDA view ↗",
-    prompt: "What is the Seventh-day Adventist interpretation of this passage?",
+    label: `${label} view ↗`,
+    prompt: `What is the ${label} interpretation of this passage?`,
   },
 ];
 
@@ -81,6 +78,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   private readonly hub = inject(AgentHubService);
   readonly nav = inject(NavigationStateService);
   readonly modelService = inject(ModelService);
+  readonly perspectiveService = inject(PerspectiveService);
   private readonly notes = inject(NotesService);
   private readonly sanitizer = inject(DomSanitizer);
 
@@ -96,18 +94,17 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   readonly indexingMessage = signal("");
   readonly modes: readonly ChatMode[] = ["Quick", "Deep", "Compare"];
   readonly mode = signal<ChatMode>("Quick");
-  readonly includeSDA = signal(false);
 
   // ── Saved conversations ──
   readonly conversations = signal<ConversationSummary[]>([]);
   readonly currentConversationId = signal<string | null>(null);
   readonly showHistory = signal(false);
 
-  readonly quickAsks = computed(() =>
-    this.includeSDA()
-      ? [...QUICK_ASKS_NEUTRAL, ...QUICK_ASKS_SDA]
-      : QUICK_ASKS_NEUTRAL,
-  );
+  readonly quickAsks = computed(() => {
+    const selected = this.perspectiveService.selectedId();
+    const label = this.perspectiveService.perspectives().find((p) => p.id === selected)?.label;
+    return label ? [...QUICK_ASKS_NEUTRAL, ...perspectiveQuickAsk(label)] : QUICK_ASKS_NEUTRAL;
+  });
 
   readonly contextLabel = computed(() => {
     const loc = this.nav.location();
@@ -184,6 +181,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
           })),
         );
         if (ev.modelId) this.modelService.selectModel(ev.modelId);
+        this.perspectiveService.select(ev.perspectives[0] ?? null);
         this.error.set(null);
         this.showHistory.set(false);
         this.shouldScroll = true;
@@ -196,7 +194,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.conversations.update((list) => list.filter((c) => c.id !== id));
         if (id === this.currentConversationId()) {
           this.forgetConversation();
-          this.hub.startConversation(this.modelService.selectedModelId()).catch(() => {});
+          this.hub.startConversation(this.modelService.selectedModelId(), this.perspectiveService.selectedIds()).catch(() => {});
         }
       }),
 
@@ -271,12 +269,13 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   private async initAgent(): Promise<void> {
     try {
       await this.modelService.ready;
+      await this.perspectiveService.ready;
       const saved = this.savedConversationId();
       if (saved) {
         // Pick up where the last visit left off (a refresh, a reconnect or a restart).
         await this.hub.resumeConversation(saved);
       } else {
-        await this.hub.startConversation(this.modelService.selectedModelId());
+        await this.hub.startConversation(this.modelService.selectedModelId(), this.perspectiveService.selectedIds());
       }
       await this.hub.listConversations();
     } catch {
@@ -289,9 +288,21 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.agentReady.set(false);
     this.error.set(null);
     try {
-      await this.hub.startConversation(modelId);
+      await this.hub.startConversation(modelId, this.perspectiveService.selectedIds());
     } catch {
       this.error.set("Failed to switch model.");
+    }
+  }
+
+  /** Starting a new conversation is the only way to change perspective — it's locked once one starts. */
+  async onPerspectiveChange(id: string): Promise<void> {
+    this.perspectiveService.select(id || null);
+    this.agentReady.set(false);
+    this.error.set(null);
+    try {
+      await this.hub.startConversation(this.modelService.selectedModelId(), this.perspectiveService.selectedIds());
+    } catch {
+      this.error.set("Failed to switch perspective.");
     }
   }
 
@@ -307,7 +318,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.shouldScroll = true;
 
     try {
-      await this.hub.sendMessage(withContext, this.mode(), this.includeSDA());
+      await this.hub.sendMessage(withContext, this.mode());
     } catch {
       this.error.set("Failed to send message.");
     }
@@ -326,10 +337,6 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       case "Compare":
         return "Set the main traditions' readings side by side";
     }
-  }
-
-  toggleSDA(): void {
-    this.includeSDA.update((v) => !v);
   }
 
   quickAsk(prompt: string): void {
@@ -468,6 +475,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         msg.sources,
         (s) => this.chipLabel(s),
         (s) => this.isOpenable(s),
+        (s) => this.isPerspectiveTradition(s.tradition),
       ),
     );
     this.htmlCache.set(msg, { text: msg.text, sources: msg.sources, html });
@@ -487,6 +495,11 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     const name =
       s.kind === "book" ? s.label.replace(/\s*\([^)]*\)\s*$/, "") : s.displayName;
     return `${name} · ${s.tradition}`;
+  }
+
+  /** Whether a tradition belongs to a configured perspective (drives the accent color on its chips/tags). */
+  isPerspectiveTradition(tradition: string): boolean {
+    return this.perspectiveService.perspectives().some((p) => p.tradition === tradition);
   }
 
   isOpenable(s: ChatSource): boolean {
