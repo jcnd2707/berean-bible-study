@@ -19,6 +19,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests-support", "tests-supp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FakeClaude", "tests-support\FakeClaude\FakeClaude.csproj", "{D758EF11-2EA8-4751-82F1-2747CCDCDBBF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BereanResource.Api.Tests", "BereanResource.Api.Tests\BereanResource.Api.Tests.csproj", "{71907225-1289-4209-9816-8409ACE1F64A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -49,6 +51,10 @@ Global
 		{D758EF11-2EA8-4751-82F1-2747CCDCDBBF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D758EF11-2EA8-4751-82F1-2747CCDCDBBF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D758EF11-2EA8-4751-82F1-2747CCDCDBBF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{71907225-1289-4209-9816-8409ACE1F64A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{71907225-1289-4209-9816-8409ACE1F64A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{71907225-1289-4209-9816-8409ACE1F64A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{71907225-1289-4209-9816-8409ACE1F64A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

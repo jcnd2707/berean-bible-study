@@ -26,6 +26,9 @@ jobs:
       - name: Test
         run: dotnet test Berean.Core.Tests --no-build --configuration Release --logger "console;verbosity=normal"
 
+      - name: Integration tests
+        run: dotnet test BereanResource.Api.Tests --no-build --configuration Release --logger "console;verbosity=normal"
+
   web:
     runs-on: ubuntu-latest
     defaults:
