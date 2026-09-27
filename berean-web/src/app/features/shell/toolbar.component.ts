@@ -114,10 +114,10 @@ import { PreferencesService } from "../../core/services/preferences.service";
       .toolbar {
         display: flex;
         align-items: center;
-        height: 36px;
+        min-height: 36px;
         background: #0d1a26;
         padding: 0 12px;
-        gap: 6px;
+        gap: var(--gap);
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         flex-shrink: 0;
       }
@@ -125,9 +125,10 @@ import { PreferencesService } from "../../core/services/preferences.service";
         background: rgba(255, 255, 255, 0.05);
         border: 0.5px solid rgba(255, 255, 255, 0.1);
         border-radius: 4px;
-        padding: 3px 9px;
+        padding: var(--pad-btn);
+        min-height: var(--tap-min);
         color: rgba(255, 255, 255, 0.45);
-        font-size: 10px;
+        font-size: var(--fs-xs);
         cursor: pointer;
         letter-spacing: 0.2px;
         transition:
@@ -149,8 +150,8 @@ import { PreferencesService } from "../../core/services/preferences.service";
         color: #c8922a;
       }
       .tb-btn--icon {
-        padding: 3px 7px;
-        font-size: 11px;
+        padding: var(--pad-btn);
+        font-size: var(--fs-sm);
       }
       .tb-sep {
         width: 0.5px;
@@ -167,8 +168,9 @@ import { PreferencesService } from "../../core/services/preferences.service";
         border: 0.5px solid rgba(255, 255, 255, 0.14);
         border-radius: 5px;
         padding: 4px 12px;
+        min-height: var(--tap-min);
         color: #e8e3d8;
-        font-size: 12px;
+        font-size: var(--fs-base);
         min-width: 150px;
         outline: none;
         font-family: inherit;
@@ -192,7 +194,7 @@ import { PreferencesService } from "../../core/services/preferences.service";
         gap: 8px;
       }
       .ai-ctx-badge {
-        font-size: 9px;
+        font-size: var(--fs-2xs);
         padding: 3px 10px;
         border-radius: 10px;
         background: rgba(200, 146, 42, 0.1);

@@ -30,7 +30,7 @@
 
 .t-tab {
   padding: 7px 9px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.4px;
   color: #a09890;
@@ -67,7 +67,7 @@
 }
 
 .pass-sub {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #a09890;
   font-style: italic;
   margin-bottom: 10px;
@@ -121,7 +121,7 @@
   border: 1px solid #fca5a5;
   border-radius: 8px;
   p {
-    font-size: 12px;
+    font-size: var(--fs-base);
     color: #7f1d1d;
   }
 }
@@ -155,7 +155,7 @@
 }
 
 .vn {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   color: #c8922a;
   min-width: 16px;
@@ -185,13 +185,13 @@
 
 .strip-ref {
   font-family: system-ui, sans-serif;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: #c8922a;
 }
 
 .strip-hint {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #a09890;
   flex: 1;
 }
@@ -299,7 +299,7 @@
   margin-left: auto;
   padding: 1px 8px;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #a09890;
   background: transparent;
   border: 0.5px solid #ddd8ce;

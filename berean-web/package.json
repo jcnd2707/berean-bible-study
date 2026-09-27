@@ -6,7 +6,7 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test:unit": "esbuild src/app/features/ai-chat/answer-html.ts --bundle --format=cjs --platform=node --outfile=.tmp/answer-html.bundle.js && node tests/answer-html.test.js"
+    "test:unit": "esbuild src/app/features/ai-chat/answer-html.ts --bundle --format=cjs --platform=node --outfile=.tmp/answer-html.bundle.js && esbuild src/app/core/services/layout-classification.ts --bundle --format=cjs --platform=node --outfile=.tmp/layout-classification.bundle.js && node tests/answer-html.test.js && node tests/layout-classification.test.js"
   },
   "private": true,
   "dependencies": {

@@ -13,7 +13,7 @@
   background: #0e0c26;
   color: rgba(255, 255, 255, 0.82);
   font-family: "Segoe UI", system-ui, sans-serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
 }
 
 // ── Header ──────────────────────────────────────────────────────────────────
@@ -59,20 +59,20 @@
 }
 
 .agent-label {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: rgba(255, 255, 255, 0.82);
   letter-spacing: 0.3px;
 }
 
 .state-label {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   color: rgba(255, 255, 255, 0.3);
   flex: 1;
 }
 
 .rag-badge {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   padding: 1px 6px;
   border-radius: 8px;
   background: rgba(123, 110, 245, 0.15);
@@ -99,7 +99,7 @@
 }
 
 .model-select {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   padding: 2px 4px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
@@ -129,7 +129,7 @@
 }
 
 .mode-btn {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   padding: 2px 8px;
   background: transparent;
   border: none;
@@ -156,7 +156,7 @@
 }
 
 .reconnect-btn {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   padding: 2px 8px;
   border-radius: 9px;
   background: rgba(255, 80, 60, 0.12);
@@ -178,7 +178,7 @@
 }
 
 .chip {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   padding: 2px 8px;
   border-radius: 9px;
   background: rgba(123, 110, 245, 0.14);
@@ -244,7 +244,7 @@
 }
 
 .index-msg {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   color: rgba(255, 200, 80, 0.7);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -271,13 +271,13 @@
   justify-content: center;
   gap: 4px;
   p {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: rgba(255, 255, 255, 0.3);
     text-align: center;
     margin: 0;
   }
   .empty-hint {
-    font-size: 10px;
+    font-size: var(--fs-xs);
     color: rgba(255, 255, 255, 0.18);
   }
 }
@@ -296,7 +296,7 @@
 .bubble {
   max-width: 88%;
   padding: 7px 11px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   border-radius: 12px;
   white-space: pre-wrap;
@@ -329,7 +329,7 @@
 
 .history-empty {
   margin: 12px 4px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: rgba(255, 255, 255, 0.45);
 }
 
@@ -354,7 +354,7 @@
 }
 
 .history-title {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: rgba(255, 255, 255, 0.85);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -362,7 +362,7 @@
 }
 
 .history-meta {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: rgba(255, 255, 255, 0.42);
 }
 
@@ -373,7 +373,7 @@
   width: 16px;
   height: 16px;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
   line-height: 14px;
   color: rgba(255, 255, 255, 0.4);
   background: transparent;
@@ -404,7 +404,7 @@
   margin: 0 1px;
   padding: 0 6px;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   line-height: 1.55;
   color: #b9b1ff;
   background: rgba(123, 110, 245, 0.14);
@@ -486,7 +486,7 @@
       margin: 0 1px;
       padding: 0 6px;
       font: inherit;
-      font-size: 10px;
+      font-size: var(--fs-xs);
       line-height: 1.55;
       color: #b9b1ff;
       background: rgba(123, 110, 245, 0.14);
@@ -515,7 +515,7 @@
 
 .activity {
   margin-top: 4px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-style: italic;
   color: rgba(255, 255, 255, 0.5);
 }
@@ -527,7 +527,7 @@
 .msg-action {
   padding: 1px 7px;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: rgba(255, 255, 255, 0.55);
   background: transparent;
   border: 0.5px solid rgba(255, 255, 255, 0.14);
@@ -546,7 +546,7 @@
 
 .src-list {
   margin-top: 4px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: rgba(255, 255, 255, 0.55);
 
   summary {
@@ -574,7 +574,7 @@
   color: #7b6ef5;
   animation: blink 0.8s step-end infinite;
   margin-left: 1px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
 }
 
 @keyframes blink {
@@ -588,7 +588,7 @@
 }
 
 .error-bubble {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: rgba(255, 120, 100, 0.85);
   padding: 5px 10px;
   background: rgba(255, 80, 60, 0.08);
@@ -608,7 +608,7 @@
 }
 
 .ctx-pill {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   padding: 1px 7px;
   border-radius: 8px;
   background: rgba(123, 110, 245, 0.1);
@@ -617,7 +617,7 @@
 }
 
 .ctx-hint {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   color: rgba(255, 255, 255, 0.22);
 }
 
@@ -638,7 +638,7 @@
   border: 0.5px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   padding: 6px 14px;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: rgba(255, 255, 255, 0.85);
   outline: none;
   font-family: inherit;

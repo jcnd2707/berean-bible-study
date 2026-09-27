@@ -75,7 +75,7 @@ import {
       }
       .panel-tab {
         padding: 6px 12px;
-        font-size: 11px;
+        font-size: var(--fs-sm);
         font-weight: 600;
         color: #a09890;
         background: transparent;

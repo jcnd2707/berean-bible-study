@@ -1,6 +1,39 @@
 @import "tailwindcss/preflight" layer(base);
 @import "tailwindcss/utilities" layer(utilities);
 
+/* ── Design tokens: size & density (MOBILE_PLAN.md §4.2) ────────────────
+   Fine pointer (mouse/trackpad) gets the compact desktop sizing that's
+   shipped since day one. `(pointer: coarse)` — touchscreens, including a
+   touch-enabled laptop — raises text and tap targets without branching
+   layout. Components should read these instead of hard-coding px. */
+:root {
+  --fs-2xs: 9px;
+  --fs-xs: 10px;
+  --fs-sm: 11px;
+  --fs-base: 12px;
+  --fs-md: 13px;
+  --fs-lg: 16px;
+
+  --tap-min: 24px;
+  --pad-btn: 3px 9px;
+  --gap: 6px;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --fs-2xs: 12px;
+    --fs-xs: 13px;
+    --fs-sm: 14px;
+    --fs-base: 15px;
+    --fs-md: 16px;
+    --fs-lg: 19px;
+
+    --tap-min: 44px;
+    --pad-btn: 10px 14px;
+    --gap: 10px;
+  }
+}
+
 /* ── Global resets & base ─────────────────────────────────────────────── */
 *,
 *::before,

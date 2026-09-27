@@ -28,7 +28,7 @@
 
 .p-tab {
   padding: 5px 9px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: #a09890;
   cursor: pointer;
@@ -58,7 +58,7 @@
 
 .hint,
 .error-msg {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: #a09890;
   font-style: italic;
   margin: 0;
@@ -123,7 +123,7 @@
 }
 
 .dict-topic {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   padding: 1px 7px;
   border-radius: 10px;
@@ -133,18 +133,18 @@
 
 .dict-trans {
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: #5c5650;
   font-style: italic;
 }
 
 .dict-phonetic {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: #a09890;
 }
 
 .dict-pos {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -152,7 +152,7 @@
 }
 
 .dict-section-label {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -168,21 +168,21 @@
   gap: 2px;
 
   li {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     line-height: 1.6;
     color: #3c3835;
   }
 }
 
 .dict-strongs-def {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   line-height: 1.68;
   color: #3c3835;
   margin: 0;
 }
 
 .dict-origin {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #a09890;
   font-style: italic;
   padding-top: 4px;
@@ -191,7 +191,7 @@
 
 // Plain text (Easton's)
 .dict-plain {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   line-height: 1.72;
   color: #3c3835;
   margin: 0;

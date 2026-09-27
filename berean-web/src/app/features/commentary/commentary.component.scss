@@ -27,7 +27,7 @@
 
 .c-tab {
   padding: 5px 8px;
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.3px;
   color: #A09890;
@@ -44,7 +44,7 @@
 
 .c-tab-empty {
   padding: 5px 8px;
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   color: #A09890;
   font-style: italic;
 }
@@ -87,7 +87,7 @@
 }
 
 .error-msg, .empty-msg {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: #A09890;
   font-style: italic;
   text-align: center;
@@ -109,7 +109,7 @@
 
 .comm-ref {
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   font-weight: bold;
   color: #1C1917;
   margin-bottom: 4px;
@@ -117,7 +117,7 @@
 
 .src-tag {
   display: inline-block;
-  font-size: 8px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.8px;
   text-transform: uppercase;
@@ -130,7 +130,7 @@
 
 .comm-text {
   font-family: Georgia, serif;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   line-height: 1.72;
   color: #3C3835;
   white-space: pre-wrap;

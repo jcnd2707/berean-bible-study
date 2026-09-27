@@ -13,6 +13,7 @@ import { BookSidebarComponent } from "./features/book-sidebar/book-sidebar.compo
 import { BibleReaderComponent } from "./features/bible-reader/bible-reader.component";
 import { RightPanelComponent } from "./features/right-panel/right-panel.component";
 import { KeyboardShortcutsService } from "./core/services/keyboard-shortcuts.service";
+import { LayoutService } from "./core/services/layout.service";
 import { AiChatComponent } from "./features/ai-chat/ai-chat.component";
 import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel.component";
 
@@ -30,7 +31,9 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
   ],
   template: `
     <div class="app-shell">
-      <app-title-bar />
+      @if (layout.layout() === "desktop") {
+        <app-title-bar />
+      }
       <app-toolbar />
 
       <div class="main-area" #mainArea>
@@ -83,6 +86,7 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
         display: flex;
         flex-direction: column;
         height: 100vh;
+        height: 100dvh;
         overflow: hidden;
         background: #0b1520;
         color: #e8e3d8;
@@ -183,6 +187,7 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
 export class AppComponent implements AfterViewInit, OnDestroy {
   @ViewChild("mainArea") mainAreaRef!: ElementRef<HTMLElement>;
   private readonly _kb = inject(KeyboardShortcutsService); // activates global shortcuts
+  readonly layout = inject(LayoutService);
 
   readonly centerWidth = signal<number>(0);
   readonly rightWidth = signal<number>(318);
@@ -211,19 +216,22 @@ export class AppComponent implements AfterViewInit, OnDestroy {
 
   private readonly mousemove = (e: MouseEvent) => this.onMouseMove(e);
   private readonly mouseup = () => this.onMouseUp();
+  private readonly resize = () => this.reclampSizes();
 
   ngAfterViewInit(): void {
     this.initSizes();
-    window.addEventListener("resize", () => this.initSizes());
+    window.addEventListener("resize", this.resize);
     window.addEventListener("mousemove", this.mousemove);
     window.addEventListener("mouseup", this.mouseup);
   }
 
   ngOnDestroy(): void {
+    window.removeEventListener("resize", this.resize);
     window.removeEventListener("mousemove", this.mousemove);
     window.removeEventListener("mouseup", this.mouseup);
   }
 
+  /** Sets the initial pane sizes on first render. */
   private initSizes(): void {
     const el = this.mainAreaRef.nativeElement;
     const totalW = el.clientWidth;
@@ -250,6 +258,41 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     const comm = Math.max(
       this.MIN_COMM,
       totalH - this.CHAT_DEFAULT - this.DIVIDER_W,
+    );
+    this.commentaryHeight.set(comm);
+  }
+
+  /**
+   * Re-clamps existing pane sizes to the new viewport bounds on resize,
+   * instead of resetting them. A full reset here made the Android soft
+   * keyboard's resize event, and rotation, wipe out any size the user had
+   * dragged (MOBILE_PLAN.md §1, problem 3).
+   */
+  private reclampSizes(): void {
+    const el = this.mainAreaRef.nativeElement;
+    const totalW = el.clientWidth;
+    const totalH = el.clientHeight;
+
+    const availW = totalW - this.SIDEBAR_W - this.DIVIDER_W * 2;
+    const right = Math.max(
+      this.MIN_RIGHT,
+      Math.min(this.rightWidth(), availW - this.MIN_CENTER),
+    );
+    this.rightWidth.set(right);
+    this.centerWidth.set(availW - right);
+
+    const reader = Math.max(
+      this.MIN_READER,
+      Math.min(this.readerHeight(), totalH - this.MIN_DICT - this.DIVIDER_W),
+    );
+    this.readerHeight.set(reader);
+
+    const comm = Math.max(
+      this.MIN_COMM,
+      Math.min(
+        this.commentaryHeight(),
+        totalH - this.MIN_CHAT - this.DIVIDER_W,
+      ),
     );
     this.commentaryHeight.set(comm);
   }
