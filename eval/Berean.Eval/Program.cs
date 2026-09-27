@@ -419,7 +419,7 @@ static class Reports
             sb.AppendLine("## What the model was given");
             sb.AppendLine();
             sb.AppendLine("```");
-            sb.AppendLine(r.Retrieval.Text);
+            sb.AppendLine(Trim(r.Retrieval.Text, 4000));
             sb.AppendLine("```");
         }
         return sb.ToString();
