@@ -14,6 +14,15 @@
         {{ tab.label }}
       </span>
     }
+    @if (chapterHasStrongs()) {
+      <button
+        type="button"
+        class="strongs-toggle"
+        [class.on]="showStrongs()"
+        title="Show Strong's numbers under each tagged word"
+        (click)="showStrongs.set(!showStrongs())"
+      >Strong's</button>
+    }
   </div>
 
   <!-- Search overlay -->
@@ -89,7 +98,23 @@
             (click)="onVerseClick(v)"
           >
             <span class="vn">{{ v.verse }}</span>
-            <span class="vt" [innerHTML]="v.text"></span>
+            @if (showStrongs() && v.strongsWords?.length) {
+              <span class="vt vt--interlinear">
+                @for (w of v.strongsWords; track $index) {
+                  <button
+                    type="button"
+                    class="iw"
+                    [title]="'Look up ' + w.number"
+                    (click)="onStrongsWordClick($event, w)"
+                  >
+                    <span class="iw-word">{{ w.word }}</span>
+                    <span class="iw-num">{{ w.number }}</span>
+                  </button>
+                }
+              </span>
+            } @else {
+              <span class="vt" [innerHTML]="v.text"></span>
+            }
           </div>
         }
       </div>

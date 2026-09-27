@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Berean.Core\Berean.Core.csproj" />
+    <ProjectReference Include="..\Berean.Agent.Api\Berean.Agent.Api.csproj" />
+    <!-- A stand-in for the claude CLI; built with the tests but not referenced by them. -->
+    <ProjectReference Include="..\tests-support\FakeClaude\FakeClaude.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <Using Include="Berean.Core.Agent" />
+    <Using Include="Berean.Core.Routing" />
+    <Using Include="Berean.Core.Retrieval" />
+    <Using Include="Berean.Core.Indexing" />
+    <Using Include="Berean.Core.Tools" />
+    <Using Include="Berean.Core.Resources" />
+    <Using Include="Berean.Core.Llm" />
+  </ItemGroup>
+
+</Project>

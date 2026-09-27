@@ -1,5 +1,5 @@
 import {
-  Component, OnInit, inject, signal, computed,
+  Component, OnInit, inject, signal, computed, effect, untracked,
   ViewChild, ElementRef,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -9,6 +9,7 @@ import { Subject, EMPTY } from 'rxjs';
 
 import { BooksService } from '../../core/services/books.service';
 import { PreferencesService } from '../../core/services/preferences.service';
+import { NavigationStateService } from '../../core/services/navigation-state.service';
 import {
   BookSummary, BookChapter, BookParagraph,
 } from '../../core/models';
@@ -23,6 +24,7 @@ import {
 export class BookReaderComponent implements OnInit {
   private readonly booksService = inject(BooksService);
   readonly prefs                 = inject(PreferencesService);
+  private readonly nav           = inject(NavigationStateService);
 
   @ViewChild('readingPane') readingPaneRef!: ElementRef<HTMLElement>;
 
@@ -60,6 +62,16 @@ export class BookReaderComponent implements OnInit {
 
   private readonly search$ = new Subject<string>();
 
+  // A chat citation can ask for a book at a chapter; wait for the catalog if it hasn't loaded yet.
+  private readonly _bookRequest = effect(() => {
+    const req = this.nav.requestedBook();
+    const books = this.books();
+    if (!req || books.length === 0) return;
+    this.nav.clearRequestedBook();
+    const target = books.find(b => b.moduleId === req.moduleId);
+    if (target) untracked(() => this.openBookAt(target, req.chapterIndex));
+  });
+
   ngOnInit(): void {
     this.booksService.getAll().subscribe({
       next: books => this.books.set(books),
@@ -87,6 +99,30 @@ export class BookReaderComponent implements OnInit {
       }));
       this.searchResults.set(flat);
       this.searching.set(false);
+    });
+  }
+
+  /** Opens a book on a chapter (1-based position in its chapter list). */
+  private openBookAt(book: BookSummary, chapterIndex: number): void {
+    this.activeBook.set(book);
+    this.showBookPicker.set(false);
+    this.chapters.set([]);
+    this.paragraphs.set([]);
+    this.activeChapterId.set(null);
+    this.error.set(null);
+    this.loadingChapters.set(true);
+
+    this.booksService.getChapters(book.moduleId).subscribe({
+      next: chapters => {
+        this.chapters.set(chapters);
+        this.loadingChapters.set(false);
+        const target = chapters[Math.min(Math.max(chapterIndex, 1), chapters.length) - 1];
+        if (target) this.loadChapter(target.id);
+      },
+      error: () => {
+        this.error.set('Could not load chapters.');
+        this.loadingChapters.set(false);
+      }
     });
   }
 

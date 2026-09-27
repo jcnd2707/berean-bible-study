@@ -1,6 +1,14 @@
 import { Injectable, signal, computed } from "@angular/core";
 import { BibleLocation, Verse, CommentaryEntry, BookEntry } from "../models";
 
+export type RightTab = "commentary" | "notes" | "xrefs";
+
+/** Asks the book reader to open a book at a chapter (1-based position in the book's chapter list). */
+export interface BookRequest {
+  moduleId: string;
+  chapterIndex: number;
+}
+
 export interface WordContext {
   word: string;
   strongs: string | null;
@@ -23,6 +31,9 @@ export class NavigationStateService {
   private readonly _notedReferences = signal<Set<string>>(new Set());
   private readonly _showNotesList = signal<boolean>(false);
   private readonly _showBooks = signal<boolean>(false);
+  private readonly _requestedRightTab = signal<RightTab | null>(null);
+  private readonly _requestedCommentaryModule = signal<string | null>(null);
+  private readonly _requestedBook = signal<BookRequest | null>(null);
 
   readonly location = this._location.asReadonly();
   readonly maxChapter = this._maxChapter.asReadonly();
@@ -37,6 +48,11 @@ export class NavigationStateService {
   readonly notedReferences = this._notedReferences.asReadonly();
   readonly showNotesList = this._showNotesList.asReadonly();
   readonly showBooks = this._showBooks.asReadonly();
+
+  // One-shot requests the panels consume (used when a chat citation is clicked).
+  readonly requestedRightTab = this._requestedRightTab.asReadonly();
+  readonly requestedCommentaryModule = this._requestedCommentaryModule.asReadonly();
+  readonly requestedBook = this._requestedBook.asReadonly();
 
   readonly moduleId = computed(() => this._location()?.moduleId ?? null);
   readonly book = computed(() => this._location()?.book ?? null);
@@ -89,6 +105,41 @@ export class NavigationStateService {
   }
   closeBooks(): void {
     this._showBooks.set(false);
+  }
+
+  /** Shows a commentary on a passage: go to the verse and open that module in the commentary tab. */
+  openCommentary(
+    moduleId: string,
+    bookNumber: number,
+    chapter: number,
+    verse: number | null,
+  ): void {
+    const abbr = this.bookAbbrFromNumber(bookNumber);
+    if (!abbr) return;
+    const translation = this._location()?.moduleId ?? "KJV";
+    this._showBooks.set(false);
+    this._location.set({ moduleId: translation, book: abbr, chapter, verse });
+    this._requestedCommentaryModule.set(moduleId);
+    this._requestedRightTab.set("commentary");
+  }
+
+  /** Opens the book reader on a chapter of a prose book. */
+  openBookChapter(moduleId: string, chapterIndex: number): void {
+    this._showNotesList.set(false);
+    this._showSearch.set(false);
+    this._showCompare.set(false);
+    this._showBooks.set(true);
+    this._requestedBook.set({ moduleId, chapterIndex });
+  }
+
+  clearRequestedRightTab(): void {
+    this._requestedRightTab.set(null);
+  }
+  clearRequestedCommentaryModule(): void {
+    this._requestedCommentaryModule.set(null);
+  }
+  clearRequestedBook(): void {
+    this._requestedBook.set(null);
   }
 
   setNotedReferences(refs: string[]): void {

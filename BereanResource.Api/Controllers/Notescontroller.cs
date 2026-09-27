@@ -1,4 +1,4 @@
-﻿using BereanResourceApi.Models;
+using BereanResourceApi.Models;
 using BereanResourceApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -42,6 +42,22 @@ public class NotesController(NotesService notesService) : ControllerBase
 
         var note = notesService.Upsert(reference, request.Text);
         return Ok(note);
+    }
+
+    /// <summary>
+    /// Adds text to the end of the note for a reference without replacing it,
+    /// e.g. POST /api/notes/Gen.1.1/append. Creates the note if there is none.
+    /// </summary>
+    [HttpPost("{reference}/append")]
+    public IActionResult Append(string reference, [FromBody] UpsertNoteRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(reference))
+            return BadRequest(new { error = "Reference cannot be empty." });
+
+        if (string.IsNullOrWhiteSpace(request?.Text))
+            return BadRequest(new { error = "Note text cannot be empty." });
+
+        return Ok(notesService.Append(reference, request.Text));
     }
 
     /// <summary>

@@ -6,6 +6,7 @@ import {
   ViewChild,
   ElementRef,
   effect,
+  untracked,
 } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { toObservable } from "@angular/core/rxjs-interop";
@@ -55,6 +56,14 @@ export class CommentaryComponent implements OnInit {
     });
   });
 
+  // A chat citation can ask for a particular commentary module.
+  private readonly _moduleRequest = effect(() => {
+    const moduleId = this.nav.requestedCommentaryModule();
+    if (!moduleId) return;
+    this.nav.clearRequestedCommentaryModule();
+    untracked(() => this.selectModule(moduleId));
+  });
+
   ngOnInit(): void {
     this.resourcesService.getCommentaries().subscribe({
       next: (mods) => {
@@ -82,6 +91,7 @@ export class CommentaryComponent implements OnInit {
         }),
       )
       .subscribe((resp) => {
+        if (resp.moduleId && resp.moduleId !== this.activeModuleId()) return; // a newer module was chosen meanwhile
         this.entries.set(resp.entries);
         this.loading.set(false);
         requestAnimationFrame(() => {
@@ -102,6 +112,7 @@ export class CommentaryComponent implements OnInit {
       .getChapter(moduleId, loc.book, loc.chapter)
       .subscribe({
         next: (resp) => {
+          if (moduleId !== this.activeModuleId()) return;
           this.entries.set(resp.entries);
           this.loading.set(false);
           requestAnimationFrame(() => {

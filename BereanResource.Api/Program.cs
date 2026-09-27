@@ -1,4 +1,4 @@
-﻿using BereanResourceApi.Models;
+using BereanResourceApi.Models;
 using BereanResourceApi.Services;
 using Microsoft.OpenApi.Models;
 using System.ComponentModel.Design;
@@ -34,6 +34,8 @@ public class Program
         builder.Services.AddSingleton<NotesService>();
         builder.Services.AddSingleton<CrossReferenceService>();
         builder.Services.AddSingleton<BookService>();
+        builder.Services.AddSingleton<ModuleProfileService>();
+        builder.Services.AddSingleton<StrongsOccurrenceService>();
 
         // ── MVC ───────────────────────────────────────────────────────────────
         builder.Services.AddControllers();

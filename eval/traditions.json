@@ -1,0 +1,30 @@
+{
+  "_comment": "Module -> tradition map. Used by the eval runner before chunks carry tags (Phase 1), and the first draft of BereanResource.Api ModuleProfiles (Phase 2.1). Commentaries are keyed by module id; books by the title prefix of the chunk Source (\"<Title>, Chapter N — ...\").",
+  "commentaries": {
+    "barnes": { "tradition": "Evangelical", "era": "19th c." },
+    "clarke": { "tradition": "Wesleyan", "era": "19th c." },
+    "jfb": { "tradition": "Evangelical", "era": "19th c." },
+    "henry": { "tradition": "Reformed", "era": "18th c." },
+    "sda_bible_commentary_egw": { "tradition": "Adventist", "era": "20th c." }
+  },
+  "books": {
+    "Christian Education": { "moduleId": "Christian_Education", "tradition": "Adventist", "era": "19th c." },
+    "Last Day Events": { "moduleId": "Last_Day_Events", "tradition": "Adventist", "era": "20th c." },
+    "Letters to Young Lovers": { "moduleId": "Letters_to_Young_Lovers", "tradition": "Adventist", "era": "20th c." },
+    "Patriarchs and Prophets": { "moduleId": "Patriarchs_and_Prophets", "tradition": "Adventist", "era": "19th c." },
+    "Prophets and Kings": { "moduleId": "Prophets_and_Kings", "tradition": "Adventist", "era": "20th c." },
+    "Seventh-day Adventist 28 Fundamental Beliefs": { "moduleId": "Seventh-day_Adventist_28_Fundamental_Beliefs", "tradition": "Adventist", "era": "21st c." },
+    "Steps to Christ": { "moduleId": "Steps_to_Christ", "tradition": "Adventist", "era": "19th c." },
+    "The Acts of the Apostles": { "moduleId": "The_Acts_of_the_Apostles", "tradition": "Adventist", "era": "20th c." },
+    "The Adventist Home": { "moduleId": "The_Adventist_Home", "tradition": "Adventist", "era": "20th c." },
+    "The Desire of Ages": { "moduleId": "The_Desire_of_Ages", "tradition": "Adventist", "era": "19th c." },
+    "The Great Controversy": { "moduleId": "The_Great_Controversy", "tradition": "Adventist", "era": "19th c." }
+  },
+  "dictionaries": {
+    "bdb": { "tradition": "Lexical", "era": "20th c." },
+    "strong": { "tradition": "Lexical", "era": "19th c." },
+    "webster": { "tradition": "Lexical", "era": "19th c." },
+    "eastons": { "tradition": "Evangelical", "era": "19th c." },
+    "smiths": { "tradition": "Academic", "era": "19th c." }
+  }
+}

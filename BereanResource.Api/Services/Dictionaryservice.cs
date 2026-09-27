@@ -1,6 +1,10 @@
-﻿using BereanResourceApi.Models;
+using BereanResourceApi.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace BereanResourceApi.Services;
 
@@ -21,6 +25,13 @@ public class DictionaryService(
     ILogger<DictionaryService> logger)
 {
     private readonly BereanResourcesConfig _cfg = config.Value;
+
+    // Per-module index of "Transliteration: nephesh" → entries, built on first use.
+    private readonly ConcurrentDictionary<string, Lazy<Dictionary<string, List<DictionaryEntry>>>> _translit
+        = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly Regex TransliterationField = new(
+        @"Transliteration\s*:\s*(?<t>[^\s,;]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -115,6 +126,60 @@ public class DictionaryService(
             results.Add(ReadEntry(reader));
 
         return results;
+    }
+
+    /// <summary>
+    /// Finds Strong's-style entries by the transliteration in their definition, ignoring case
+    /// and diacritics: "agape" finds the entry whose text says "Transliteration: agapē".
+    /// Strong's and BDB are keyed by number (H5315), so this is how a word like "nephesh"
+    /// gets from the user's question to its entry.
+    /// </summary>
+    public List<DictionaryEntry> FindByTransliteration(string moduleId, string term, int limit = 5)
+    {
+        var index = _translit.GetOrAdd(moduleId, id => new Lazy<Dictionary<string, List<DictionaryEntry>>>(
+            () => BuildTransliterationIndex(id))).Value;
+
+        return index.TryGetValue(FoldForMatch(term), out var entries)
+            ? entries.Take(limit).ToList()
+            : [];
+    }
+
+    private Dictionary<string, List<DictionaryEntry>> BuildTransliterationIndex(string moduleId)
+    {
+        var info = ResolveOrThrow(moduleId);
+        var index = new Dictionary<string, List<DictionaryEntry>>();
+
+        using var conn = Open(info.Path);
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = info.Format == ModuleFormat.MySword
+            ? "SELECT word, data FROM dictionary"
+            : "SELECT Topic, Definition FROM Lexicon";
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            var entry = ReadEntry(reader);
+            var m = TransliterationField.Match(entry.Definition);
+            if (!m.Success) continue;
+
+            var key = FoldForMatch(m.Groups["t"].Value);
+            if (key.Length == 0) continue;
+            if (!index.TryGetValue(key, out var list)) index[key] = list = [];
+            list.Add(entry);
+        }
+
+        logger.LogInformation("Built transliteration index for '{ModuleId}': {Count} keys", moduleId, index.Count);
+        return index;
+    }
+
+    /// <summary>Lower-case letters only, diacritics removed ("agapē" → "agape").</summary>
+    private static string FoldForMatch(string s)
+    {
+        var sb = new StringBuilder();
+        foreach (var ch in s.Normalize(NormalizationForm.FormD))
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark && char.IsLetter(ch))
+                sb.Append(char.ToLowerInvariant(ch));
+        return sb.ToString();
     }
 
     /// <summary>

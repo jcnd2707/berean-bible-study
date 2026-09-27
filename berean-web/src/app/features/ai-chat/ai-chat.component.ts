@@ -12,22 +12,35 @@ import {
 import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { Subscription } from "rxjs";
+import { DomSanitizer, SafeHtml } from "@angular/platform-browser";
 
 import {
   AgentHubService,
   HubState,
 } from "../../core/services/agent-hub.service";
 import type {
+  ChatMode,
+  ChatSource,
+  ConversationSummary,
   RagIndexingEvent,
   RagIndexedEvent,
 } from "../../core/services/agent-hub.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { ModelService } from "../../core/services/model.service";
+import { NotesService } from "../../core/services/notes.service";
+import { renderAnswerHtml } from "./answer-html";
+
+const CONVERSATION_KEY = "berean_conversationId";
 
 export interface ChatMessage {
   role: "user" | "agent";
   text: string;
   streaming?: boolean;
+  /** The numbered sources the answer may cite ([S1], [A1]…). */
+  sources?: ChatSource[];
+  /** What the model is doing right now ("Looking up hesed…"). */
+  activity?: string;
+  saved?: boolean;
 }
 
 const QUICK_ASKS_NEUTRAL = [
@@ -68,6 +81,8 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   private readonly hub = inject(AgentHubService);
   readonly nav = inject(NavigationStateService);
   readonly modelService = inject(ModelService);
+  private readonly notes = inject(NotesService);
+  private readonly sanitizer = inject(DomSanitizer);
 
   @ViewChild("msgList") msgListRef!: ElementRef<HTMLElement>;
 
@@ -76,12 +91,17 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   readonly hubState = signal<HubState>("disconnected");
   readonly agentReady = signal(false);
   readonly ragChunks = signal(0);
-  readonly cloudAvail = signal(false);
   readonly error = signal<string | null>(null);
   readonly isIndexing = signal(false);
   readonly indexingMessage = signal("");
-  readonly isQuickMode = signal(true);
+  readonly modes: readonly ChatMode[] = ["Quick", "Deep", "Compare"];
+  readonly mode = signal<ChatMode>("Quick");
   readonly includeSDA = signal(false);
+
+  // ── Saved conversations ──
+  readonly conversations = signal<ConversationSummary[]>([]);
+  readonly currentConversationId = signal<string | null>(null);
+  readonly showHistory = signal(false);
 
   readonly quickAsks = computed(() =>
     this.includeSDA()
@@ -123,9 +143,8 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         }
       }),
 
-      this.hub.agentSelected$.subscribe((ev) => {
+      this.hub.sessionStarted$.subscribe((ev) => {
         this.agentReady.set(true);
-        this.cloudAvail.set(ev.cloudAvailable);
         this.ragChunks.set(ev.ragChunks);
         this.error.set(null);
       }),
@@ -134,7 +153,10 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.messages.update((msgs) => {
           const last = msgs[msgs.length - 1];
           if (last?.role === "agent" && last.streaming) {
-            return [...msgs.slice(0, -1), { ...last, text: last.text + token }];
+            return [
+              ...msgs.slice(0, -1),
+              { ...last, text: last.text + token, activity: token ? undefined : last.activity },
+            ];
           }
           // Start a new streaming bubble
           return [...msgs, { role: "agent", text: token, streaming: true }];
@@ -142,7 +164,45 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.shouldScroll = true;
       }),
 
+      this.hub.conversationStarted$.subscribe((id) => {
+        this.currentConversationId.set(id);
+        this.rememberConversation(id);
+        this.messages.set([]);
+        this.error.set(null);
+        this.showHistory.set(false);
+        this.hub.listConversations().catch(() => {});
+      }),
+
+      this.hub.conversationLoaded$.subscribe((ev) => {
+        this.currentConversationId.set(ev.id);
+        this.rememberConversation(ev.id);
+        this.messages.set(
+          ev.messages.map((m) => ({
+            role: m.role,
+            text: m.text,
+            sources: m.sources ?? undefined,
+          })),
+        );
+        if (ev.modelId) this.modelService.selectModel(ev.modelId);
+        this.error.set(null);
+        this.showHistory.set(false);
+        this.shouldScroll = true;
+        this.hub.listConversations().catch(() => {});
+      }),
+
+      this.hub.conversationList$.subscribe((list) => this.conversations.set(list)),
+
+      this.hub.conversationDeleted$.subscribe((id) => {
+        this.conversations.update((list) => list.filter((c) => c.id !== id));
+        if (id === this.currentConversationId()) {
+          this.forgetConversation();
+          this.hub.startConversation(this.modelService.selectedModelId()).catch(() => {});
+        }
+      }),
+
       this.hub.complete$.subscribe(() => {
+        // The first answer is what creates a saved conversation, so refresh the list.
+        this.hub.listConversations().catch(() => {});
         this.messages.update((msgs) => {
           const last = msgs[msgs.length - 1];
           if (last?.streaming) {
@@ -152,6 +212,15 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         });
         this.shouldScroll = true;
       }),
+
+      // The sources the answer may cite arrive before its text.
+      this.hub.sources$.subscribe((sources) =>
+        this.updateStreamingMessage((m) => ({ ...m, sources })),
+      ),
+
+      this.hub.toolActivity$.subscribe((ev) =>
+        this.updateStreamingMessage((m) => ({ ...m, activity: ev.text })),
+      ),
 
       this.hub.error$.subscribe((msg) => {
         this.error.set(msg);
@@ -202,7 +271,14 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   private async initAgent(): Promise<void> {
     try {
       await this.modelService.ready;
-      await this.hub.selectBibleAgent(this.modelService.selectedModelId());
+      const saved = this.savedConversationId();
+      if (saved) {
+        // Pick up where the last visit left off (a refresh, a reconnect or a restart).
+        await this.hub.resumeConversation(saved);
+      } else {
+        await this.hub.startConversation(this.modelService.selectedModelId());
+      }
+      await this.hub.listConversations();
     } catch {
       this.error.set("Failed to initialise the Bible agent.");
     }
@@ -213,7 +289,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.agentReady.set(false);
     this.error.set(null);
     try {
-      await this.hub.selectBibleAgent(modelId);
+      await this.hub.startConversation(modelId);
     } catch {
       this.error.set("Failed to switch model.");
     }
@@ -231,14 +307,25 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.shouldScroll = true;
 
     try {
-      await this.hub.sendMessage(withContext, this.isQuickMode() ? "Quick" : "Deep", this.includeSDA());
+      await this.hub.sendMessage(withContext, this.mode(), this.includeSDA());
     } catch {
       this.error.set("Failed to send message.");
     }
   }
 
-  setMode(quick: boolean): void {
-    this.isQuickMode.set(quick);
+  setMode(mode: ChatMode): void {
+    this.mode.set(mode);
+  }
+
+  modeHint(mode: ChatMode): string {
+    switch (mode) {
+      case "Quick":
+        return "Answer directly, without looking up sources";
+      case "Deep":
+        return "Look up commentaries and the exact verse text first";
+      case "Compare":
+        return "Set the main traditions' readings side by side";
+    }
   }
 
   toggleSDA(): void {
@@ -250,8 +337,53 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.send(prompt);
   }
 
+  /** Starts a fresh conversation. The old one stays in the history. */
   async reset(): Promise<void> {
     await this.hub.resetConversation();
+  }
+
+  toggleHistory(): void {
+    this.showHistory.update((v) => !v);
+    if (this.showHistory()) this.hub.listConversations().catch(() => {});
+  }
+
+  openConversation(id: string): void {
+    if (id === this.currentConversationId()) {
+      this.showHistory.set(false);
+      return;
+    }
+    this.agentReady.set(false);
+    this.hub.resumeConversation(id).catch(() => this.error.set("Could not open that conversation."));
+  }
+
+  deleteConversation(event: Event, id: string): void {
+    event.stopPropagation();
+    this.hub.deleteConversation(id).catch(() => this.error.set("Could not delete that conversation."));
+  }
+
+  conversationDate(c: ConversationSummary): string {
+    const d = new Date(c.updatedAt);
+    return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+  }
+
+  private savedConversationId(): string | null {
+    try {
+      return localStorage.getItem(CONVERSATION_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  private rememberConversation(id: string): void {
+    try {
+      localStorage.setItem(CONVERSATION_KEY, id);
+    } catch {}
+  }
+
+  private forgetConversation(): void {
+    try {
+      localStorage.removeItem(CONVERSATION_KEY);
+    } catch {}
   }
 
   onKeydown(event: KeyboardEvent): void {
@@ -300,6 +432,127 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     const ctx = lines.map((l) => `[${l}]`).join("\n");
     return `${ctx}\n\n${text}`;
+  }
+
+  /** Applies a change to the answer being streamed, opening its bubble first if needed. */
+  private updateStreamingMessage(change: (m: ChatMessage) => ChatMessage): void {
+    this.messages.update((msgs) => {
+      const last = msgs[msgs.length - 1];
+      if (last?.role === "agent" && last.streaming) {
+        return [...msgs.slice(0, -1), change(last)];
+      }
+      return [...msgs, change({ role: "agent", text: "", streaming: true })];
+    });
+    this.shouldScroll = true;
+  }
+
+  // ── Citations ────────────────────────────────────────────────────────────
+
+  private readonly htmlCache = new WeakMap<
+    ChatMessage,
+    { text: string; sources: ChatSource[] | undefined; html: SafeHtml }
+  >();
+
+  /**
+   * The answer as HTML: light markdown plus [S1]-style citations as chips. Everything from the
+   * model is escaped inside renderAnswerHtml, so trusting the result is safe.
+   */
+  answerHtml(msg: ChatMessage): SafeHtml {
+    const cached = this.htmlCache.get(msg);
+    if (cached && cached.text === msg.text && cached.sources === msg.sources)
+      return cached.html;
+
+    const html = this.sanitizer.bypassSecurityTrustHtml(
+      renderAnswerHtml(
+        msg.text,
+        msg.sources,
+        (s) => this.chipLabel(s),
+        (s) => this.isOpenable(s),
+      ),
+    );
+    this.htmlCache.set(msg, { text: msg.text, sources: msg.sources, html });
+    return html;
+  }
+
+  /** Clicks on chips inside the rendered answer (they are plain buttons carrying data-cite). */
+  onAnswerClick(event: MouseEvent, msg: ChatMessage): void {
+    const chip = (event.target as HTMLElement | null)?.closest("[data-cite]");
+    const id = chip?.getAttribute("data-cite");
+    const source = id ? msg.sources?.find((s) => s.id === id) : undefined;
+    if (source) this.openSource(source);
+  }
+
+  /** "Barnes' Notes on the Bible · Evangelical", or the book title for a book chapter. */
+  chipLabel(s: ChatSource): string {
+    const name =
+      s.kind === "book" ? s.label.replace(/\s*\([^)]*\)\s*$/, "") : s.displayName;
+    return `${name} · ${s.tradition}`;
+  }
+
+  isOpenable(s: ChatSource): boolean {
+    return (
+      (s.kind === "commentary" && s.bookNumber !== null && s.chapter !== null) ||
+      (s.kind === "book" && s.bookChapterIndex !== null)
+    );
+  }
+
+  /** Commentary: go to the verse and open that commentary. Book: open the book at that chapter. */
+  openSource(s: ChatSource): void {
+    if (!this.isOpenable(s)) return;
+    if (s.kind === "commentary") {
+      this.nav.openCommentary(s.moduleId, s.bookNumber!, s.chapter!, s.verse);
+    } else {
+      this.nav.openBookChapter(s.moduleId, s.bookChapterIndex ?? 1);
+    }
+  }
+
+  /** The sources of an answer grouped by tradition, so balance (or the lack of it) shows at a glance. */
+  groupedSources(msg: ChatMessage): { tradition: string; sources: ChatSource[] }[] {
+    const groups = new Map<string, ChatSource[]>();
+    for (const s of msg.sources ?? []) {
+      const list = groups.get(s.tradition) ?? [];
+      list.push(s);
+      groups.set(s.tradition, list);
+    }
+    return [...groups].map(([tradition, sources]) => ({ tradition, sources }));
+  }
+
+  // ── Save to notes ────────────────────────────────────────────────────────
+
+  /** Appends the answer, its sources and the date to the note for the passage being read. */
+  saveToNotes(index: number): void {
+    const msg = this.messages()[index];
+    const loc = this.nav.location();
+    if (!msg || !loc) return;
+
+    const question = this.messages()[index - 1]?.role === "user" ? this.messages()[index - 1].text : "";
+    const reference = NotesService.toReference(loc.book, loc.chapter, loc.verse);
+
+    this.notes.append(reference, this.formatForNotes(msg, question)).subscribe({
+      next: () => {
+        this.messages.update((msgs) =>
+          msgs.map((m, i) => (i === index ? { ...m, saved: true } : m)),
+        );
+        // Keep the "has a note" markers in the reader current.
+        this.notes
+          .getAll()
+          .subscribe((all) => this.nav.setNotedReferences(all.map((n) => n.reference)));
+      },
+      error: () => this.error.set("Could not save the note."),
+    });
+  }
+
+  private formatForNotes(msg: ChatMessage, question: string): string {
+    const lines: string[] = [];
+    if (question) lines.push(`**${question.trim()}**`, "");
+    lines.push(msg.text.trim(), "");
+    if (msg.sources?.length) {
+      lines.push("Sources:");
+      for (const s of msg.sources) lines.push(`- [${s.id}] ${s.label}`);
+      lines.push("");
+    }
+    lines.push(`_Saved from the study assistant on ${new Date().toISOString().slice(0, 10)}_`);
+    return lines.join("\n");
   }
 
   private scrollToBottom(): void {

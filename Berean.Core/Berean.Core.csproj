@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Berean.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="Berean.Core.Agent" />
+    <Using Include="Berean.Core.Routing" />
+    <Using Include="Berean.Core.Retrieval" />
+    <Using Include="Berean.Core.Indexing" />
+    <Using Include="Berean.Core.Tools" />
+    <Using Include="Berean.Core.Resources" />
+    <Using Include="Berean.Core.Llm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Berean.Core.Tests" />
+    <EmbeddedResource Include="Agent\Prompts\*.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Anthropic" Version="12.50.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.25" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.1" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.1" />
+    <PackageReference Include="OllamaSharp" Version="5.4.25" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

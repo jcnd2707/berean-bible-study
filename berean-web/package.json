@@ -5,7 +5,8 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "watch": "ng build --watch --configuration development"
+    "watch": "ng build --watch --configuration development",
+    "test:unit": "esbuild src/app/features/ai-chat/answer-html.ts --bundle --format=cjs --platform=node --outfile=.tmp/answer-html.bundle.js && node tests/answer-html.test.js"
   },
   "private": true,
   "dependencies": {

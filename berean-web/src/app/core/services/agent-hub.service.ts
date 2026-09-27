@@ -3,15 +3,60 @@ import * as signalR from "@microsoft/signalr";
 import { Subject, BehaviorSubject } from "rxjs";
 import { environment } from "../../../environments/environment";
 
+/** How a question is answered: Quick skips retrieval, Deep retrieves sources, Compare sets traditions side by side. */
+export type ChatMode = "Quick" | "Deep" | "Compare";
+
 export type HubState =
   | "disconnected"
   | "connecting"
   | "connected"
   | "reconnecting";
 
-export interface AgentSelectedEvent {
-  agentType: string;
-  cloudAvailable: boolean;
+/** A numbered source the answer may cite ([S1], [A1]…), as sent by the server. */
+export interface ChatSource {
+  id: string;
+  kind: "commentary" | "book" | "dictionary";
+  moduleId: string;
+  displayName: string;
+  tradition: string;
+  era: string | null;
+  label: string;
+  book: string | null;
+  bookNumber: number | null;
+  chapter: number | null;
+  verse: number | null;
+  bookChapterIndex: number | null;
+}
+
+/** A saved conversation, as listed in the history. */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+  passage: string | null;
+  modelId: string | null;
+}
+
+/** A message of a reopened conversation. */
+export interface StoredChatMessage {
+  role: "user" | "agent";
+  text: string;
+  sources: ChatSource[] | null;
+}
+
+export interface ConversationLoadedEvent {
+  id: string;
+  title: string;
+  modelId: string | null;
+  messages: StoredChatMessage[];
+}
+
+export interface ToolActivityEvent {
+  name: string;
+  text: string;
+}
+
+export interface SessionStartedEvent {
   ragChunks: number;
 }
 
@@ -39,7 +84,13 @@ export class AgentHubService implements OnDestroy {
   readonly state$ = new BehaviorSubject<HubState>("disconnected");
   readonly token$ = new Subject<string>();
   readonly complete$ = new Subject<string>();
-  readonly agentSelected$ = new Subject<AgentSelectedEvent>();
+  readonly sources$ = new Subject<ChatSource[]>();
+  readonly conversationStarted$ = new Subject<string>();
+  readonly conversationList$ = new Subject<ConversationSummary[]>();
+  readonly conversationLoaded$ = new Subject<ConversationLoadedEvent>();
+  readonly conversationDeleted$ = new Subject<string>();
+  readonly toolActivity$ = new Subject<ToolActivityEvent>();
+  readonly sessionStarted$ = new Subject<SessionStartedEvent>();
   readonly error$ = new Subject<string>();
   readonly reset$ = new Subject<void>();
   readonly ragIndexing$ = new Subject<RagIndexingEvent>();
@@ -60,19 +111,38 @@ export class AgentHubService implements OnDestroy {
     this.hub.on("TokenReceived", (t: string) =>
       this.zone.run(() => this.token$.next(t)),
     );
+    this.hub.on("ConversationStarted", (id: string) =>
+      this.zone.run(() => this.conversationStarted$.next(id)),
+    );
+    this.hub.on("ConversationList", (list: ConversationSummary[]) =>
+      this.zone.run(() => this.conversationList$.next(list)),
+    );
+    this.hub.on(
+      "ConversationLoaded",
+      (
+        id: string,
+        title: string,
+        modelId: string | null,
+        messages: StoredChatMessage[],
+      ) =>
+        this.zone.run(() =>
+          this.conversationLoaded$.next({ id, title, modelId, messages }),
+        ),
+    );
+    this.hub.on("ConversationDeleted", (id: string) =>
+      this.zone.run(() => this.conversationDeleted$.next(id)),
+    );
+    this.hub.on("Sources", (list: ChatSource[]) =>
+      this.zone.run(() => this.sources$.next(list)),
+    );
+    this.hub.on("ToolActivity", (name: string, text: string) =>
+      this.zone.run(() => this.toolActivity$.next({ name, text })),
+    );
     this.hub.on("MessageComplete", (t: string) =>
       this.zone.run(() => this.complete$.next(t)),
     );
-    this.hub.on(
-      "AgentSelected",
-      (type: string, cloud: boolean, chunks: number) =>
-        this.zone.run(() =>
-          this.agentSelected$.next({
-            agentType: type,
-            cloudAvailable: cloud,
-            ragChunks: chunks,
-          }),
-        ),
+    this.hub.on("SessionStarted", (chunks: number) =>
+      this.zone.run(() => this.sessionStarted$.next({ ragChunks: chunks })),
     );
     this.hub.on("Error", (msg: string) =>
       this.zone.run(() => this.error$.next(msg)),
@@ -113,11 +183,25 @@ export class AgentHubService implements OnDestroy {
     }
   }
 
-  async selectBibleAgent(modelId: string): Promise<void> {
-    await this.hub.send("SelectAgent", "Bible", modelId);
+  /** Starts a new conversation on this model. It is saved once its first question is answered. */
+  async startConversation(modelId: string): Promise<void> {
+    await this.hub.send("StartConversation", modelId);
   }
 
-  async sendMessage(text: string, mode: "Quick" | "Deep" = "Quick", includeSDA = false): Promise<void> {
+  /** Reopens a saved conversation. */
+  async resumeConversation(id: string): Promise<void> {
+    await this.hub.send("ResumeConversation", id);
+  }
+
+  async listConversations(): Promise<void> {
+    await this.hub.send("ListConversations");
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    await this.hub.send("DeleteConversation", id);
+  }
+
+  async sendMessage(text: string, mode: ChatMode = "Quick", includeSDA = false): Promise<void> {
     await this.hub.send("SendMessage", text, mode, includeSDA);
   }
 

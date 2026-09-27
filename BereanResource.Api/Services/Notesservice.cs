@@ -1,4 +1,4 @@
-﻿using BereanResourceApi.Models;
+using BereanResourceApi.Models;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 
@@ -74,6 +74,19 @@ public class NotesService(IOptions<BereanResourcesConfig> config, ILogger<NotesS
         cmd.ExecuteNonQuery();
 
         return Get(reference)!;
+    }
+
+    /// <summary>
+    /// Adds text to the end of a note (creating it if needed), separated from what is already
+    /// there, so saving something never overwrites what was written before.
+    /// </summary>
+    public NoteRecord Append(string reference, string text)
+    {
+        var existing = Get(reference);
+        var combined = existing is null || string.IsNullOrWhiteSpace(existing.Text)
+            ? text
+            : existing.Text.TrimEnd() + "\n\n---\n\n" + text;
+        return Upsert(reference, combined);
     }
 
     public bool Delete(string reference)

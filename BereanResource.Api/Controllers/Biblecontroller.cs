@@ -1,11 +1,11 @@
-﻿using BereanResourceApi.Services;
+using BereanResourceApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BereanResourceApi.Controllers;
 
 [ApiController]
 [Route("api/bible")]
-public class BibleController(BibleService bibleService) : ControllerBase
+public class BibleController(BibleService bibleService, StrongsOccurrenceService strongs) : ControllerBase
 {
     /// <summary>Returns metadata for a Bible module (title, license, translation code).</summary>
     [HttpGet("{moduleId}")]
@@ -60,6 +60,27 @@ public class BibleController(BibleService bibleService) : ControllerBase
         }
         catch (FileNotFoundException ex) { return NotFound(new { error = ex.Message }); }
         catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    /// <summary>
+    /// Where a Strong's number is used: the count, the spread by book and a sample of verses.
+    /// GET /api/bible/akjvstrong/strongs/G26/occurrences?limit=20
+    /// The first call for a module scans it into a table (about a minute); later calls are instant.
+    /// </summary>
+    [HttpGet("{moduleId}/strongs/{number}/occurrences")]
+    public IActionResult StrongsOccurrences(string moduleId, string number, [FromQuery] int limit = 20)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(number, @"^[GHgh]\d{1,5}$"))
+            return BadRequest(new { error = "Use a Strong's number such as G26 or H2617." });
+
+        try
+        {
+            var result = strongs.Find(moduleId, number, Math.Clamp(limit, 1, 100));
+            return result is null
+                ? NotFound(new { error = $"Module '{moduleId}' has no Strong's tags." })
+                : Ok(result);
+        }
+        catch (FileNotFoundException ex) { return NotFound(new { error = ex.Message }); }
     }
 
     /// <summary>

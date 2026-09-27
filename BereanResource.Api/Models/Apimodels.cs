@@ -1,4 +1,4 @@
-﻿namespace BereanResourceApi.Models;
+namespace BereanResourceApi.Models;
 
 // ── Resource discovery ────────────────────────────────────────────────────────
 
@@ -6,7 +6,10 @@ public record ResourceModule(
     string ModuleId,        // filename without extension, e.g. "MKJV"
     string Name,            // human-readable name from file metadata
     string Language,        // "en", "es", etc.
-    string FilePath
+    string FilePath,
+    string? Tradition = null,   // from ModuleProfiles config; "Unclassified" when no profile
+    string? Era = null,
+    string? DisplayName = null  // short citation name from ModuleProfiles, falls back to Name
 );
 
 // ── Bible ─────────────────────────────────────────────────────────────────────
@@ -77,6 +80,19 @@ public record UpsertNoteRequest(
     string Text
 );
 
+// ── Strong's occurrences ──────────────────────────────────────────────────────
+
+public record StrongsBookCount(int Book, string BookName, int Count);
+
+public record StrongsSample(string Reference, string Word, string Text);
+
+public record StrongsOccurrences(
+    string Number,
+    int Count,
+    List<StrongsBookCount> ByBook,
+    List<StrongsSample> Sample
+);
+
 // ── Cross References ──────────────────────────────────────────────────────────
 
 public record CrossReferenceEntry(
@@ -143,7 +159,9 @@ public record BookSummary(
     string Title,
     string Author,
     string Publisher,
-    string Language
+    string Language,
+    string? Tradition = null,
+    string? Era = null
 );
 
 public record BookMeta(

@@ -1,74 +1,50 @@
 # Berean Web
 
-Angular 19 frontend for the Berean Bible study app.
-
-## Prerequisites
-
-- Node.js 20+
-- npm 10+
-- Berean Resource API running at `https://localhost:7105`
+Angular 19 client for the Berean Bible study app. Run it after the two APIs; see the [root README](../README.md) for what everything does and how to configure it.
 
 ## Setup
 
 ```bash
-# 1. Install dependencies
 npm install
-
-# 2. Start the dev server
-npm start
+npm start          # http://localhost:4200
 ```
 
-The app will be available at `http://localhost:4200`.
+Prerequisites: Node.js 20+, npm 10+.
 
-> **CORS**: Make sure your Resource API allows `http://localhost:4200`.
-> In your ASP.NET Core `Program.cs` add:
-> ```csharp
-> builder.Services.AddCors(options =>
->     options.AddDefaultPolicy(p =>
->         p.WithOrigins("http://localhost:4200")
->          .AllowAnyHeader()
->          .AllowAnyMethod()));
-> // ...
-> app.UseCors();
-> ```
+## Where it looks for the servers
 
-> **SSL cert**: Since the API is on `https://localhost:7105`, your browser
-> must trust the dev cert. Run `dotnet dev-certs https --trust` once if
-> you haven't already.
+`src/environments/environment.ts`:
 
-## Project structure
+| Setting | Default | Server |
+|---|---|---|
+| `apiBaseUrl` | `http://localhost:5121` | `BereanResource.Api` (Bible, commentary, dictionary, books, notes) |
+| `agentApiUrl` | `http://localhost:5050` | `Berean.Agent.Api` (SignalR chat hub at `/hubs/chat`) |
+
+`BereanResource.Api` must allow the origin the app is served from (`Cors:AllowedOrigins`), and `Berean.Agent.Api` allows `http://localhost:4200` by default.
+
+## Layout
 
 ```
 src/app/
 ├── core/
-│   ├── models/            # Typed interfaces (all API shapes)
-│   │   └── index.ts
+│   ├── models/                  API shapes
 │   └── services/
-│       ├── bible.service.ts          # /api/bible/* calls
-│       ├── resources.service.ts      # /api/resources/* calls
-│       └── navigation-state.service.ts  # Active location signals
-├── features/
-│   └── bible-reader/      # First panel — book/chapter navigation + verse display
-└── app.component.ts       # Shell layout (panels added here as they're built)
+│       ├── agent-hub.service.ts       SignalR connection to the chat hub (events, conversations)
+│       ├── navigation-state.service.ts  current passage, and one-shot requests panels act on
+│       └── …                          one service per REST area (bible, commentary, dictionary, books, notes)
+└── features/
+    ├── bible-reader/    chapters, translation tabs, Strong's numbers under words, compare
+    ├── commentary/      commentary panel (opens on a chat citation)
+    ├── books/           prose books reader (opens on a chat citation)
+    ├── dictionary/, cross-references/, notes/, search/, compare/
+    ├── right-panel/     commentary / notes / cross-refs tabs
+    └── ai-chat/         the study assistant: modes, citations, sources, saved conversations
 ```
 
-## What's built
+## Chat behaviour worth knowing
 
-### Bible reader panel
-- Loads available translations from `/api/resources/bibles`
-- Loads book list (OT/NT grouped) from `/api/bible/{moduleId}/books`
-- Fetches chapter from `/api/bible/{moduleId}/{book}/{chapter}`
-- Click a verse to select it — updates the global `NavigationStateService`
-- Prev/Next chapter navigation
-
-### NavigationStateService (signals)
-Holds the active `BibleLocation` (moduleId, book, chapter, verse).
-All future panels (commentary, dictionary, AI chat) inject this service
-to know what to display. The `contextStrip` computed property is the
-payload that will be sent to the Agent API.
-
-## Next panels to add
-1. **Commentary** — inject `NavigationStateService`, react to `location` signal,
-   call `CommentaryService` (not yet created).
-2. **Dictionary** — word lookup triggered by verse click or Strong's number.
-3. **Notes + AI chat** — reads `contextStrip` signal, sends to Agent via SignalR.
+- **Modes:** Quick (no lookup), Deep (sources first), Compare (traditions side by side). The SDA toggle adds a separate Adventist section from Adventist sources only.
+- **Citations:** `[S1]` in an answer becomes a chip showing the source and its tradition. Clicking a commentary chip goes to that verse and opens that commentary; a book chip opens the book at that chapter. The sources are listed under each answer, grouped by tradition.
+- **Save to notes:** appends the answer, its sources and the date to the note for the passage you are reading (it never replaces an existing note).
+- **Conversations:** saved automatically once the first question is answered; the clock button lists them. The last one reopens on refresh.
+- **Strong's:** the "Strong's" toggle in the reader shows the number under each tagged word; clicking one opens it in the dictionary panel.

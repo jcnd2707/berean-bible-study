@@ -1,10 +1,12 @@
-import { Component, signal } from "@angular/core";
+import { Component, effect, inject, signal } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { CommentaryComponent } from "../commentary/commentary.component";
 import { NotesComponent } from "../notes/notes.component";
 import { CrossReferencesComponent } from "../cross-references/cross-references.component";
-
-type RightTab = "commentary" | "notes" | "xrefs";
+import {
+  NavigationStateService,
+  RightTab,
+} from "../../core/services/navigation-state.service";
 
 @Component({
   selector: "app-right-panel",
@@ -103,5 +105,14 @@ type RightTab = "commentary" | "notes" | "xrefs";
   ],
 })
 export class RightPanelComponent {
+  private readonly nav = inject(NavigationStateService);
   readonly activeTab = signal<RightTab>("commentary");
+
+  // A chat citation can ask for a particular tab.
+  private readonly _tabRequest = effect(() => {
+    const tab = this.nav.requestedRightTab();
+    if (!tab) return;
+    this.activeTab.set(tab);
+    this.nav.clearRequestedRightTab();
+  });
 }

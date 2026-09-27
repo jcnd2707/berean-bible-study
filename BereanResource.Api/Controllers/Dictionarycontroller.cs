@@ -1,4 +1,4 @@
-﻿using BereanResourceApi.Services;
+using BereanResourceApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BereanResourceApi.Controllers;
@@ -80,6 +80,22 @@ public class DictionaryController(DictionaryService dictionaryService) : Control
         try
         {
             return Ok(dictionaryService.GetPage(moduleId, offset, pageSize));
+        }
+        catch (FileNotFoundException ex) { return NotFound(new { error = ex.Message }); }
+    }
+
+    /// <summary>
+    /// Finds entries by transliteration, e.g. GET /api/dictionary/strong/transliteration?q=nephesh
+    /// (matches ignoring case and diacritics).
+    /// </summary>
+    [HttpGet("{moduleId}/transliteration")]
+    public IActionResult Transliteration(string moduleId, [FromQuery] string q, [FromQuery] int limit = 5)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+            return BadRequest(new { error = "Query parameter 'q' is required." });
+        try
+        {
+            return Ok(dictionaryService.FindByTransliteration(moduleId, q, limit));
         }
         catch (FileNotFoundException ex) { return NotFound(new { error = ex.Message }); }
     }

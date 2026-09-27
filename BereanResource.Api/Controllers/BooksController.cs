@@ -5,11 +5,11 @@ namespace BereanResourceApi.Controllers;
 
 [ApiController]
 [Route("api/books")]
-public class BooksController(BookService bookService) : ControllerBase
+public class BooksController(BookService bookService, ModuleProfileService profiles) : ControllerBase
 {
     /// <summary>Lists all available book modules.</summary>
     [HttpGet]
-    public IActionResult GetAvailableBooks() => Ok(bookService.GetAvailableBooks());
+    public IActionResult GetAvailableBooks() => Ok(profiles.Apply(bookService.GetAvailableBooks()));
 
     /// <summary>Returns metadata (title, author, publisher, language) for a book module.</summary>
     [HttpGet("{moduleId}")]

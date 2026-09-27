@@ -22,6 +22,15 @@ export class NotesService {
     return this.http.post<Note>(`${this.base}/api/notes/${reference}`, body);
   }
 
+  /** Adds text to the end of a note without replacing what is already there. */
+  append(reference: string, text: string): Observable<Note> {
+    const body: UpsertNoteRequest = { text };
+    return this.http.post<Note>(
+      `${this.base}/api/notes/${reference}/append`,
+      body,
+    );
+  }
+
   delete(reference: string): Observable<void> {
     return this.http.delete<void>(`${this.base}/api/notes/${reference}`);
   }

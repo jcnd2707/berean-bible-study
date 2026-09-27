@@ -416,3 +416,18 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Berean: build output, local indexes, eval runs
+berean-web/dist/
+berean-web/.angular/
+**/index/*.rag.db
+*.db-shm
+*.db-wal
+eval/runs/*
+!eval/runs/*-baseline/
+berean-web/.tmp/
+
+# Machine-specific overrides and local Claude Code settings: appsettings.json holds
+# placeholders; real paths/origins for this machine belong in appsettings.Development.json.
+appsettings.Development.json
+.claude/settings.local.json

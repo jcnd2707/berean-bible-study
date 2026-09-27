@@ -187,6 +187,24 @@ export class BibleReaderComponent implements OnInit {
     this.navState.navigate({ ...loc, moduleId: tab.moduleId, verse: null });
   }
 
+  /** Show the Strong's number under each tagged word. */
+  readonly showStrongs = signal(false);
+
+  /**
+   * Whether the chapter on screen carries Strong's tags. Judged from the verses themselves: a
+   * module's own "has Strong's" flag isn't reliable (akjvstrong reports false).
+   */
+  readonly chapterHasStrongs = computed(
+    () => this.passage()?.verses.some((v) => !!v.strongsWords?.length) ?? false,
+  );
+
+  /** Clicking a tagged word opens it in the dictionary panel by its Strong's number. */
+  onStrongsWordClick(event: MouseEvent, word: StrongsWord): void {
+    event.stopPropagation();
+    const clean = word.word.replace(/[^a-zA-Z'-]/g, "").toLowerCase();
+    this.wordSelection.select(clean || word.word, word.number);
+  }
+
   onVerseClick(verse: Verse): void {
     const already = this.activeVerse() === verse.verse;
     const newVerse = already ? null : verse.verse;
