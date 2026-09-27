@@ -1,6 +1,8 @@
 # Berean
 
 [![CI](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml/badge.svg)](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml)
+<img width="3829" height="2081" alt="image" src="https://github.com/user-attachments/assets/90b049b0-1020-4f9b-923f-ca6b115c4d35" />
+
 
 A Bible study app with an AI study assistant. The assistant answers from your own Bible study modules (Bibles, commentaries, dictionaries, prose books) and is built to be **even-handed**: it shows what the text says first, then how different traditions have read it, and it only brings in Adventist material when you turn that on.
 
