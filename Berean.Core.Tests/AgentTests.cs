@@ -39,6 +39,8 @@ internal sealed class RecordingChatClient : IChatClient
 
 public class AgentTests
 {
+    private static readonly Perspective TestPerspective = new("adventist", "Adventist", "Adventist", "A");
+
     private static (StudyAgent agent, RecordingChatClient client) Create(
         LlmProvider provider = LlmProvider.Ollama, int historyTurns = 12)
     {
@@ -47,7 +49,7 @@ public class AgentTests
         var config = new StudyAgentOptions
         {
             SystemPrompt = "SYSTEM",
-            SdaInstructions = "SDA-ON",
+            PerspectiveAddendumTemplate = "PERSPECTIVE-ON: {Label}",
             CompareInstructions = "COMPARE-ON",
         };
         var agent = new StudyAgent(llm, new LlmConfig { HistoryTurns = historyTurns, OllamaTemperature = 0.2f },
@@ -72,10 +74,10 @@ public class AgentTests
     {
         var (agent, client) = Create();
 
-        await agent.ChatAsync("What is grace?", ragContext: "REFERENCE MATERIAL:\n[S1] x", includeSDA: true, mode: QueryMode.Compare);
+        await agent.ChatAsync("What is grace?", ragContext: "REFERENCE MATERIAL:\n[S1] x", perspectives: [TestPerspective], mode: QueryMode.Compare);
 
         var user = client.Calls[0].Last(m => m.Role == ChatRole.User).Text;
-        Assert.True(user.IndexOf("SDA-ON") < user.IndexOf("REFERENCE MATERIAL"));
+        Assert.True(user.IndexOf("PERSPECTIVE-ON") < user.IndexOf("REFERENCE MATERIAL"));
         Assert.True(user.IndexOf("COMPARE-ON") < user.IndexOf("REFERENCE MATERIAL"));
         Assert.True(user.IndexOf("REFERENCE MATERIAL") < user.IndexOf("User question: What is grace?"));
     }
@@ -85,8 +87,8 @@ public class AgentTests
     {
         var (agent, client) = Create();
 
-        await agent.ChatAsync("one", includeSDA: false);
-        await agent.ChatAsync("two", includeSDA: true, mode: QueryMode.Compare);
+        await agent.ChatAsync("one");
+        await agent.ChatAsync("two", perspectives: [TestPerspective], mode: QueryMode.Compare);
 
         Assert.All(client.Calls, call =>
         {

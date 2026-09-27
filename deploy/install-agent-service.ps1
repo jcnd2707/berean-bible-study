@@ -1,7 +1,10 @@
 <#
   Moves the Agent from IIS to a Windows Service that runs as YOUR account. Run ELEVATED:
 
-      powershell -ExecutionPolicy Bypass -File .\deploy\install-agent-service.ps1 [-PublishDir <folder>]
+      powershell -ExecutionPolicy Bypass -File .\deploy\install-agent-service.ps1 [-PublishDir <folder>] [-InstallRoot <path>] [-ServiceName <name>] [-IisSiteName <name>] [-Port <port>]
+
+  This is a reference setup for one Windows machine (see deploy/README.md), not a general-purpose
+  installer; every default below matches this repo's own deployment.
 
   Why: the Claude Code provider shells out to the claude CLI, which reads your Claude login from
   your user profile. A service running as your account gets your profile environment from the
@@ -9,21 +12,27 @@
 
   What it does:
     1. Asks for your Windows password and checks it before using it.
-    2. Stops the IIS "BibleAgent" site and pool, stops them auto-starting, and puts the pool back on
-       its default identity (so IIS no longer stores your password).
-    3. Copies the new build into D:\Bible Study\Agent (keeps the deployed appsettings.json).
-    4. Grants your account "Log on as a service" and creates the "BereanAgent" service
-       (automatic start, restarts on failure). The app listens on http://*:5050 ("Urls" in appsettings.json).
-    5. Starts it and checks http://localhost:5050/health.
+    2. Stops the IIS site and pool named -IisSiteName, stops them auto-starting, and puts the pool
+       back on its default identity (so IIS no longer stores your password).
+    3. Copies the new build into <InstallRoot>\Agent (keeps the deployed appsettings.json).
+    4. Grants your account "Log on as a service" and creates the -ServiceName service
+       (automatic start, restarts on failure). The app listens on http://*:<Port> ("Urls" in appsettings.json).
+    5. Starts it and checks http://localhost:<Port>/health.
 #>
 #Requires -RunAsAdministrator
-param([string]$PublishDir)
+param(
+    [string]$PublishDir,
+    [string]$InstallRoot = 'D:\Bible Study',
+    [string]$ServiceName = 'BereanAgent',
+    [string]$IisSiteName = 'BibleAgent',
+    [int]$Port = 5050
+)
 $ErrorActionPreference = 'Stop'
 
-$serviceName = 'BereanAgent'
-$agentDir    = 'D:\Bible Study\Agent'
+$serviceName = $ServiceName
+$agentDir    = Join-Path $InstallRoot 'Agent'
 $exe         = Join-Path $agentDir 'Berean.Agent.Api.exe'
-$iisSite     = 'BibleAgent'
+$iisSite     = $IisSiteName
 
 # 1. Credentials ------------------------------------------------------------------------------
 Add-Type -AssemblyName System.DirectoryServices.AccountManagement
@@ -90,7 +99,7 @@ $binPath = "`"$exe`""
 if (-not (Get-Service $serviceName -ErrorAction SilentlyContinue)) {
     New-Service -Name $serviceName -DisplayName 'Berean Agent API' -BinaryPathName $binPath `
         -StartupType Automatic -Credential $cred `
-        -Description 'Berean study agent (SignalR hub on port 5050). Runs as the user logged in to Claude Code.' | Out-Null
+        -Description "Berean study agent (SignalR hub on port $Port). Runs as the user logged in to Claude Code." | Out-Null
 } else {
     $pw = $cred.GetNetworkCredential().Password
     & sc.exe config $serviceName binPath= $binPath start= auto obj= $cred.UserName password= $pw | Out-Null
@@ -103,7 +112,7 @@ Write-Host "Service '$serviceName' runs as $($cred.UserName)." -ForegroundColor 
 Start-Service $serviceName
 Start-Sleep 5
 try {
-    $r = Invoke-WebRequest 'http://localhost:5050/health' -UseBasicParsing -TimeoutSec 60
+    $r = Invoke-WebRequest "http://localhost:$Port/health" -UseBasicParsing -TimeoutSec 60
     Write-Host "OK   Agent health $($r.StatusCode)" -ForegroundColor Green
 } catch {
     Write-Host "FAIL Agent health: $($_.Exception.Message)" -ForegroundColor Red

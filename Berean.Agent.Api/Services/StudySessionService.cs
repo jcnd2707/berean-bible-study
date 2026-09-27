@@ -47,6 +47,13 @@ public partial class StudySessionService
         _embeddingModel = config["Ollama:EmbeddingModel"] ?? "mxbai-embed-large";
         _appStopping = lifetime.ApplicationStopping;
         _bibleRagConfig = config.GetSection("Agents:BibleAgent").Get<RetrievalOptions>();
+        if (_bibleRagConfig is not null)
+        {
+            // "Perspectives" and "MaxPerspectivesPerQuestion" are root-level config, not children
+            // of "Agents:BibleAgent" — bound here rather than duplicating RetrievalOptions per API.
+            _bibleRagConfig.Perspectives = config.GetSection("Perspectives").Get<List<Perspective>>() ?? [];
+            _bibleRagConfig.MaxPerspectivesPerQuestion = config.GetValue("MaxPerspectivesPerQuestion", 1);
+        }
 
         // chat.db lives next to the vector index.
         var indexDir = Path.GetDirectoryName(Path.GetFullPath(_bibleRagConfig?.RagDbPath ?? "index/bible.rag.db"))!;
@@ -83,15 +90,51 @@ public partial class StudySessionService
         }
     }
 
+    // ── Perspectives ───────────────────────────────────────────────────────
+
+    /// <summary>Every perspective configured for this deployment (possibly empty).</summary>
+    public IReadOnlyList<Perspective> GetPerspectives() => _bibleRagConfig?.Perspectives ?? [];
+
+    /// <summary>
+    /// Resolves ids the client sent against what's configured, enforcing the per-conversation cap.
+    /// On resume (<paramref name="strict"/> false) an id that no longer matches a configured
+    /// perspective is silently dropped instead of failing the resume.
+    /// </summary>
+    private List<Perspective> ResolvePerspectives(IReadOnlyList<string>? ids, bool strict = true)
+    {
+        if (ids is null or { Count: 0 }) return [];
+
+        var configured = GetPerspectives();
+        var cap = _bibleRagConfig?.MaxPerspectivesPerQuestion ?? 1;
+        if (strict && ids.Count > cap)
+            throw new ArgumentException($"At most {cap} perspective(s) may be selected for a conversation.");
+
+        var resolved = new List<Perspective>();
+        foreach (var id in ids.Distinct())
+        {
+            var p = configured.FirstOrDefault(c => c.Id == id);
+            if (p is not null) resolved.Add(p);
+            else if (strict) throw new ArgumentException($"Unknown perspective '{id}'.");
+        }
+        return resolved;
+    }
+
     // ── Conversations ──────────────────────────────────────────────────────
 
-    /// <summary>Starts a new conversation on this connection. It is saved once the first question is answered.</summary>
-    public async Task<StudyPipeline> StartConversationAsync(string connectionId, string? modelId = null)
+    /// <summary>
+    /// Starts a new conversation on this connection. The perspective selection is locked for the
+    /// conversation's lifetime — see <see cref="RetrievalOptions.MaxPerspectivesPerQuestion"/>.
+    /// It is saved once the first question is answered.
+    /// </summary>
+    public async Task<StudyPipeline> StartConversationAsync(
+        string connectionId, string? modelId = null, IReadOnlyList<string>? perspectiveIds = null)
     {
         _log.LogInformation("[Session] {ConnId} starting a conversation", connectionId);
 
+        var perspectives = ResolvePerspectives(perspectiveIds);
         var pipeline = await BuildPipelineAsync(connectionId, modelId);
         pipeline.ConversationId = Guid.NewGuid().ToString("N");
+        pipeline.Perspectives = perspectives;
         Persist(pipeline, modelId);
 
         _sessions[connectionId] = pipeline;
@@ -111,6 +154,7 @@ public partial class StudySessionService
         var stored = await _store.GetMessagesAsync(conversationId);
         var pipeline = await BuildPipelineAsync(connectionId, info.ModelId);
         pipeline.ConversationId = conversationId;
+        pipeline.Perspectives = ResolvePerspectives(info.PerspectiveIds, strict: false);
         pipeline.LoadHistory(ConversationStore.ToChatMessages(stored));
 
         if (info.ClaudeSessionId is not null && pipeline.ClaudeCode is { } claude)
@@ -157,7 +201,8 @@ public partial class StudySessionService
 
             if (!await _store.ExistsAsync(id))
                 await _store.CreateAsync(new ConversationInfo(
-                    id, MakeTitle(firstQuestion), now, now, PassageOf(firstQuestion), modelId, null));
+                    id, MakeTitle(firstQuestion), now, now, PassageOf(firstQuestion), modelId, null,
+                    pipeline.Perspectives.Select(p => p.Id).ToList()));
 
             // The sources ride on the last answer message of the turn.
             var sourcesJson = turn.Retrieval is { Sources.Count: > 0 } r

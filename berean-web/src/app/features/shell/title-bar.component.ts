@@ -7,7 +7,7 @@ import { Component } from "@angular/core";
     <div class="title-bar">
       <div class="logo">
         <span class="logo-name">Berean</span>
-        <span class="logo-sub">SDA Study</span>
+        <span class="logo-sub">Bible Study</span>
       </div>
       <nav class="menu-row">
         <span class="menu-item">Bible</span>

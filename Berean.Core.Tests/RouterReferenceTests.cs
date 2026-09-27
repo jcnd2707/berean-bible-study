@@ -52,7 +52,7 @@ public class RouterReferenceTests
             .On("api/commentary/barnes/Luke/16", Commentary("barnes", 42, "Luke", 16, (19, 31, "Barnes on Lazarus")));
         var router = await RouterAsync(db, api);
 
-        var r = await router.RouteAsync("State of the dead? Consider Ecclesiastes 9:5 and Luke 16:19-31.", new RouteOptions());
+        var r = await router.RouteAsync("State of the dead? Consider Ecclesiastes 9:5 and Luke 16:19-31.", RouteOptions.None());
 
         Assert.Contains("Ecclesiastes 9:5 — the dead know not any thing", r.Text);
         Assert.Contains("Luke 16:19-31", r.Text);
@@ -68,7 +68,7 @@ public class RouterReferenceTests
             (16, "16 For God so loved the world."), (16, "16 For God so loved the world."), (16, "16 For God so loved the world.")));
         var router = await RouterAsync(db, api);
 
-        var r = await router.RouteAsync("Explain John 3:16", new RouteOptions());
+        var r = await router.RouteAsync("Explain John 3:16", RouteOptions.None());
 
         Assert.Contains("[KJV] John 3:16 — For God so loved the world.", r.Text);
         Assert.DoesNotContain("world. For God", r.Text);
@@ -88,7 +88,7 @@ public class RouterReferenceTests
                 (1, 1, "Nothing about the topic here.")));
         var router = await RouterAsync(db, api);
 
-        var r = await router.RouteAsync("Who or what is the beast of Revelation 13?", new RouteOptions());
+        var r = await router.RouteAsync("Who or what is the beast of Revelation 13?", RouteOptions.None());
 
         var barnes = Assert.Single(r.Sources, s => s.ModuleId == "barnes");
         Assert.Contains("persecuting power", barnes.Scored.Chunk.Text);
@@ -114,7 +114,7 @@ public class RouterReferenceTests
             new[] { new { topic = "H5315", definition = "Original: נפשׁ Transliteration: nephesh soul, life, person" } });
         var router = await RouterAsync(db, api);
 
-        var r = await router.RouteAsync("What does nephesh mean in the Old Testament?", new RouteOptions());
+        var r = await router.RouteAsync("What does nephesh mean in the Old Testament?", RouteOptions.None());
 
         var entry = Assert.Single(r.Sources, s => s.Kind == "dictionary");
         Assert.Contains("H5315", entry.Label);

@@ -5,7 +5,7 @@ const { renderAnswerHtml, escapeHtml } = require('../.tmp/answer-html.bundle.js'
 const src = (id, tradition = 'Evangelical') => ({ id, kind: 'commentary', moduleId: 'barnes', displayName: "Barnes' Notes", tradition, era: '19th c.', label: "Barnes' Notes (Evangelical) — John 3:16", book: 'John', bookNumber: 43, chapter: 3, verse: 16, bookChapterIndex: null });
 const label = s => `${s.displayName} · ${s.tradition}`;
 const openable = () => true;
-const R = (t, s) => renderAnswerHtml(t, s, label, openable);
+const R = (t, s, isPerspective) => renderAnswerHtml(t, s, label, openable, isPerspective);
 
 // markdown
 assert.match(R('# Title\n\nSome **bold** and *italic* and `code`.'), /<div class="md-h md-h1">Title<\/div><div class="md-gap"><\/div><div class="md-p">Some <strong>bold<\/strong> and <em>italic<\/em> and <code>code<\/code>\.<\/div>/);
@@ -26,9 +26,13 @@ console.log('escaping ok');
 const withChip = R('Barnes says [S1] and Clarke [S2].', [src('S1'), src('S2')]);
 assert.match(withChip, /<button type="button" class="cite" data-cite="S1" title="[^"]+">Barnes&#39; Notes · Evangelical<\/button>/);
 assert.equal(withChip.match(/data-cite/g).length, 2);
-assert.match(R('See [S1].', [src('S1', 'Adventist')]), /class="cite cite--adv"/);
+assert.match(R('See [S1].', [src('S1', 'Adventist')], s => s.tradition === 'Adventist'), /class="cite cite--perspective"/);
+assert.doesNotMatch(R('See [S1].', [src('S1', 'Adventist')]), /cite--perspective/);   // no predicate given: no accent
 assert.match(R('See [S9].', [src('S1')]), /\[S9\]/);                  // unknown id stays text
 assert.match(R('See [S1].', undefined), /\[S1\]/);                    // no sources sent
+// multi-letter citation prefixes (a perspective's own, e.g. "ADV") must render as chips too
+const advSrc = { ...src('S1', 'Adventist'), id: 'ADV1' };
+assert.match(R('See [ADV1].', [advSrc]), /data-cite="ADV1"/);
 assert.match(R('**as [S1] says**', [src('S1')]), /<strong>as <button[^>]*>.*<\/button> says<\/strong>/);   // chip inside bold
 const notOpenable = renderAnswerHtml('x [S1]', [src('S1')], label, () => false);
 assert.match(notOpenable, /class="cite cite--static"/);

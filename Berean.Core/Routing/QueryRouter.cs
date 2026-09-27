@@ -16,11 +16,12 @@ namespace Berean.Core.Routing;
 ///   Conceptual  — everything else → semantic search
 ///   Mixed       — verse + definition detected together
 ///
-/// Two retrieval passes keep the answer neutral:
-///   Main pass       everything except Adventist material, capped per module so one large
-///                   commentary can't dominate.
-///   Adventist pass  only when the SDA toggle is on; the same query restricted to Adventist
-///                   modules, returned as a separate block.
+/// Retrieval keeps the answer neutral:
+///   Main pass         everything except any configured perspective's tradition (held out whether
+///                     or not that perspective is selected), capped per module so one large
+///                     commentary can't dominate.
+///   Perspective pass  one per perspective selected for the conversation; the same query
+///                     restricted to that perspective's tradition, returned as its own block.
 ///
 /// Verse text and verse-pinned commentary come straight from BereanResource.Api (exact,
 /// every module, no embeddings). The vector index is used for semantic search only.
@@ -36,7 +37,6 @@ public class QueryRouter
     private readonly string _language;
     private readonly RetrievalOptions _cfg;
 
-    private static readonly IReadOnlyList<string> AdventistOnly = [Traditions.Adventist];
     private static readonly IReadOnlyList<SourceType> SearchableTypes = [SourceType.Commentary, SourceType.Book];
 
     // ── Verse detection ────────────────────────────────────────────────────
@@ -124,20 +124,22 @@ public class QueryRouter
             (false, false) => QueryIntent.Conceptual,
         };
 
-        _log.LogInformation("[Router] Intent={Intent} mode={Mode} sda={Sda} | {Query}",
-            intent, options.Mode, options.IncludeSda, msg.Question.Length > 60 ? msg.Question[..60] + "…" : msg.Question);
+        _log.LogInformation("[Router] Intent={Intent} mode={Mode} perspectives={Perspectives} | {Query}",
+            intent, options.Mode, options.SelectedPerspectives.Count == 0 ? "-" : string.Join(",", options.SelectedPerspectives.Select(p => p.Id)),
+            msg.Question.Length > 60 ? msg.Question[..60] + "…" : msg.Question);
 
         var semanticQuery = verseRef is not null
             ? BuildBookQuery(verseRef, msg.Question)
             : msg.Question;
 
         var bible = await FetchBibleTextAsync(refs, ct);
+        var heldOutTraditions = _cfg.Perspectives.Select(p => p.Tradition).Distinct().ToList();
 
         // ── Main pass (neutral) ────────────────────────────────────────────
         var main = new List<ScoredChunk>();
 
         if (refs.Count > 0)
-            main.AddRange(await FetchCommentaryAsync(refs, msg.Question, adventist: false, ct));
+            main.AddRange(await FetchCommentaryAsync(refs, msg.Question, perspectiveTradition: null, heldOutTraditions, ct));
 
         if (terms.Count > 0)
             main.AddRange(await LookupWordsAsync(terms, ct));
@@ -148,47 +150,50 @@ public class QueryRouter
             var embedding = await _rag.EmbedQueryAsync(semanticQuery, ct);
 
             if (options.Mode == QueryMode.Compare)
-                main.AddRange(SearchPerTradition(embedding, main));
+                main.AddRange(SearchPerTradition(embedding, main, heldOutTraditions));
             else
-                main.AddRange(_rag.Search(embedding, MainFilter(main),
+                main.AddRange(_rag.Search(embedding, MainFilter(main, heldOutTraditions),
                     topK: verseRef is null ? _cfg.TopK : 3,
                     lambda: _cfg.MmrLambda, candidateK: _cfg.MmrCandidateK));
         }
 
-        // ── Adventist pass (only when asked for) ───────────────────────────
-        var adventist = new List<ScoredChunk>();
-        if (options.IncludeSda)
+        // ── Perspective passes (one per perspective selected for this conversation) ────────
+        var perspectivePasses = new List<(Perspective Perspective, IReadOnlyList<ScoredChunk> Chunks)>();
+        foreach (var perspective in options.SelectedPerspectives)
         {
+            var chunks = new List<ScoredChunk>();
             if (refs.Count > 0)
-                adventist.AddRange(await FetchCommentaryAsync(refs, msg.Question, adventist: true, ct));
+                chunks.AddRange(await FetchCommentaryAsync(refs, msg.Question, perspective.Tradition, heldOutTraditions, ct));
 
             var embedding = await _rag.EmbedQueryAsync(semanticQuery, ct);
-            adventist.AddRange(_rag.Search(embedding, new RetrievalFilter
+            chunks.AddRange(_rag.Search(embedding, new RetrievalFilter
             {
                 SourceTypes = SearchableTypes,
                 Language = _language,
-                IncludeTraditions = AdventistOnly,
+                IncludeTraditions = [perspective.Tradition],
                 MaxPerModule = _cfg.MaxPerModule,
-                ExistingPerModule = ModuleCounts(adventist),
-            }, topK: _cfg.AdventistTopK, lambda: _cfg.MmrLambda, candidateK: _cfg.MmrCandidateK));
+                ExistingPerModule = ModuleCounts(chunks),
+            }, topK: perspective.TopK, lambda: _cfg.MmrLambda, candidateK: _cfg.MmrCandidateK));
+
+            perspectivePasses.Add((perspective, chunks));
         }
 
-        var context = ContextFormatter.Format(bible, main, adventist, _rag.Catalog, _cfg.MaxContextTokens * 4);
+        var context = ContextFormatter.Format(bible, main, perspectivePasses, _rag.Catalog, _cfg.MaxContextTokens * 4);
 
-        _log.LogInformation("[Router] refs={Refs} main={Main} adventist={Adv} bible={Bible}",
+        _log.LogInformation("[Router] refs={Refs} main={Main} perspectives={Perspectives} bible={Bible}",
             refs.Count == 0 ? "-" : string.Join("; ", refs.Select(r => r.OriginalText)),
-            main.Count, adventist.Count, bible.Count);
+            main.Count, string.Join(",", perspectivePasses.Select(p => $"{p.Perspective.Id}={p.Chunks.Count}")), bible.Count);
 
         return new RetrievalResult(intent, verseRef, context);
     }
 
     // ── Semantic search helpers ────────────────────────────────────────────
 
-    private RetrievalFilter MainFilter(IReadOnlyList<ScoredChunk> alreadyChosen) => new()
+    private RetrievalFilter MainFilter(IReadOnlyList<ScoredChunk> alreadyChosen, IReadOnlyList<string> heldOutTraditions) => new()
     {
         SourceTypes = SearchableTypes,
         Language = _language,
-        ExcludeTraditions = AdventistOnly,
+        ExcludeTraditions = heldOutTraditions,
         MaxPerModule = _cfg.MaxPerModule,
         ExistingPerModule = ModuleCounts(alreadyChosen),
     };
@@ -198,13 +203,13 @@ public class QueryRouter
     /// answer can set the views side by side. A tradition with nothing above the similarity
     /// floor is skipped rather than given a section just because it exists.
     /// </summary>
-    private List<ScoredChunk> SearchPerTradition(float[] embedding, IReadOnlyList<ScoredChunk> alreadyChosen)
+    private List<ScoredChunk> SearchPerTradition(float[] embedding, IReadOnlyList<ScoredChunk> alreadyChosen, IReadOnlyList<string> heldOutTraditions)
     {
         var result = new List<ScoredChunk>();
 
         var traditions = _rag.IndexedTraditions()
             .Where(Traditions.IsInterpretive)
-            .Where(t => t != Traditions.Adventist)   // the Adventist pass handles Adventist
+            .Where(t => !heldOutTraditions.Contains(t))   // perspective passes handle their own traditions
             .OrderBy(t => t)
             .ToList();
 
@@ -309,7 +314,8 @@ public class QueryRouter
     /// entries that best match the question's key words.
     /// </summary>
     private async Task<List<ScoredChunk>> FetchCommentaryAsync(
-        IReadOnlyList<VerseReference> refs, string question, bool adventist, CancellationToken ct)
+        IReadOnlyList<VerseReference> refs, string question,
+        string? perspectiveTradition, IReadOnlyList<string> heldOutTraditions, CancellationToken ct)
     {
         if (_api is null || refs.Count == 0) return [];
 
@@ -318,7 +324,7 @@ public class QueryRouter
             : null;
 
         var modules = _rag.Catalog.Commentaries
-            .Where(m => (m.Tradition == Traditions.Adventist) == adventist)
+            .Where(m => perspectiveTradition is null ? !heldOutTraditions.Contains(m.Tradition) : m.Tradition == perspectiveTradition)
             .Where(m => allowed is null || allowed.Contains(m.ModuleId))
             .ToList();
 
