@@ -138,3 +138,7 @@ REST: `Berean.Agent.Api`: `GET /health`, `GET /api/models`. `BereanResource.Api`
 - The library is mostly 17th–19th-century Protestant commentary, so "balanced" is limited by what is in it. Catholic, Orthodox, Jewish and modern critical sources would help most (add the module, label it in `ModuleProfiles`).
 - The Anthropic and OpenAI providers are covered by unit tests but have not been run against the live APIs.
 - Small local models (via Ollama) follow the answering method poorly.
+
+## License & content
+
+The code in this repository is [MIT licensed](LICENSE). That covers the app only: Berean doesn't bundle any Bible module files. You point it at your own e-Sword/MySword modules (see [Configuration](#configuration)), and those modules keep whatever license they were distributed under — check before redistributing anything you export from them.
