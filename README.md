@@ -27,10 +27,10 @@ A Bible study app with an AI study assistant. The assistant answers from your ow
 ## How an answer is built
 
 1. **Route.** [QueryRouter](Berean.Core/Routing/QueryRouter.cs) reads the question with regexes (no model call): a verse reference (any number of them, with ranges), a word to look up, or a general question.
-2. **Retrieve, in two passes.**
-   - *Main pass (neutral):* the exact verse text and every commentary's entry for the verse, read straight from the Resource API (so each tradition counts equally); plus semantic search of the vector index, excluding Adventist sources and capping how much any one module can add (`MaxPerModule`, default 2). Dictionary and lexicon entries are looked up for the words asked about.
-   - *Adventist pass:* only when the SDA toggle is on. The same question restricted to Adventist modules, returned as a separate `ADVENTIST SOURCES` block.
-3. **Label.** Every source is numbered and tagged with its tradition and era, e.g. `[S1] Barnes' Notes on the Bible (Evangelical, 19th c.) — John 3:16`. Adventist sources are `[A1]…`.
+2. **Retrieve, in passes.**
+   - *Main pass (neutral):* the exact verse text and every commentary's entry for the verse, read straight from the Resource API (so each tradition counts equally); plus semantic search of the vector index, excluding every configured [perspective's](#perspectives) tradition and capping how much any one module can add (`MaxPerModule`, default 2). Dictionary and lexicon entries are looked up for the words asked about.
+   - *Perspective pass:* one per perspective selected for the conversation (see [Perspectives](#perspectives) below). The same question restricted to that perspective's tradition, returned as its own `<LABEL> SOURCES` block, with its own citation prefix and its own budget on top of the neutral material.
+3. **Label.** Every source is numbered and tagged with its tradition and era, e.g. `[S1] Barnes' Notes on the Bible (Evangelical, 19th c.) — John 3:16`. A perspective's sources use its own prefix, e.g. `[ADV1]…`.
 4. **Answer.** The model gets the material *before* the question. The system prompt ([system.md](Berean.Core/Agent/Prompts/system.md)) is about method: text first, then the main views at their strongest with who holds each, keeping what the text states apart from inference and dispute, never treating one tradition as "the" view, citing only sources it was given.
 5. **Modes.** *Quick* skips retrieval. *Deep* retrieves. *Compare* sets the interpretive traditions side by side in a fixed structure.
 
@@ -45,6 +45,19 @@ Each module's tradition comes from `ModuleProfiles` in `BereanResource.Api/appse
 ```
 
 Traditions: `Adventist`, `Reformed`, `Wesleyan`, `Baptist`, `Lutheran`, `Evangelical`, `Catholic`, `Orthodox`, `Jewish`, `Academic`, `Lexical`, `Unclassified`. `GET /api/resources/profiles/unclassified` lists modules that still need a label. Tags are stored on every chunk in the index; changing a label is applied to the index at the next start (no re-embedding).
+
+### Perspectives
+
+Any tradition can be set up as a separate, opt-in section — the public config ships with none configured. Add one under `Perspectives` in `Berean.Agent.Api/appsettings.json` (or your local `appsettings.Development.json`):
+
+```json
+"Perspectives": [
+  { "Id": "adventist", "Tradition": "Adventist", "Label": "Seventh-day Adventist", "CitationPrefix": "ADV", "TopK": 4 }
+],
+"MaxPerspectivesPerQuestion": 1
+```
+
+A perspective is chosen once, when a conversation starts (the web client's "Perspective" dropdown, shown only when at least one is configured), and is locked for that conversation's lifetime — a different perspective means a new conversation. `GET /api/perspectives` lists what's configured. Whether or not one is selected, every configured perspective's tradition is always held out of the neutral pass, so switching a perspective on never changes what the neutral analysis draws on.
 
 ## Choosing the model
 
@@ -76,7 +89,8 @@ Committed `appsettings.json` files hold placeholders; put machine-specific value
 **`Berean.Agent.Api`**
 - `Llm`: `Provider`, `Model`, `Models` (the ones the UI offers), `Effort`, `HistoryTurns`, and `ClaudeCode` (`ExecutablePath`, `WorkingDirectory`, `TimeoutSeconds`, `Effort`). On Windows an npm install of Claude Code puts a `claude.cmd` shim on the PATH; the real `claude.exe` beside it is used automatically.
 - `Ollama`: `Endpoint`, `EmbeddingModel`, `DefaultModel`, `ToolCompatibleModels`.
-- `Agents:BibleAgent`: `RagDbPath`, `ResourceApiBaseUrl` (required), `AllowedBibleModules`, `AllowedCommentaryModules` (empty = all), `MaxPerModule`, `AdventistTopK`, `TopK`, `MaxContextTokens`, `AutoIndexMissingModules`, chunk sizes.
+- `Agents:BibleAgent`: `RagDbPath`, `ResourceApiBaseUrl` (required), `AllowedBibleModules`, `AllowedCommentaryModules` (empty = all), `MaxPerModule`, `TopK`, `MaxContextTokens`, `AutoIndexMissingModules`, chunk sizes.
+- `Perspectives`, `MaxPerspectivesPerQuestion`: see [Perspectives](#perspectives) above.
 
 ## Running
 
@@ -111,7 +125,7 @@ dotnet run --project eval/Berean.Eval -- --label baseline                  # use
 dotnet run --project eval/Berean.Eval -- --label check --retrieval-only    # no model: measures retrieval only
 ```
 
-`eval/questions.json` holds 20 questions (contested doctrine, word studies, verse exegesis, SDA on) with a rubric each. A run writes `eval/runs/<date>-<label>/` with every answer, exactly what the model was given, and a summary: the share of sources by tradition, the largest number any one module supplied, whether Adventist sources leaked with the toggle off, and whether the citations in each answer point at sources that were really in the prompt. Only runs named `*-baseline` are committed.
+`eval/questions.json` holds 20 questions (contested doctrine, word studies, verse exegesis, a perspective group) with a rubric each. A run writes `eval/runs/<date>-<label>/` with every answer, exactly what the model was given, and a summary: the share of sources by tradition, the largest number any one module supplied, whether a held-out perspective's sources leaked into the neutral pass, and whether the citations in each answer point at sources that were really in the prompt. Only runs named `*-baseline` are committed.
 
 Options: `--only id1,id2`, `--provider`, `--model`, `--mode compare`, `--db <index copy>`, `--api <url>`, `--index`.
 
@@ -125,7 +139,7 @@ The Claude Code client is tested against a fake `claude` executable (built with 
 
 ## Hub reference
 
-Client → server: `StartConversation(modelId?)`, `ResumeConversation(id)`, `ListConversations()`, `DeleteConversation(id)`, `SendMessage(text, mode, includeSDA)`, `SetLanguage`, `ResetConversation`, `GetRagStatus`, `ReindexDocuments`.
+Client → server: `StartConversation(modelId?, perspectives?)` (locked for the conversation's lifetime), `ResumeConversation(id)`, `ListConversations()`, `DeleteConversation(id)`, `SendMessage(text, mode)`, `SetLanguage`, `ResetConversation`, `GetRagStatus`, `ReindexDocuments`.
 
 Server → client, for one answer in order: `TokenReceived("")`, `Sources(list)`, `ToolActivity(name, text)`, `TokenReceived(chunk)`…, `MessageComplete(text)`. Also `SessionStarted`, `ConversationStarted`, `ConversationLoaded`, `ConversationList`, `ConversationDeleted`, `RagStatus`, `RagIndexing`, `RagIndexed`, `Error`.
 

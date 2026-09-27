@@ -55,6 +55,10 @@ namespace Berean.Agent.Api
             app.MapGet("/api/models", async (ModelRegistryService registry, CancellationToken ct) =>
                 Results.Ok(await registry.GetModelsAsync(ct)));
 
+            // Perspectives configured for this deployment (empty on the public default config).
+            app.MapGet("/api/perspectives", (StudySessionService sessions) =>
+                Results.Ok(sessions.GetPerspectives()));
+
             // ── SignalR hub ────────────────────────────────────────────────────────────
 
             app.MapHub<ChatHub>("/hubs/chat");

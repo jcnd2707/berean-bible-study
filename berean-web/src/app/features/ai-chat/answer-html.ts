@@ -2,7 +2,7 @@ import type { ChatSource } from "../../core/services/agent-hub.service";
 
 /**
  * Renders an answer as HTML: a small, safe subset of markdown (headings, bold, italics, code,
- * lists, rules) plus the [S1] / [A1] citations as clickable chips.
+ * lists, rules) plus the [S1] / [ADV1] citations as clickable chips.
  *
  * Everything from the model is HTML-escaped first, and only the tags produced here are added, so
  * the result is safe to bind with [innerHTML] (trusted). Chips carry the source id in
@@ -13,6 +13,7 @@ export function renderAnswerHtml(
   sources: ChatSource[] | undefined,
   chipLabel: (s: ChatSource) => string,
   isOpenable: (s: ChatSource) => boolean,
+  isPerspectiveSource: (s: ChatSource) => boolean = () => false,
 ): string {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const html: string[] = [];
@@ -49,7 +50,7 @@ export function renderAnswerHtml(
     html.push(`<div class="md-p">${inline(line)}</div>`);
   }
 
-  return withChips(html.join(""), sources, chipLabel, isOpenable);
+  return withChips(html.join(""), sources, chipLabel, isOpenable, isPerspectiveSource);
 }
 
 export function escapeHtml(s: string): string {
@@ -69,21 +70,22 @@ function inline(s: string): string {
     .replace(/(^|[^*\w])\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1<em>$2</em>");
 }
 
-/** Turns [S1] into a chip for every source the server sent; other ids stay as text. */
+/** Turns [S1] / [ADV1] into a chip for every source the server sent; other ids stay as text. */
 function withChips(
   html: string,
   sources: ChatSource[] | undefined,
   chipLabel: (s: ChatSource) => string,
   isOpenable: (s: ChatSource) => boolean,
+  isPerspectiveSource: (s: ChatSource) => boolean,
 ): string {
   if (!sources?.length) return html;
 
-  return html.replace(/\[([SA]\d+)\]/g, (whole, id: string) => {
+  return html.replace(/\[([A-Za-z]+\d+)\]/g, (whole, id: string) => {
     const source = sources.find((s) => s.id === id);
     if (!source) return whole;
 
     const classes = ["cite"];
-    if (source.tradition === "Adventist") classes.push("cite--adv");
+    if (isPerspectiveSource(source)) classes.push("cite--perspective");
     if (!isOpenable(source)) classes.push("cite--static");
 
     return (

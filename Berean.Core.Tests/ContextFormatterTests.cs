@@ -29,7 +29,7 @@ public class ContextFormatterTests
         var book = new ScoredChunk(Fixtures.Chunk("The_Desire_of_Ages", Traditions.Adventist, "text", SourceType.Book,
             source: "The Desire of Ages, Chapter 12 — The Sabbath"), 0.6f);
 
-        var ctx = ContextFormatter.Format([], [], [book], Fixtures.Catalog())!;
+        var ctx = ContextFormatter.Format([], [], [(Fixtures.AdventistPerspective, [book])], Fixtures.Catalog())!;
 
         Assert.Contains("[A1] The Desire of Ages, Chapter 12 — The Sabbath (Adventist, 19th c.):", ctx.Text);
         Assert.Equal(12, ctx.Sources.Single().BookChapterIndex);
@@ -37,25 +37,28 @@ public class ContextFormatterTests
     }
 
     [Fact]
-    public void AdventistSources_GetTheirOwnBlock_AfterTheMainMaterial()
+    public void PerspectiveSources_GetTheirOwnBlock_AfterTheMainMaterial()
     {
         var main = Verse("barnes", Traditions.Evangelical, "main text");
         var adv = Verse("sdabc", Traditions.Adventist, "adventist text");
 
-        var ctx = ContextFormatter.Format([], [main], [adv], Fixtures.Catalog())!;
+        var ctx = ContextFormatter.Format([], [main], [(Fixtures.AdventistPerspective, [adv])], Fixtures.Catalog())!;
 
         Assert.True(ctx.Text.IndexOf("REFERENCE MATERIAL:") < ctx.Text.IndexOf("ADVENTIST SOURCES:"));
         Assert.DoesNotContain("adventist text", ctx.Main);
-        Assert.Contains("adventist text", ctx.Adventist);
+        var advContext = Assert.Single(ctx.Perspectives);
+        Assert.Equal(Fixtures.AdventistPerspective, advContext.Perspective);
+        Assert.Contains("adventist text", advContext.Text);
         Assert.Equal(["S1", "A1"], ctx.Sources.Select(s => s.Id));
     }
 
     [Fact]
-    public void NoAdventistBlock_WhenThereAreNoAdventistSources()
+    public void NoPerspectiveBlock_WhenThatPerspectivePassHasNoSources()
     {
-        var ctx = ContextFormatter.Format([], [Verse("barnes", Traditions.Evangelical, "x")], [], Fixtures.Catalog())!;
+        var ctx = ContextFormatter.Format([], [Verse("barnes", Traditions.Evangelical, "x")],
+            [(Fixtures.AdventistPerspective, [])], Fixtures.Catalog())!;
 
-        Assert.Null(ctx.Adventist);
+        Assert.Empty(ctx.Perspectives);
         Assert.DoesNotContain("ADVENTIST", ctx.Text);
     }
 

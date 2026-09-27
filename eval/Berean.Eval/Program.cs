@@ -42,6 +42,9 @@ var ragConfig = config.GetSection("Agents:BibleAgent").Get<RetrievalOptions>()
 if (options.DbPath is not null) ragConfig.RagDbPath = options.DbPath;
 if (options.ApiUrl is not null) ragConfig.ResourceApiBaseUrl = options.ApiUrl;
 ragConfig.AutoIndexMissingModules = options.Index;
+// Root-level config, like Berean.Agent.Api's own binding — not a child of "Agents:BibleAgent".
+ragConfig.Perspectives = config.GetSection("Perspectives").Get<List<Perspective>>() ?? [];
+ragConfig.MaxPerspectivesPerQuestion = config.GetValue("MaxPerspectivesPerQuestion", 1);
 
 var ollamaEndpoint = config["Ollama:Endpoint"] ?? "http://localhost:11434";
 var embeddingModel = config["Ollama:EmbeddingModel"] ?? "mxbai-embed-large";
@@ -90,16 +93,19 @@ foreach (var q in questions)
     try
     {
         pipeline.Reset();
+        pipeline.Perspectives = q.Perspectives
+            .Select(id => ragConfig.Perspectives.FirstOrDefault(p => p.Id == id))
+            .Where(p => p is not null).Select(p => p!).ToList();
         var toolsBefore = pipeline.ToolInvocations.Count;
         var usageBefore = UsageTracker.Today;
 
         if (options.RetrievalOnly)
         {
-            result.Retrieval = await pipeline.Router!.RouteAsync(q.Question, new RouteOptions(q.IncludeSda, mode));
+            result.Retrieval = await pipeline.Router!.RouteAsync(q.Question, new RouteOptions(pipeline.Perspectives, mode));
         }
         else
         {
-            result.Answer = await pipeline.ChatAsync(q.Question, mode, q.IncludeSda);
+            result.Answer = await pipeline.ChatAsync(q.Question, mode);
             result.Retrieval = pipeline.LastRetrieval;
             result.Tools = pipeline.ToolInvocations.Skip(toolsBefore).Select(t => $"{t.ToolName}({t.Arguments})").ToList();
             var usageAfter = UsageTracker.Today;
@@ -113,7 +119,7 @@ foreach (var q in questions)
     }
 
     result.Elapsed = sw.Elapsed;
-    result.Analyse(traditionMap);
+    result.Analyse(traditionMap, ragConfig.Perspectives);
     results.Add(result);
 
     File.WriteAllText(Path.Combine(runDir, q.Id + ".md"), Reports.QuestionReport(result));
@@ -144,11 +150,14 @@ static List<EvalQuestion> LoadQuestions(string path, HashSet<string>? only)
     var list = new List<EvalQuestion>();
     foreach (var el in doc.RootElement.GetProperty("questions").EnumerateArray())
     {
+        var perspectives = el.TryGetProperty("perspectives", out var p)
+            ? p.EnumerateArray().Select(x => x.GetString()!).ToList()
+            : [];
         var q = new EvalQuestion(
             el.GetProperty("id").GetString()!,
             el.GetProperty("group").GetString()!,
             el.GetProperty("question").GetString()!,
-            el.TryGetProperty("includeSda", out var s) && s.GetBoolean(),
+            perspectives,
             el.TryGetProperty("rubric", out var r) ? r.GetString() ?? "" : "");
         if (only is null || only.Contains(q.Id)) list.Add(q);
     }
@@ -157,7 +166,7 @@ static List<EvalQuestion> LoadQuestions(string path, HashSet<string>? only)
 
 // ── types ──────────────────────────────────────────────────────────────────
 
-record EvalQuestion(string Id, string Group, string Question, bool IncludeSda, string Rubric);
+record EvalQuestion(string Id, string Group, string Question, List<string> Perspectives, string Rubric);
 
 class EvalOptions
 {
@@ -237,8 +246,7 @@ record ChunkView(ContextSource Source, string Tradition, string Module, string? 
 
 class QuestionResult(EvalQuestion question)
 {
-    private static readonly Regex Citation = new(@"\[([SA])(\d+)\]", RegexOptions.Compiled);
-    private static readonly Regex AdventistHeading = new(@"adventist\s+perspective", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex Citation = new(@"\[([A-Za-z]+)(\d+)\]", RegexOptions.Compiled);
 
     public EvalQuestion Question { get; } = question;
     public string? Answer { get; set; }
@@ -263,9 +271,12 @@ class QuestionResult(EvalQuestion question)
     /// <summary>Citation problems in the answer (null = answer not checked / no problems).</summary>
     public List<string> CitationIssues { get; private set; } = [];
 
+    /// <summary>True if a source from a held-out perspective's tradition leaked into the main pass.</summary>
+    public bool HeldOutLeak { get; private set; }
+
     public double Share(string t) => TextChunks == 0 ? 0 : (double)ByTradition.GetValueOrDefault(t) / TextChunks;
 
-    public void Analyse(TraditionMap map)
+    public void Analyse(TraditionMap map, IReadOnlyList<Perspective> configuredPerspectives)
     {
         foreach (var s in Retrieval?.Sources ?? [])
         {
@@ -293,13 +304,19 @@ class QuestionResult(EvalQuestion question)
             LargestInterpretiveTradition = top.Key;
         }
 
+        // Every configured perspective's tradition must be held out of the main pass, whether or
+        // not it is selected for this question (see QueryRouter's heldOutTraditions).
+        var heldOutTraditions = configuredPerspectives.Select(p => p.Tradition).ToHashSet();
+        HeldOutLeak = ByTradition.Keys.Any(heldOutTraditions.Contains);
+
         CheckCitations();
     }
 
     /// <summary>
-    /// Citations must point at sources that were in the prompt. With the SDA toggle on, the
-    /// neutral part must cite only [S#] and the Adventist section only [A#]; with it off,
-    /// no [A#] may appear at all.
+    /// Citations must point at sources that were in the prompt. With no perspective selected,
+    /// nothing may cite a perspective id. With one selected, its own section (headed
+    /// "&lt;Label&gt; perspective") must cite only its own prefix, and the neutral part must not
+    /// cite it at all.
     /// </summary>
     private void CheckCitations()
     {
@@ -310,23 +327,32 @@ class QuestionResult(EvalQuestion question)
             if (!known.Contains(m.Value.Trim('[', ']')))
                 CitationIssues.Add($"cites {m.Value}, which was not in the prompt");
 
-        var heading = AdventistHeading.Match(Answer);
-        var neutral = heading.Success ? Answer[..heading.Index] : Answer;
-        var adventist = heading.Success ? Answer[heading.Index..] : "";
+        var perspectiveContexts = Retrieval?.PerspectiveContexts ?? [];
 
-        if (!Question.IncludeSda)
+        if (Question.Perspectives.Count == 0)
         {
-            if (Citation.Matches(Answer).Any(m => m.Groups[1].Value == "A"))
-                CitationIssues.Add("cites an [A#] source with the SDA toggle off");
+            if (Citation.Matches(Answer).Any(m => m.Groups[1].Value != "S"))
+                CitationIssues.Add("cites a perspective source with no perspective selected");
             return;
         }
 
-        if (Retrieval?.AdventistContext is not null && !heading.Success)
-            CitationIssues.Add("no Adventist perspective section although Adventist sources were provided");
-        if (Citation.Matches(neutral).Any(m => m.Groups[1].Value == "A"))
-            CitationIssues.Add("neutral analysis cites an [A#] source");
-        if (Citation.Matches(adventist).Any(m => m.Groups[1].Value == "S"))
-            CitationIssues.Add("Adventist section cites an [S#] source");
+        foreach (var pc in perspectiveContexts)
+        {
+            var heading = new Regex(Regex.Escape(pc.Perspective.Label) + @"\s+perspective", RegexOptions.IgnoreCase);
+            var match = heading.Match(Answer);
+            if (!match.Success)
+            {
+                CitationIssues.Add($"no '{pc.Perspective.Label} perspective' section although {pc.Perspective.Label} sources were provided");
+                continue;
+            }
+
+            var neutral = Answer[..match.Index];
+            var section = Answer[match.Index..];
+            if (Citation.Matches(neutral).Any(m => m.Groups[1].Value == pc.Perspective.CitationPrefix))
+                CitationIssues.Add($"neutral analysis cites a [{pc.Perspective.CitationPrefix}#] source");
+            if (Citation.Matches(section).Any(m => m.Groups[1].Value != pc.Perspective.CitationPrefix))
+                CitationIssues.Add($"{pc.Perspective.Label} section cites a source outside [{pc.Perspective.CitationPrefix}#]");
+        }
     }
 }
 
@@ -341,7 +367,7 @@ static class Reports
         sb.AppendLine($"# {q.Id}");
         sb.AppendLine();
         sb.AppendLine($"- **Group:** {q.Group}");
-        sb.AppendLine($"- **SDA toggle:** {(q.IncludeSda ? "on" : "off")}");
+        sb.AppendLine($"- **Perspectives:** {(q.Perspectives.Count == 0 ? "none" : string.Join(", ", q.Perspectives))}");
         sb.AppendLine($"- **Intent:** {r.Retrieval?.Intent.ToString() ?? "(none)"}");
         sb.AppendLine($"- **Time:** {r.Elapsed.TotalSeconds:F1}s");
         if (r.InputTokens + r.OutputTokens > 0)
@@ -442,19 +468,19 @@ static class Reports
 
         sb.AppendLine("## Per question");
         sb.AppendLine();
-        sb.AppendLine("| Question | Group | SDA | Intent | Sources | Adventist | Top non-SDA tradition | Max/module | SDA-off has 0% Adventist | Cap ≤ 2/module | Citations | Manual pass/fail |");
+        sb.AppendLine("| Question | Group | Perspectives | Intent | Sources | Adventist | Top non-SDA tradition | Max/module | No held-out leak | Cap ≤ 2/module | Citations | Manual pass/fail |");
         sb.AppendLine("|---|---|:-:|---|---:|---:|---|---:|:-:|:-:|:-:|:-:|");
         foreach (var r in results)
         {
             var q = r.Question;
-            var zeroSda = q.IncludeSda ? "n/a" : (r.AdventistShare == 0 ? "✅" : "❌");
+            var noLeak = r.HeldOutLeak ? "❌" : "✅";
             var cap = r.MaxPerModule <= MaxPerModuleTarget ? "✅" : "❌";
             var cites = r.Answer is null ? "n/a" : (r.CitationIssues.Count == 0 ? "✅" : $"❌ {r.CitationIssues.Count}");
             var top = r.LargestInterpretiveShare > 0
                 ? $"{r.LargestInterpretiveTradition} {r.LargestInterpretiveShare:P0}" : "-";
-            sb.AppendLine($"| [{q.Id}]({q.Id}.md) | {q.Group} | {(q.IncludeSda ? "on" : "off")} | " +
+            sb.AppendLine($"| [{q.Id}]({q.Id}.md) | {q.Group} | {(q.Perspectives.Count == 0 ? "none" : string.Join(",", q.Perspectives))} | " +
                           $"{r.Retrieval?.Intent.ToString() ?? "-"} | {r.TextChunks} | {r.AdventistShare:P0} | {top} | " +
-                          $"{r.MaxPerModule} | {zeroSda} | {cap} | {cites} |  |");
+                          $"{r.MaxPerModule} | {noLeak} | {cap} | {cites} |  |");
         }
         sb.AppendLine();
 
@@ -479,14 +505,13 @@ static class Reports
         sb.AppendLine();
         sb.AppendLine($"- Questions that got no retrieved sources at all: **{withNoContext} of {results.Count}**");
 
-        var sdaOff = results.Where(r => !r.Question.IncludeSda).ToList();
-        var leaks = sdaOff.Count(r => r.AdventistShare > 0);
-        sb.AppendLine($"- SDA toggle off, questions with any Adventist source: **{leaks} of {sdaOff.Count}** (target: 0)");
+        var leaks = results.Count(r => r.HeldOutLeak);
+        sb.AppendLine($"- Held-out perspective sources leaking into the main pass: **{leaks} of {results.Count}** (target: 0 — every configured perspective's tradition must be held out whether or not it's selected)");
         sb.AppendLine($"- Largest number of sources any one module contributed: **{results.Max(r => r.MaxPerModule)}** (target: ≤ {MaxPerModuleTarget})");
 
-        var sdaOn = results.Where(r => r.Question.IncludeSda && r.Answer is not null).ToList();
-        if (sdaOn.Count > 0)
-            sb.AppendLine($"- SDA toggle on, answers with citation problems: **{sdaOn.Count(r => r.CitationIssues.Count > 0)} of {sdaOn.Count}** (target: 0)");
+        var withPerspective = results.Where(r => r.Question.Perspectives.Count > 0 && r.Answer is not null).ToList();
+        if (withPerspective.Count > 0)
+            sb.AppendLine($"- Answers with a perspective selected, citation problems (own prefix only in its own section): **{withPerspective.Count(r => r.CitationIssues.Count > 0)} of {withPerspective.Count}** (target: 0)");
 
         if (contested.Count > 0)
         {

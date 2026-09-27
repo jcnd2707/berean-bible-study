@@ -9,11 +9,12 @@ namespace Berean.Agent.Api.Hubs;
 /// SignalR hub — one persistent connection per client window.
 ///
 /// Client → Server:
-///   StartConversation(modelId?)    a new conversation (StartSession is the same)
-///   ResumeConversation(id)         reopen a saved conversation
+///   StartConversation(modelId?, perspectives?)   a new conversation (StartSession is the same);
+///                                                 perspectives is locked for the conversation
+///   ResumeConversation(id)         reopen a saved conversation (keeps its perspective selection)
 ///   ListConversations()
 ///   DeleteConversation(id)
-///   SendMessage(text, mode, includeSDA)
+///   SendMessage(text, mode)
 ///   SetLanguage(language)
 ///   ResetConversation()
 ///   GetRagStatus()
@@ -21,7 +22,7 @@ namespace Berean.Agent.Api.Hubs;
 ///
 /// Server → Client (for one answer, in this order):
 ///   TokenReceived("")            the answer has started
-///   Sources(list)                the numbered sources the answer may cite ([S1], [A1], …)
+///   Sources(list)                the numbered sources the answer may cite ([S1], [ADV1], …)
 ///   ToolActivity(name, text)     the model is using a tool ("Looking up hesed…")
 ///   TokenReceived(chunk)         answer text, as it is generated
 ///   MessageComplete(fullText)
@@ -67,14 +68,23 @@ public class ChatHub : Hub
 
     // ── Conversations ──────────────────────────────────────────────────────
 
-    /// <summary>Starts a new conversation on the model with this id (null = the default). Saved after its first answer.</summary>
-    public async Task StartConversation(string? modelId = null)
+    /// <summary>
+    /// Starts a new conversation on the model with this id (null = the default). The perspective
+    /// selection (capped by "MaxPerspectivesPerQuestion") is locked for the conversation's
+    /// lifetime — send an unknown id or too many and the conversation isn't started. Saved after
+    /// its first answer.
+    /// </summary>
+    public async Task StartConversation(string? modelId = null, string[]? perspectives = null)
     {
         try
         {
-            var pipeline = await _sessions.StartConversationAsync(Context.ConnectionId, modelId);
+            var pipeline = await _sessions.StartConversationAsync(Context.ConnectionId, modelId, perspectives);
             await AnnounceSessionAsync(pipeline);
             await Clients.Caller.SendAsync("ConversationStarted", pipeline.ConversationId);
+        }
+        catch (ArgumentException ex)
+        {
+            await Clients.Caller.SendAsync("Error", ex.Message);
         }
         catch (Exception ex)
         {
@@ -84,7 +94,7 @@ public class ChatHub : Hub
     }
 
     /// <summary>Same as <see cref="StartConversation"/>.</summary>
-    public Task StartSession(string? modelId = null) => StartConversation(modelId);
+    public Task StartSession(string? modelId = null, string[]? perspectives = null) => StartConversation(modelId, perspectives);
 
     /// <summary>Reopens a saved conversation and sends its messages back for display.</summary>
     public async Task ResumeConversation(string conversationId)
@@ -101,7 +111,8 @@ public class ChatHub : Hub
 
             await AnnounceSessionAsync(resumed.Pipeline);
             await Clients.Caller.SendAsync("ConversationLoaded",
-                resumed.Info.Id, resumed.Info.Title, resumed.Info.ModelId, resumed.Messages);
+                resumed.Info.Id, resumed.Info.Title, resumed.Info.ModelId, resumed.Messages,
+                resumed.Pipeline.Perspectives.Select(p => p.Id).ToList());
         }
         catch (Exception ex)
         {
@@ -136,7 +147,7 @@ public class ChatHub : Hub
 
     // ── SendMessage ────────────────────────────────────────────────────────
 
-    public async Task SendMessage(string text, string mode = "Deep", bool includeSDA = false)
+    public async Task SendMessage(string text, string mode = "Deep")
     {
         var pipeline = _sessions.GetPipeline(Context.ConnectionId);
         if (pipeline is null)
@@ -149,8 +160,9 @@ public class ChatHub : Hub
             ? parsed
             : QueryMode.Deep;
 
-        _log.LogInformation("[Hub] {Id} mode={Mode} sda={SDA} → {Preview}",
-            Context.ConnectionId, queryMode, includeSDA, text.Length > 60 ? text[..60] + "…" : text);
+        _log.LogInformation("[Hub] {Id} mode={Mode} perspectives={Perspectives} → {Preview}",
+            Context.ConnectionId, queryMode, pipeline.Perspectives.Count == 0 ? "-" : string.Join(",", pipeline.Perspectives.Select(p => p.Id)),
+            text.Length > 60 ? text[..60] + "…" : text);
 
         try
         {
@@ -158,7 +170,7 @@ public class ChatHub : Hub
             await Clients.Caller.SendAsync("TokenReceived", "");
 
             var reply = new StringBuilder();
-            await foreach (var ev in pipeline.ChatEventsAsync(text, queryMode, includeSDA, Context.ConnectionAborted))
+            await foreach (var ev in pipeline.ChatEventsAsync(text, queryMode, Context.ConnectionAborted))
             {
                 switch (ev)
                 {

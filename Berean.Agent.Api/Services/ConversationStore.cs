@@ -11,7 +11,8 @@ public record ConversationInfo(
     string UpdatedAt,
     string? Passage,
     string? ModelId,
-    string? ClaudeSessionId);
+    string? ClaudeSessionId,
+    IReadOnlyList<string>? PerspectiveIds = null);
 
 /// <summary>One stored message: the text for display, and the full message for replaying it to a model.</summary>
 public record StoredMessage(
@@ -46,30 +47,49 @@ public sealed class ConversationStore
     private void EnsureCreated()
     {
         using var conn = Open();
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            CREATE TABLE IF NOT EXISTS Conversations (
-                Id              TEXT PRIMARY KEY,
-                Title           TEXT NOT NULL,
-                CreatedAt       TEXT NOT NULL,
-                UpdatedAt       TEXT NOT NULL,
-                Passage         TEXT,
-                ModelId         TEXT,
-                ClaudeSessionId TEXT
-            );
-            CREATE TABLE IF NOT EXISTS Messages (
-                Id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                ConversationId TEXT NOT NULL REFERENCES Conversations(Id) ON DELETE CASCADE,
-                Role           TEXT NOT NULL,
-                Content        TEXT NOT NULL,
-                MessageJson    TEXT NOT NULL,
-                SourcesJson    TEXT,
-                CreatedAt      TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS IX_Messages_Conversation ON Messages (ConversationId, Id);
-            """;
-        cmd.ExecuteNonQuery();
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS Conversations (
+                    Id              TEXT PRIMARY KEY,
+                    Title           TEXT NOT NULL,
+                    CreatedAt       TEXT NOT NULL,
+                    UpdatedAt       TEXT NOT NULL,
+                    Passage         TEXT,
+                    ModelId         TEXT,
+                    ClaudeSessionId TEXT,
+                    Perspectives    TEXT
+                );
+                CREATE TABLE IF NOT EXISTS Messages (
+                    Id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ConversationId TEXT NOT NULL REFERENCES Conversations(Id) ON DELETE CASCADE,
+                    Role           TEXT NOT NULL,
+                    Content        TEXT NOT NULL,
+                    MessageJson    TEXT NOT NULL,
+                    SourcesJson    TEXT,
+                    CreatedAt      TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS IX_Messages_Conversation ON Messages (ConversationId, Id);
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        // Upgrades a database created before perspectives existed.
+        AddColumnIfMissing(conn, "Conversations", "Perspectives", "TEXT");
+
         _log.LogInformation("[Conversations] Stored in {Path}", _dbPath);
+    }
+
+    private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string definition)
+    {
+        using var check = conn.CreateCommand();
+        check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{column}'";
+        var exists = (long)check.ExecuteScalar()! > 0;
+        if (exists) return;
+
+        using var alter = conn.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
+        alter.ExecuteNonQuery();
     }
 
     // ── Conversations ──────────────────────────────────────────────────────
@@ -88,8 +108,8 @@ public sealed class ConversationStore
         await using var conn = Open();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO Conversations (Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId)
-            VALUES ($id, $title, $created, $updated, $passage, $model, $session)
+            INSERT INTO Conversations (Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives)
+            VALUES ($id, $title, $created, $updated, $passage, $model, $session, $perspectives)
             """;
         cmd.Parameters.AddWithValue("$id", c.Id);
         cmd.Parameters.AddWithValue("$title", c.Title);
@@ -98,6 +118,7 @@ public sealed class ConversationStore
         cmd.Parameters.AddWithValue("$passage", (object?)c.Passage ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$model", (object?)c.ModelId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$session", (object?)c.ClaudeSessionId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$perspectives", SerializePerspectives(c.PerspectiveIds));
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -105,7 +126,7 @@ public sealed class ConversationStore
     {
         await using var conn = Open();
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId FROM Conversations WHERE Id = $id";
+        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives FROM Conversations WHERE Id = $id";
         cmd.Parameters.AddWithValue("$id", id);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         return await r.ReadAsync(ct) ? Map(r) : null;
@@ -117,7 +138,7 @@ public sealed class ConversationStore
         await using var conn = Open();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId
+            SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives
             FROM Conversations ORDER BY UpdatedAt DESC LIMIT $limit
             """;
         cmd.Parameters.AddWithValue("$limit", limit);
@@ -264,5 +285,12 @@ public sealed class ConversationStore
         r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3),
         r.IsDBNull(4) ? null : r.GetString(4),
         r.IsDBNull(5) ? null : r.GetString(5),
-        r.IsDBNull(6) ? null : r.GetString(6));
+        r.IsDBNull(6) ? null : r.GetString(6),
+        r.IsDBNull(7) ? null : DeserializePerspectives(r.GetString(7)));
+
+    private static object SerializePerspectives(IReadOnlyList<string>? ids) =>
+        ids is { Count: > 0 } ? JsonSerializer.Serialize(ids) : DBNull.Value;
+
+    private static List<string> DeserializePerspectives(string json) =>
+        JsonSerializer.Deserialize<List<string>>(json) ?? [];
 }
