@@ -64,7 +64,7 @@ Claude Code runs locked down for plain text generation: no built-in tools, no MC
 - .NET 8 SDK
 - Node.js 20+ and npm 10+
 - [Ollama](https://ollama.com) with the embedding model: `ollama pull mxbai-embed-large`
-- e-Sword modules in a folder with `Bibles`, `Commentaries`, `Dictionaries`, `Lexicons` and `TopicNotes` subfolders (and `Books`)
+- e-Sword modules in a folder with `Bibles`, `Commentaries`, `Dictionaries`, `Lexicons` and `TopicNotes` subfolders (and `Books`) — or point `BereanResources:RootPath` at [`samples/`](samples/README.md) to try the app without sourcing your own library first
 - For the default provider: the Claude Code CLI, logged in (`claude` on your PATH)
 
 ## Configuration
