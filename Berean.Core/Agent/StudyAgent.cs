@@ -14,7 +14,7 @@ namespace Berean.Core.Agent;
 /// invocation, which works with any provider and streams.
 ///
 /// Per turn, the user message is built as
-///   [SDA / Compare instructions] + [retrieved material] + "User question: …"
+///   [Perspective / Compare instructions] + [retrieved material] + "User question: …"
 /// so the system prompt never changes (which keeps a conversation and any prompt cache valid) and
 /// the material sits before the question rather than being chased by a reminder.
 /// </summary>
@@ -71,12 +71,12 @@ public class StudyAgent
     public async Task<string> ChatAsync(
         string userInput,
         string? ragContext = null,
-        bool includeSDA = false,
+        IReadOnlyList<Perspective>? perspectives = null,
         QueryMode mode = QueryMode.Deep,
         CancellationToken ct = default)
     {
         var sb = new StringBuilder();
-        await foreach (var text in ChatStreamAsync(userInput, ragContext, includeSDA, mode, ct))
+        await foreach (var text in ChatStreamAsync(userInput, ragContext, perspectives, mode, ct))
             sb.Append(text);
         return sb.Length > 0 ? sb.ToString() : "(no response)";
     }
@@ -85,10 +85,11 @@ public class StudyAgent
     public async IAsyncEnumerable<string> ChatStreamAsync(
         string userInput,
         string? ragContext = null,
-        bool includeSDA = false,
+        IReadOnlyList<Perspective>? perspectives = null,
         QueryMode mode = QueryMode.Deep,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        perspectives ??= [];
         EnsureSystemPrompt();
         TrimHistory();
 
@@ -98,7 +99,7 @@ public class StudyAgent
         else
             _log.LogInformation("[Agent] No RAG context for this query");
 
-        var userMessage = new ChatMessage(ChatRole.User, ComposeUserMessage(userInput, ragContext, includeSDA, mode))
+        var userMessage = new ChatMessage(ChatRole.User, ComposeUserMessage(userInput, ragContext, perspectives, mode))
         {
             // The plain question, for building a transcript without the retrieved material.
             AdditionalProperties = new() { [TranscriptBuilder.QuestionProperty] = userInput },
@@ -177,11 +178,15 @@ public class StudyAgent
         _initialized = true;
     }
 
-    private string ComposeUserMessage(string userInput, string? ragContext, bool includeSDA, QueryMode mode)
+    private string ComposeUserMessage(string userInput, string? ragContext, IReadOnlyList<Perspective> perspectives, QueryMode mode)
     {
         var parts = new List<string>();
-        if (includeSDA && !string.IsNullOrWhiteSpace(_config.SdaInstructions))
-            parts.Add(_config.SdaInstructions);
+        if (!string.IsNullOrWhiteSpace(_config.PerspectiveAddendumTemplate))
+            foreach (var p in perspectives)
+                parts.Add(_config.PerspectiveAddendumTemplate
+                    .Replace("{Label}", p.Label)
+                    .Replace("{LabelUpper}", p.Label.ToUpperInvariant())
+                    .Replace("{Prefix}", p.CitationPrefix));
         if (mode == QueryMode.Compare && !string.IsNullOrWhiteSpace(_config.CompareInstructions))
             parts.Add(_config.CompareInstructions);
         if (ragContext is not null)

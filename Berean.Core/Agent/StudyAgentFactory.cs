@@ -12,7 +12,7 @@ public static class StudyAgentFactory
         var options = new StudyAgentOptions
         {
             SystemPrompt = Prompts.System,
-            SdaInstructions = Prompts.SdaAddendum,
+            PerspectiveAddendumTemplate = Prompts.PerspectiveAddendum,
             CompareInstructions = Prompts.CompareAddendum,
         };
 

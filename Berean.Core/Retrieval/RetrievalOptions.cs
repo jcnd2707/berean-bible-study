@@ -57,8 +57,16 @@ public class RetrievalOptions
     /// <summary>Most chunks any one module may contribute to an answer (0 = unlimited).</summary>
     public int MaxPerModule { get; set; } = 2;
 
-    /// <summary>How many chunks the separate Adventist pass returns (only when the SDA toggle is on).</summary>
-    public int AdventistTopK { get; set; } = 4;
+    /// <summary>
+    /// Configured perspectives (bound separately from the root "Perspectives" section and set here
+    /// by whoever builds this options object — not itself a child of "Agents:BibleAgent" in JSON).
+    /// Every configured perspective's tradition is held out of the neutral pass, whether or not it
+    /// is selected for a given conversation.
+    /// </summary>
+    public List<Perspective> Perspectives { get; set; } = [];
+
+    /// <summary>How many perspectives one conversation may select at once (see "MaxPerspectivesPerQuestion").</summary>
+    public int MaxPerspectivesPerQuestion { get; set; } = 1;
 
     /// <summary>Compare mode: chunks per tradition, and the similarity a tradition must reach to get a section.</summary>
     public int CompareChunksPerTradition { get; set; } = 2;
