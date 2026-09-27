@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml/badge.svg)](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml)
 
-A Bible study app with an AI study assistant. The assistant answers from your own e-Sword modules (Bibles, commentaries, dictionaries, prose books) and is built to be **even-handed**: it shows what the text says first, then how different traditions have read it, and it only brings in Adventist material when you turn that on.
+A Bible study app with an AI study assistant. The assistant answers from your own Bible study modules (Bibles, commentaries, dictionaries, prose books) and is built to be **even-handed**: it shows what the text says first, then how different traditions have read it, and it only brings in Adventist material when you turn that on.
+
+> Imported from a private repository; the app itself, `Berean`, hasn't changed — only where the code lives.
 
 ## Solution layout
 
@@ -10,7 +12,7 @@ A Bible study app with an AI study assistant. The assistant answers from your ow
 |---|---|---|
 | `Berean.Core/` | .NET 8 class library | The study agent: query routing, retrieval, tradition-aware indexing, prompts, tools, and the model providers |
 | `Berean.Agent.Api/` | ASP.NET Core 8 | SignalR hub (`/hubs/chat`): conversations, streaming answers, sources, saved chats |
-| `BereanResource.Api/` | ASP.NET Core 8 Web API | REST access to the e-Sword modules: Bible, commentary, dictionary, cross-references, books, notes, Strong's occurrences, module profiles |
+| `BereanResource.Api/` | ASP.NET Core 8 Web API | REST access to your Bible study modules: Bible, commentary, dictionary, cross-references, books, notes, Strong's occurrences, module profiles |
 | `berean-web/` | Angular 19 + Tailwind 4 | Web client: Bible reader, commentary, dictionary, cross-references, notes, compare, AI chat |
 | `Berean.Core.Tests/` | xUnit | Unit tests (router, retrieval, indexing, agent, Claude Code client, conversation store) |
 | `eval/Berean.Eval/` | console | The evaluation harness (see below) |
@@ -18,7 +20,7 @@ A Bible study app with an AI study assistant. The assistant answers from your ow
 
 
 ```
- berean-web (4200) ──REST──▶ BereanResource.Api (5121) ──▶ e-Sword modules, notes.db
+ berean-web (4200) ──REST──▶ BereanResource.Api (5121) ──▶ Bible study modules, notes.db
         │                             ▲
         └───SignalR──▶ Berean.Agent.Api (5050) ── uses Berean.Core
                           ├─▶ BereanResource.Api : verse text, commentary, word lookups, module profiles
@@ -66,7 +68,7 @@ Claude Code runs locked down for plain text generation: no built-in tools, no MC
 - .NET 8 SDK
 - Node.js 20+ and npm 10+
 - [Ollama](https://ollama.com) with the embedding model: `ollama pull mxbai-embed-large`
-- e-Sword modules in a folder with `Bibles`, `Commentaries`, `Dictionaries`, `Lexicons` and `TopicNotes` subfolders (and `Books`)
+- Bible study modules in a folder with `Bibles`, `Commentaries`, `Dictionaries`, `Lexicons` and `TopicNotes` subfolders (and `Books`): scrollmapper `.db` or MySword `.bbl` Bibles, MySword `.cmt` commentaries, MySword `.dct` dictionaries, and e-Sword `.lexi`/`.lexh` lexicons
 - For the default provider: the Claude Code CLI, logged in (`claude` on your PATH)
 
 ## Configuration
@@ -96,6 +98,10 @@ The vector index (`bible.rag.db`, next to it `chat.db` for saved conversations) 
 3. works out which modules aren't indexed yet, and logs them.
 
 Indexing missing modules is **off by default** (`AutoIndexMissingModules: false`) because embedding runs at only a few chunks a second on CPU and a full commentary is hours of work. Verse questions don't need it: they read every commentary directly from the API. Semantic search over a commentary needs it indexed. Turn the setting on, or send `ReindexDocuments` from the hub, to build what's missing; nothing already indexed is touched, and an interrupted module is redone from scratch.
+
+## Security model
+
+Berean has **no authentication or authorization** anywhere: any request that reaches an API is served. There's no multi-user support — notes, saved conversations and RAG state are shared by whoever can reach the app. Run it on `localhost` or on a trusted private network only, behind your own reverse proxy and auth if you need to expose it further. CORS is restricted to the origins in `Cors:AllowedOrigins`, but that only stops browsers from other sites from calling in on a victim's behalf — it isn't a substitute for real access control.
 
 ## Deployment
 
