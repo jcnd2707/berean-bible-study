@@ -51,10 +51,10 @@ public class RouterTests
         var api = Api();
         var router = await RouterAsync(db, api);
 
-        var r = await router.RouteAsync("Explain John 3:16 and the sabbath", new RouteOptions(IncludeSda: false));
+        var r = await router.RouteAsync("Explain John 3:16 and the sabbath", RouteOptions.None());
 
         Assert.All(r.Sources, s => Assert.NotEqual(Traditions.Adventist, s.Tradition));
-        Assert.Null(r.AdventistContext);
+        Assert.Empty(r.PerspectiveContexts);
         Assert.DoesNotContain("ADVENTIST SOURCES", r.Text);
         Assert.DoesNotContain(api.Requests, u => u.Contains("commentary/sdabc"));
         Assert.All(r.Sources, s => Assert.StartsWith("S", s.Id));
@@ -66,7 +66,7 @@ public class RouterTests
         using var db = new TempDb();
         var router = await RouterAsync(db, Api());
 
-        var r = await router.RouteAsync("Explain John 3:16", new RouteOptions());
+        var r = await router.RouteAsync("Explain John 3:16", RouteOptions.None());
 
         Assert.Contains("VERSE TEXT:", r.Text);
         Assert.Contains("[KJV] John 3:16 — For God so loved the world.", r.Text);
@@ -82,7 +82,7 @@ public class RouterTests
         using var db = new TempDb();
         var router = await RouterAsync(db, Api());
 
-        var r = await router.RouteAsync("What does John 3:16-17 say?", new RouteOptions());
+        var r = await router.RouteAsync("What does John 3:16-17 say?", RouteOptions.None());
 
         Assert.Contains("16 For God so loved the world. 17 For God sent not his Son", r.Text);
     }
@@ -93,17 +93,17 @@ public class RouterTests
         using var db = new TempDb();
         var router = await RouterAsync(db, Api());
 
-        var r = await router.RouteAsync("Explain John 3:16 and the sabbath", new RouteOptions(IncludeSda: true));
+        var r = await router.RouteAsync("Explain John 3:16 and the sabbath", new RouteOptions([Fixtures.AdventistPerspective]));
 
-        Assert.NotNull(r.AdventistContext);
-        Assert.StartsWith("ADVENTIST SOURCES:", r.AdventistContext);
+        var advContext = Assert.Single(r.PerspectiveContexts).Text;
+        Assert.StartsWith("ADVENTIST SOURCES:", advContext);
         var advent = r.Sources.Where(s => s.Tradition == Traditions.Adventist).ToList();
         Assert.NotEmpty(advent);
         Assert.All(advent, s => Assert.StartsWith("A", s.Id));
         // Nothing Adventist leaks into the neutral block.
         Assert.DoesNotContain("SDABC", r.MainContext);
         Assert.DoesNotContain("The Desire of Ages", r.MainContext);
-        Assert.Contains("[A1] ", r.AdventistContext);
+        Assert.Contains("[A1] ", advContext);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public class RouterTests
             ]);
         var router = await RouterAsync(db, Api(), many);
 
-        var r = await router.RouteAsync("What does the Bible say about the sabbath?", new RouteOptions());
+        var r = await router.RouteAsync("What does the Bible say about the sabbath?", RouteOptions.None());
 
         Assert.DoesNotContain(r.Sources, s => s.Tradition == Traditions.Adventist);
         Assert.True(r.Sources.Count(s => s.ModuleId == "henry") <= 2);
@@ -132,7 +132,7 @@ public class RouterTests
         var api = Api().On("api/dictionary/strong/lookup", new { topic = "H2617", definition = "chesed: steadfast love, mercy" });
         var router = await RouterAsync(db, api);
 
-        var r = await router.RouteAsync("What does H2617 mean?", new RouteOptions());
+        var r = await router.RouteAsync("What does H2617 mean?", RouteOptions.None());
 
         Assert.Equal(QueryIntent.Definition, r.Intent);
         var entry = Assert.Single(r.Sources, s => s.Kind == "dictionary");
@@ -154,24 +154,24 @@ public class RouterTests
         };
         var router = await RouterAsync(db, Api(), chunks);
 
-        var r = await router.RouteAsync("What about the sabbath?", new RouteOptions(Mode: QueryMode.Compare));
+        var r = await router.RouteAsync("What about the sabbath?", RouteOptions.None(QueryMode.Compare));
 
         var traditions = r.Sources.Select(s => s.Tradition).ToHashSet();
         Assert.Contains(Traditions.Evangelical, traditions);
         Assert.Contains(Traditions.Wesleyan, traditions);
         Assert.DoesNotContain(Traditions.Reformed, traditions);   // below the similarity floor
-        Assert.DoesNotContain(Traditions.Adventist, traditions);  // SDA toggle is off
+        Assert.DoesNotContain(Traditions.Adventist, traditions);  // no perspective selected
     }
 
     [Fact]
-    public async Task Compare_WithSdaOn_PutsAdventistInItsOwnBlock()
+    public async Task Compare_WithAdventistSelected_PutsAdventistInItsOwnBlock()
     {
         using var db = new TempDb();
         var router = await RouterAsync(db, Api());
 
-        var r = await router.RouteAsync("What about the sabbath?", new RouteOptions(IncludeSda: true, Mode: QueryMode.Compare));
+        var r = await router.RouteAsync("What about the sabbath?", new RouteOptions([Fixtures.AdventistPerspective], QueryMode.Compare));
 
-        Assert.NotNull(r.AdventistContext);
+        Assert.Single(r.PerspectiveContexts);
         Assert.DoesNotContain(Traditions.Adventist, r.MainContext ?? "");
     }
 
@@ -181,7 +181,7 @@ public class RouterTests
         using var db = new TempDb();
         var router = await RouterAsync(db, Api());
 
-        var r = await router.RouteAsync("[Translation: KJV]\n[Selected verse: John 3:16]\n\nWhy did he come?", new RouteOptions());
+        var r = await router.RouteAsync("[Translation: KJV]\n[Selected verse: John 3:16]\n\nWhy did he come?", RouteOptions.None());
 
         Assert.Equal(QueryIntent.Verse, r.Intent);
         Assert.Contains("For God so loved the world.", r.Text);
@@ -193,7 +193,7 @@ public class RouterTests
         using var db = new TempDb();
         var router = await RouterAsync(db, new StubApiHandler(), chunks: []);
 
-        var r = await router.RouteAsync("hello there", new RouteOptions());
+        var r = await router.RouteAsync("hello there", RouteOptions.None());
 
         Assert.Null(r.Text);
         Assert.Empty(r.Sources);

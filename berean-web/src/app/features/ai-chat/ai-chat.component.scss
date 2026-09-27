@@ -155,53 +155,6 @@
   }
 }
 
-.sda-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 9px;
-  padding: 2px 8px;
-  border-radius: 8px;
-  background: transparent;
-  border: 0.5px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.3);
-  cursor: pointer;
-  font-family: inherit;
-  letter-spacing: 0.2px;
-  transition: background 0.1s, border-color 0.1s, color 0.1s;
-  flex-shrink: 0;
-
-  &__dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
-    flex-shrink: 0;
-    transition: background 0.1s;
-  }
-
-  &--on {
-    background: rgba(200, 146, 42, 0.15);
-    border-color: rgba(200, 146, 42, 0.4);
-    color: rgba(255, 200, 80, 0.9);
-
-    .sda-toggle__dot {
-      background: rgba(200, 146, 42, 0.9);
-      box-shadow: 0 0 4px rgba(200, 146, 42, 0.5);
-    }
-  }
-
-  &:hover:not(:disabled):not(.sda-toggle--on) {
-    border-color: rgba(200, 146, 42, 0.25);
-    color: rgba(255, 200, 80, 0.5);
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-}
-
 .reconnect-btn {
   font-size: 9px;
   padding: 2px 8px;
@@ -463,7 +416,7 @@
   &:hover {
     background: rgba(123, 110, 245, 0.28);
   }
-  &--adv {
+  &--perspective {
     color: #e3b866;
     background: rgba(200, 146, 42, 0.14);
     border-color: rgba(200, 146, 42, 0.55);
@@ -545,7 +498,7 @@
       &:hover {
         background: rgba(123, 110, 245, 0.28);
       }
-      &.cite--adv {
+      &.cite--perspective {
         color: #e3b866;
         background: rgba(200, 146, 42, 0.14);
         border-color: rgba(200, 146, 42, 0.55);
@@ -611,7 +564,7 @@
   font-weight: 600;
   color: rgba(255, 255, 255, 0.7);
 
-  &--adv {
+  &--perspective {
     color: #e3b866;
   }
 }

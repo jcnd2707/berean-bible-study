@@ -11,7 +11,7 @@ namespace Berean.Core.Agent;
 /// Flow for every chat turn:
 ///   1. QueryRouter classifies the query (Verse / Definition / Conceptual / Mixed)
 ///   2. Router retrieves — exact verse text and commentary from the API, semantic search in the
-///      index — in a neutral main pass, plus an Adventist pass only when the SDA toggle is on
+///      index — in a neutral main pass, plus one pass per perspective selected for this conversation
 ///   3. The retrieved material is put in front of the question
 ///   4. The model answers, streaming; the tool loop handles lookup_word and friends
 /// </summary>
@@ -23,6 +23,12 @@ public class StudyPipeline
     private readonly ILogger _log;
 
     public QueryRouter Router { get; }
+
+    /// <summary>
+    /// The perspective(s) selected for this conversation — set once when it starts (or resumes)
+    /// and locked for its lifetime; see <see cref="RetrievalOptions.MaxPerspectivesPerQuestion"/>.
+    /// </summary>
+    public IReadOnlyList<Perspective> Perspectives { get; set; } = [];
 
     /// <summary>The model behind this conversation.</summary>
     public LlmClient Llm { get; }
@@ -95,11 +101,10 @@ public class StudyPipeline
     public async Task<string> ChatAsync(
         string userInput,
         QueryMode mode = QueryMode.Deep,
-        bool includeSDA = false,
         CancellationToken ct = default)
     {
-        var ragContext = await RetrieveAsync(userInput, mode, includeSDA, ct);
-        return await _diagnostic.ChatAsync(userInput, ragContext, includeSDA, mode, ct);
+        var ragContext = await RetrieveAsync(userInput, mode, ct);
+        return await _diagnostic.ChatAsync(userInput, ragContext, Perspectives, mode, ct);
     }
 
     /// <summary>
@@ -109,7 +114,6 @@ public class StudyPipeline
     public async IAsyncEnumerable<PipelineEvent> ChatEventsAsync(
         string userInput,
         QueryMode mode = QueryMode.Deep,
-        bool includeSDA = false,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         // Tool calls happen inside the model call, so they arrive on another path than the
@@ -122,11 +126,11 @@ public class StudyPipeline
         {
             try
             {
-                var ragContext = await RetrieveAsync(userInput, mode, includeSDA, ct);
+                var ragContext = await RetrieveAsync(userInput, mode, ct);
                 if (LastRetrieval is { } retrieval)
                     channel.Writer.TryWrite(new SourcesEvent(retrieval));
 
-                await foreach (var text in _diagnostic.ChatStreamAsync(userInput, ragContext, includeSDA, mode, ct))
+                await foreach (var text in _diagnostic.ChatStreamAsync(userInput, ragContext, Perspectives, mode, ct))
                     channel.Writer.TryWrite(new TextEvent(text));
 
                 channel.Writer.Complete();
@@ -149,16 +153,16 @@ public class StudyPipeline
         }
     }
 
-    private async Task<string?> RetrieveAsync(string userInput, QueryMode mode, bool includeSDA, CancellationToken ct)
+    private async Task<string?> RetrieveAsync(string userInput, QueryMode mode, CancellationToken ct)
     {
         LastRetrieval = null;
         if (mode == QueryMode.Quick) return null;
 
-        var result = await Router.RouteAsync(userInput, new RouteOptions(includeSDA, mode), ct);
+        var result = await Router.RouteAsync(userInput, new RouteOptions(Perspectives, mode), ct);
         LastRetrieval = result;
 
-        _log.LogInformation("[Pipeline] Intent={Intent} includeSDA={SDA} sources={Count}",
-            result.Intent, includeSDA, result.Sources.Count);
+        _log.LogInformation("[Pipeline] Intent={Intent} perspectives={Perspectives} sources={Count}",
+            result.Intent, Perspectives.Count == 0 ? "-" : string.Join(",", Perspectives.Select(p => p.Id)), result.Sources.Count);
 
         return result.Text;
     }

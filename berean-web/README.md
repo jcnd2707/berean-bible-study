@@ -43,7 +43,7 @@ src/app/
 
 ## Chat behaviour worth knowing
 
-- **Modes:** Quick (no lookup), Deep (sources first), Compare (traditions side by side). The SDA toggle adds a separate Adventist section from Adventist sources only.
+- **Modes:** Quick (no lookup), Deep (sources first), Compare (traditions side by side). The **Perspective** dropdown (shown only when the Agent has one configured) adds a separate section drawing only on that perspective's own sources; it's chosen once per conversation and locked once the first question is sent — a different perspective means a new conversation.
 - **Citations:** `[S1]` in an answer becomes a chip showing the source and its tradition. Clicking a commentary chip goes to that verse and opens that commentary; a book chip opens the book at that chapter. The sources are listed under each answer, grouped by tradition.
 - **Save to notes:** appends the answer, its sources and the date to the note for the passage you are reading (it never replaces an existing note).
 - **Conversations:** saved automatically once the first question is answered; the clock button lists them. The last one reopens on refresh.

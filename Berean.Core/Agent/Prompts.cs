@@ -10,8 +10,8 @@ public static class Prompts
 {
     public static string System => Load("system");
 
-    /// <summary>Added to the user turn (not the system prompt) when the SDA toggle is on.</summary>
-    public static string SdaAddendum => Load("sda-addendum");
+    /// <summary>Added to the user turn (not the system prompt) once per selected perspective.</summary>
+    public static string PerspectiveAddendum => Load("perspective-addendum");
 
     /// <summary>Added to the user turn in Compare mode.</summary>
     public static string CompareAddendum => Load("compare-addendum");

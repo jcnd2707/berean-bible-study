@@ -92,6 +92,9 @@ internal static class Fixtures
         return (pipeline, store);
     }
 
+    /// <summary>The Adventist toggle's replacement: a configured perspective with the same ids as before ("A1", "ADVENTIST SOURCES:").</summary>
+    public static Perspective AdventistPerspective => new("adventist", Traditions.Adventist, "Adventist", "A", TopK: 4);
+
     public static RetrievalOptions Config() => new()
     {
         Language = "en",
@@ -99,7 +102,7 @@ internal static class Fixtures
         MmrLambda = 0.9f,
         MmrCandidateK = 100,
         MaxPerModule = 2,
-        AdventistTopK = 4,
+        Perspectives = [AdventistPerspective],
         AllowedBibleModules = ["KJV"],
         CompareMinScore = 0.5f,
     };

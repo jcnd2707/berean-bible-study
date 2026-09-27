@@ -24,17 +24,21 @@ public sealed record ContextSource(
     int? BookChapterIndex,       // books: the "Chapter N" in the chunk source
     ScoredChunk Scored);
 
+/// <summary>One perspective's formatted sources block ("SEVENTH-DAY ADVENTIST SOURCES:\n\n…").</summary>
+public sealed record PerspectiveContext(Perspective Perspective, string Text);
+
 /// <summary>The retrieved material, formatted for the prompt, plus the sources it cites.</summary>
 public sealed record FormattedContext(
     string Text,
     string? Main,
-    string? Adventist,
+    IReadOnlyList<PerspectiveContext> Perspectives,
     IReadOnlyList<ContextSource> Sources);
 
 /// <summary>
 /// Turns retrieved chunks into the prompt block. Every source is numbered and tagged with its
-/// tradition so the model can say who holds a view, and Adventist material sits in its own
-/// block that the prompt only allows the model to use when the SDA toggle is on.
+/// tradition so the model can say who holds a view, and each selected perspective's material sits
+/// in its own block (own citation prefix, own budget) that the prompt only allows the model to use
+/// when that perspective is selected for the conversation.
 ///
 ///   VERSE TEXT:
 ///   [KJV] John 3:16 — For God so loved…
@@ -43,8 +47,8 @@ public sealed record FormattedContext(
 ///   [S1] Barnes' Notes on the Bible (Evangelical, 19th c.) — John 3:16:
 ///   …
 ///
-///   ADVENTIST SOURCES:
-///   [A1] The Desire of Ages, Chapter 12 — … (Adventist, 19th c.):
+///   SEVENTH-DAY ADVENTIST SOURCES:
+///   [ADV1] The Desire of Ages, Chapter 12 — … (Adventist, 19th c.):
 ///   …
 /// </summary>
 public static class ContextFormatter
@@ -54,15 +58,14 @@ public static class ContextFormatter
     public static FormattedContext? Format(
         IReadOnlyList<BibleText> verses,
         IReadOnlyList<ScoredChunk> main,
-        IReadOnlyList<ScoredChunk> adventist,
+        IReadOnlyList<(Perspective Perspective, IReadOnlyList<ScoredChunk> Chunks)> perspectivePasses,
         ModuleCatalog catalog,
         int maxChars = int.MaxValue)
     {
-        if (verses.Count == 0 && main.Count == 0 && adventist.Count == 0) return null;
+        if (verses.Count == 0 && main.Count == 0 && perspectivePasses.All(p => p.Chunks.Count == 0)) return null;
 
         var sources = new List<ContextSource>();
         var mainSb = new StringBuilder();
-        var advSb = new StringBuilder();
 
         if (verses.Count > 0)
         {
@@ -71,11 +74,11 @@ public static class ContextFormatter
                 mainSb.AppendLine($"[{v.ModuleId}] {v.Reference} — {v.Text}");
         }
 
-        // Budget: drop the lowest-ranked chunks first once the material gets too long.
+        // Budget: drop the lowest-ranked chunks first once the material gets too long. Each
+        // perspective gets its own budget on top of the neutral material, not carved out of it.
         var budget = maxChars == int.MaxValue ? maxChars : Math.Max(0, maxChars - mainSb.Length);
-        var mainBudget = adventist.Count > 0 && budget != int.MaxValue ? (int)(budget * 0.75) : budget;
 
-        var mainSources = Build(main, "S", catalog, mainBudget);
+        var mainSources = Build(main, "S", catalog, budget);
         if (mainSources.Count > 0)
         {
             if (mainSb.Length > 0) mainSb.AppendLine();
@@ -85,23 +88,25 @@ public static class ContextFormatter
         }
         sources.AddRange(mainSources);
 
-        var used = mainSources.Sum(s => s.Scored.Chunk.Text.Length + s.Label.Length);
-        var advBudget = budget == int.MaxValue ? budget : Math.Max(0, budget - used);
-        var advSources = Build(adventist, "A", catalog, advBudget);
-        if (advSources.Count > 0)
+        var perspectiveContexts = new List<PerspectiveContext>();
+        foreach (var (perspective, chunks) in perspectivePasses)
         {
-            advSb.AppendLine("ADVENTIST SOURCES:");
-            advSb.AppendLine();
-            Append(advSb, advSources);
+            var pSources = Build(chunks, perspective.CitationPrefix, catalog, budget);
+            if (pSources.Count == 0) continue;
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"{perspective.Label.ToUpperInvariant()} SOURCES:");
+            sb.AppendLine();
+            Append(sb, pSources);
+            perspectiveContexts.Add(new PerspectiveContext(perspective, sb.ToString().TrimEnd()));
+            sources.AddRange(pSources);
         }
-        sources.AddRange(advSources);
 
         var mainText = mainSb.Length > 0 ? mainSb.ToString().TrimEnd() : null;
-        var advText = advSb.Length > 0 ? advSb.ToString().TrimEnd() : null;
-        if (mainText is null && advText is null) return null;
+        if (mainText is null && perspectiveContexts.Count == 0) return null;
 
-        var text = string.Join("\n\n", new[] { mainText, advText }.Where(t => t is not null));
-        return new FormattedContext(text, mainText, advText, sources);
+        var text = string.Join("\n\n", new[] { mainText }.Concat(perspectiveContexts.Select(p => p.Text)).Where(t => t is not null));
+        return new FormattedContext(text, mainText, perspectiveContexts, sources);
     }
 
     private static List<ContextSource> Build(

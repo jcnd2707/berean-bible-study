@@ -49,6 +49,8 @@ export interface ConversationLoadedEvent {
   title: string;
   modelId: string | null;
   messages: StoredChatMessage[];
+  /** The conversation's locked-in perspective selection (see StartConversation). */
+  perspectives: string[];
 }
 
 export interface ToolActivityEvent {
@@ -124,9 +126,10 @@ export class AgentHubService implements OnDestroy {
         title: string,
         modelId: string | null,
         messages: StoredChatMessage[],
+        perspectives: string[],
       ) =>
         this.zone.run(() =>
-          this.conversationLoaded$.next({ id, title, modelId, messages }),
+          this.conversationLoaded$.next({ id, title, modelId, messages, perspectives }),
         ),
     );
     this.hub.on("ConversationDeleted", (id: string) =>
@@ -183,9 +186,13 @@ export class AgentHubService implements OnDestroy {
     }
   }
 
-  /** Starts a new conversation on this model. It is saved once its first question is answered. */
-  async startConversation(modelId: string): Promise<void> {
-    await this.hub.send("StartConversation", modelId);
+  /**
+   * Starts a new conversation on this model. The perspective selection (0 or 1 id today — see
+   * PerspectiveService) is locked for the conversation's lifetime. Saved once its first question
+   * is answered.
+   */
+  async startConversation(modelId: string, perspectives: string[] = []): Promise<void> {
+    await this.hub.send("StartConversation", modelId, perspectives);
   }
 
   /** Reopens a saved conversation. */
@@ -201,8 +208,8 @@ export class AgentHubService implements OnDestroy {
     await this.hub.send("DeleteConversation", id);
   }
 
-  async sendMessage(text: string, mode: ChatMode = "Quick", includeSDA = false): Promise<void> {
-    await this.hub.send("SendMessage", text, mode, includeSDA);
+  async sendMessage(text: string, mode: ChatMode = "Quick"): Promise<void> {
+    await this.hub.send("SendMessage", text, mode);
   }
 
   async resetConversation(): Promise<void> {
