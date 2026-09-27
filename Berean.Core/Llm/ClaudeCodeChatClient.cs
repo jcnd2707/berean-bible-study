@@ -249,12 +249,17 @@ public sealed class ClaudeCodeChatClient : IChatClient
                 yield return ev;
             }
 
-            // Killing the process (just above, on timeout) can close its stdout pipe before the
-            // pending read notices the cancellation, so the loop exits on a plain EOF (null) that
-            // races ahead of ReadLineAsync's own OperationCanceledException → TimeoutException.
-            // Checking the token directly here makes the timeout deterministic either way.
-            if (timeout.Token.IsCancellationRequested && !ct.IsCancellationRequested)
+            // Killing the process (just above, on cancel or timeout) can close its stdout pipe
+            // before the pending read notices the cancellation, so the loop exits on a plain EOF
+            // (null) that races ahead of ReadLineAsync's own exception. Checking the tokens
+            // directly here makes the outcome deterministic either way: a user cancellation must
+            // still surface as OperationCanceledException, not fall through to "ended without a
+            // result", and likewise a timeout must surface as TimeoutException.
+            if (timeout.Token.IsCancellationRequested)
+            {
+                ct.ThrowIfCancellationRequested();
                 throw new TimeoutException($"Claude Code did not finish within {_cfg.TimeoutSeconds}s.");
+            }
 
             await process.WaitForExitAsync(CancellationToken.None);
             if (process.ExitCode != 0 && !sawText)
