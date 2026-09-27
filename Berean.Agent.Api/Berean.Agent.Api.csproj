@@ -15,7 +15,6 @@
     <!-- Reference your Common.Core project -->
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <ProjectReference Include="..\Berean.Core\Berean.Core.csproj" />
-    <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.2.9" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="9.0.0" />
   </ItemGroup>
 
