@@ -256,11 +256,22 @@ public sealed class ClaudeCodeChatClientTests : IDisposable
     private async Task WaitUntilLogged()
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (Calls().Count == 0)
+        while (CallsIfReadable().Count == 0)
         {
             if (DateTime.UtcNow > deadline) throw new TimeoutException("FakeClaude never logged the call.");
             await Task.Delay(10);
         }
+    }
+
+    /// <summary>
+    /// FakeClaude appends to the log with its own brief exclusive handle, so a poll can land in
+    /// the middle of that write and see a sharing violation rather than "not there yet" — treat it
+    /// the same as "not there yet" instead of failing the poll.
+    /// </summary>
+    private List<Call> CallsIfReadable()
+    {
+        try { return Calls(); }
+        catch (IOException) { return []; }
     }
 
     [Fact]
