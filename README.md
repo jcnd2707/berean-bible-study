@@ -1,5 +1,6 @@
 # Berean
 
+[![CI](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml/badge.svg)](https://github.com/jcnd2707/berean-bible-study/actions/workflows/ci.yml)
 <img width="3829" height="2081" alt="image" src="https://github.com/user-attachments/assets/90b049b0-1020-4f9b-923f-ca6b115c4d35" />
 
 
