@@ -431,3 +431,4 @@ berean-web/.tmp/
 # placeholders; real paths/origins for this machine belong in appsettings.Development.json.
 appsettings.Development.json
 .claude/settings.local.json
+/enhancements_plan
