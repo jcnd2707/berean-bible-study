@@ -135,6 +135,19 @@
   scrollbar-color: #ddd8ce transparent;
 }
 
+// A coarse pointer's long-press is handled entirely by our own JS lookup
+// above (Pointer Events + caretRangeFromPoint), not native selection —
+// letting native selection start as well brings up Android/iOS's own
+// copy/share toolbar, which renders above our UI and covers the lookup
+// chip. Scrolling is untouched: touch-action stays at its default.
+@media (pointer: coarse) {
+  .verse-list {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 .v-row {
   display: flex;
   gap: 10px;

@@ -92,10 +92,11 @@
     @if (passage() && !loading() && !error()) {
       <div
         class="verse-list"
-        #verseList
         (dblclick)="onVerseDoubleClick($event)"
         (pointerdown)="onVerseListPointerDown($event)"
+        (pointermove)="onVerseListPointerMove($event)"
         (pointerup)="onVerseListPointerUp($event)"
+        (pointercancel)="onVerseListPointerUp($event)"
       >
         @for (v of passage()!.verses; track v.verse) {
           <div
