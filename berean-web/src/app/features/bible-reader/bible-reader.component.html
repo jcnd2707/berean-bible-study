@@ -133,7 +133,20 @@
         <span class="strip-ref">
           {{ navState.book() }} {{ navState.chapter() }}:{{ activeVerse() }}
         </span>
-        <span class="strip-hint">Selected · context sent to AI chat</span>
+        @if (layout.layout() === "desktop") {
+          <span class="strip-hint">Selected · context sent to AI chat</span>
+        } @else {
+          <!-- Verse action bar (MOBILE_PLAN.md §3): one-tap jumps replace
+               desktop's always-visible panels. "Look up word" isn't here —
+               the long-press lookup (§4.3) already covers that, and a
+               button with no word yet chosen has no well-defined target. -->
+          <div class="verse-actions">
+            <button class="va-btn" (click)="navState.requestRightTab('ask')">Ask AI</button>
+            <button class="va-btn" (click)="navState.requestRightTab('commentary')">Commentary</button>
+            <button class="va-btn" (click)="navState.requestRightTab('notes')">Notes</button>
+            <button class="va-btn" (click)="navState.requestRightTab('xrefs')">Cross-refs</button>
+          </div>
+        }
         <button class="strip-clear" (click)="navState.clearVerse()">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path

@@ -209,6 +209,37 @@
   flex: 1;
 }
 
+.verse-actions {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.va-btn {
+  flex-shrink: 0;
+  min-height: var(--tap-min);
+  padding: var(--pad-btn);
+  border-radius: 9px;
+  background: rgba(200, 146, 42, 0.12);
+  border: 0.5px solid rgba(200, 146, 42, 0.35);
+  color: #7a5a1a;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(200, 146, 42, 0.2);
+  }
+}
+
 .strip-clear {
   display: flex;
   align-items: center;

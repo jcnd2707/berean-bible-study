@@ -60,7 +60,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
   readonly navState = inject(NavigationStateService);
   private readonly wordSelection = inject(WordSelectionService);
   readonly prefs = inject(PreferencesService);
-  private readonly layout = inject(LayoutService);
+  readonly layout = inject(LayoutService);
 
   @HostBinding("style.--reader-font-size")
   get hostFontSize(): string {

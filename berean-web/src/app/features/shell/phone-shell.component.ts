@@ -415,8 +415,13 @@ export class PhoneShellComponent {
       this.backStack.open(this.closeDictSheetFn);
     }
   });
-  private readonly _citationSwitchesToStudy = effect(() => {
-    if (this.nav.requestedRightTab()) this.activeView.set("study");
+  // A chat citation or the verse action bar's jump buttons request a tab;
+  // "ask" has its own top-level view here (unlike tablet, where it's a
+  // study-panel tab), so it doesn't switch to Study like the others.
+  private readonly _tabRequestSwitchesView = effect(() => {
+    const tab = this.nav.requestedRightTab();
+    if (!tab) return;
+    this.activeView.set(tab === "ask" ? "ask" : "study");
   });
   private readonly _overlaySwitchesToRead = effect(() => {
     if (

@@ -211,6 +211,13 @@ export class TabletShellComponent implements OnDestroy {
     this.lastChapterKey = key;
   });
 
+  // A chat citation or the verse action bar's jump buttons need the study
+  // panel actually visible, not just its active tab changed underneath a
+  // collapsed panel.
+  private readonly _uncollapseOnTabRequest = effect(() => {
+    if (this.nav.requestedRightTab()) this.collapsed.set(false);
+  });
+
   constructor() {
     window.addEventListener("pointermove", this.pointermove);
     window.addEventListener("pointerup", this.pointerup);

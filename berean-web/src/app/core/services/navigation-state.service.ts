@@ -189,6 +189,10 @@ export class NavigationStateService {
     this._requestedBook.set({ moduleId, chapterIndex });
   }
 
+  /** One-tap jump from the verse action bar (MOBILE_PLAN.md §3) to a study-panel tab. */
+  requestRightTab(tab: RightTab): void {
+    this._requestedRightTab.set(tab);
+  }
   clearRequestedRightTab(): void {
     this._requestedRightTab.set(null);
   }
