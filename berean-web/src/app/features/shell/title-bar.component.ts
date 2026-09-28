@@ -1,4 +1,6 @@
-import { Component } from "@angular/core";
+import { Component, inject } from "@angular/core";
+import { ProfileService } from "../../core/services/profile.service";
+import { NavigationStateService } from "../../core/services/navigation-state.service";
 
 @Component({
   selector: "app-title-bar",
@@ -17,6 +19,11 @@ import { Component } from "@angular/core";
         <span class="menu-item">Options</span>
         <span class="menu-item">Window</span>
       </nav>
+      @if (profiles.current(); as p) {
+        <button class="profile-chip" (click)="nav.toggleProfileSwitcher()" title="Switch person">
+          {{ p.name }}
+        </button>
+      }
       <div class="wm-btns">
         <div class="wm wm-r"></div>
         <div class="wm wm-y"></div>
@@ -71,8 +78,22 @@ import { Component } from "@angular/core";
       .menu-item:hover {
         color: rgba(255, 255, 255, 0.75);
       }
-      .wm-btns {
+      .profile-chip {
         margin-left: auto;
+        background: rgba(200, 146, 42, 0.12);
+        border: 1px solid rgba(200, 146, 42, 0.35);
+        border-radius: 12px;
+        padding: 3px 12px;
+        font-size: 10px;
+        color: #c8922a;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .profile-chip:hover {
+        background: rgba(200, 146, 42, 0.2);
+      }
+      .wm-btns {
+        margin-left: 12px;
         display: flex;
         gap: 8px;
       }
@@ -93,4 +114,7 @@ import { Component } from "@angular/core";
     `,
   ],
 })
-export class TitleBarComponent {}
+export class TitleBarComponent {
+  readonly profiles = inject(ProfileService);
+  readonly nav = inject(NavigationStateService);
+}

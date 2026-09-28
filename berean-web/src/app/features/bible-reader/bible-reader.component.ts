@@ -33,6 +33,7 @@ import { SearchPanelComponent } from "../search/search-panel.component";
 import { ComparePanelComponent } from "../compare/compare-panel.component";
 import { NotesListComponent } from "../notes/notes-list.component";
 import { BookReaderComponent } from "../books/book-reader.component";
+import { SessionsListComponent } from "../sessions/sessions-list.component";
 
 interface TabModule {
   moduleId: string;
@@ -50,6 +51,7 @@ interface TabModule {
     ComparePanelComponent,
     NotesListComponent,
     BookReaderComponent,
+    SessionsListComponent,
   ],
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",

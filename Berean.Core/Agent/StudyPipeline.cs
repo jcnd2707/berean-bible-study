@@ -43,6 +43,20 @@ public class StudyPipeline
     /// <summary>Called after each turn with what it added and what was retrieved for it.</summary>
     public Func<TurnRecord, Task>? TurnCompleted { get; set; }
 
+    /// <summary>
+    /// Where the reader was when the most recent message was sent, as opaque JSON — set by the
+    /// caller (ChatHub) before each turn and persisted as the conversation's "last location" so
+    /// reopening it can return there. The model never sees this; it's just carried along.
+    /// </summary>
+    public string? LastLocationJson { get; set; }
+
+    /// <summary>A recap carried into a continued session's first turn only (Phase 5). See StudyAgent.CarryOver.</summary>
+    public string? CarryOver
+    {
+        get => _diagnostic.CarryOver;
+        set => _diagnostic.CarryOver = value;
+    }
+
     /// <summary>Continues a stored conversation from its messages.</summary>
     public void LoadHistory(IEnumerable<ChatMessage> messages) => _diagnostic.LoadHistory(messages);
 
@@ -79,9 +93,35 @@ public class StudyPipeline
 
         _diagnostic = new StudyAgent(llm, llmConfig, tools, agentConfig,
             logFactory.CreateLogger<StudyAgent>());
-        _diagnostic.TurnCompleted = messages =>
-            TurnCompleted is null ? Task.CompletedTask : TurnCompleted(new TurnRecord(messages, LastRetrieval));
+        _diagnostic.TurnCompleted = turn =>
+            TurnCompleted is null ? Task.CompletedTask : TurnCompleted(new TurnRecord(turn.Messages, LastRetrieval, turn.ContextTokens));
     }
+
+    /// <summary>
+    /// Writes a recap of this conversation for continuing it in a new session (Phase 5). Bypasses
+    /// StudyAgent's own history and TurnCompleted entirely — going through ChatStreamAsync would
+    /// save this call to chat.db as a turn and bump the question/context counts. For Claude Code,
+    /// this is also a one-shot call with no CLI session at all (see ClaudeCodeChatClient.OneShotProperty),
+    /// so it can't collide with or extend the study's own session.
+    /// </summary>
+    public async Task<string> WriteRecapAsync(CancellationToken ct = default)
+    {
+        var transcript = TranscriptBuilder.Condense(_diagnostic.History.Where(m => m.Role != ChatRole.System));
+        if (transcript.Length == 0) return "";
+
+        ChatMessage[] messages = [new(ChatRole.System, Prompts.Recap), new(ChatRole.User, transcript)];
+        var options = new ChatOptions
+        {
+            AdditionalProperties = new() { [ClaudeCodeChatClient.OneShotProperty] = true },
+        };
+
+        var response = await Llm.Client.GetResponseAsync(messages, options, ct);
+        return response.Text.Trim();
+    }
+
+    /// <summary>A plain condensed transcript, with no model call — WriteRecapAsync's fallback if it fails or comes back empty.</summary>
+    public string CondensedTranscript() =>
+        TranscriptBuilder.Condense(_diagnostic.History.Where(m => m.Role != ChatRole.System));
 
     /// <summary>Builds a conversation for the Bible study agent on the shared library.</summary>
     public static StudyPipeline CreateBible(
@@ -184,4 +224,4 @@ public sealed record ToolEvent(string Name, string Arguments) : PipelineEvent;
 public sealed record TextEvent(string Text) : PipelineEvent;
 
 /// <summary>What one turn added to the conversation, and the sources retrieved for it.</summary>
-public sealed record TurnRecord(IReadOnlyList<ChatMessage> Messages, RetrievalResult? Retrieval);
+public sealed record TurnRecord(IReadOnlyList<ChatMessage> Messages, RetrievalResult? Retrieval, int ContextTokens);

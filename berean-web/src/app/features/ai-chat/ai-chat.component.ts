@@ -21,18 +21,29 @@ import {
 import type {
   ChatMode,
   ChatSource,
-  ConversationSummary,
   RagIndexingEvent,
   RagIndexedEvent,
+  SessionLimitState,
 } from "../../core/services/agent-hub.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { ModelService } from "../../core/services/model.service";
 import { PerspectiveService } from "../../core/services/perspective.service";
 import { NotesService } from "../../core/services/notes.service";
 import { LayoutService } from "../../core/services/layout.service";
+import { conversationStorageKey } from "../../core/services/conversation-storage-key";
 import { renderAnswerHtml } from "./answer-html";
 
-const CONVERSATION_KEY = "berean_conversationId";
+const PROFILE_STORAGE_KEY = "berean_profileId";
+
+function currentConversationStorageKey(): string {
+  let profileId: string | null = null;
+  try {
+    profileId = localStorage.getItem(PROFILE_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+  return conversationStorageKey(profileId);
+}
 
 export interface ChatMessage {
   role: "user" | "agent";
@@ -101,10 +112,26 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   readonly modes: readonly ChatMode[] = ["Quick", "Deep", "Compare"];
   readonly mode = signal<ChatMode>("Quick");
 
-  // ── Saved conversations ──
-  readonly conversations = signal<ConversationSummary[]>([]);
   readonly currentConversationId = signal<string | null>(null);
-  readonly showHistory = signal(false);
+
+  // ── Session length limit (Phase 5) ──
+  readonly limitState = signal<SessionLimitState | null>(null);
+  readonly continuedFrom = signal<{ title: string; recap: string } | null>(null);
+  readonly isFull = computed(() => this.limitState()?.state === "full");
+  readonly isNearing = computed(() => this.limitState()?.state === "nearing");
+  /** When nearing, which limit is the close one — drives which warning sentence shows. */
+  readonly questionsAreTheCloseLimit = computed(() => {
+    const s = this.limitState();
+    if (!s) return true;
+    const questionsRatio = s.maxQuestions > 0 ? s.questionsUsed / s.maxQuestions : 0;
+    const contextRatio = s.maxContextTokens > 0 ? s.contextTokens / s.maxContextTokens : 0;
+    return questionsRatio >= contextRatio;
+  });
+  readonly showLimitCounter = computed(() => {
+    const s = this.limitState();
+    if (!s) return false;
+    return s.questionsUsed / s.maxQuestions >= 0.5 || (s.maxContextTokens > 0 && s.contextTokens / s.maxContextTokens >= 0.5);
+  });
 
   readonly quickAsks = computed(() => {
     const selected = this.perspectiveService.selectedId();
@@ -124,7 +151,8 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.agentReady() &&
       this.hubState() === "connected" &&
       this.inputText().trim().length > 0 &&
-      !this.isStreaming(),
+      !this.isStreaming() &&
+      !this.isFull(),
   );
 
   readonly isStreaming = computed(() =>
@@ -172,9 +200,15 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.rememberConversation(id);
         this.messages.set([]);
         this.error.set(null);
-        this.showHistory.set(false);
-        this.hub.listConversations().catch(() => {});
+        this.nav.clearContinuingBanner();
+        this.continuedFrom.set(null); // set again right after by conversationContinued$, if this was a continue
       }),
+
+      this.hub.conversationContinued$.subscribe((ev) => {
+        this.continuedFrom.set({ title: ev.previousTitle, recap: ev.recap });
+      }),
+
+      this.hub.sessionLimit$.subscribe((state) => this.limitState.set(state)),
 
       this.hub.conversationLoaded$.subscribe((ev) => {
         this.currentConversationId.set(ev.id);
@@ -189,24 +223,18 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         if (ev.modelId) this.modelService.selectModel(ev.modelId);
         this.perspectiveService.select(ev.perspectives[0] ?? null);
         this.error.set(null);
-        this.showHistory.set(false);
         this.shouldScroll = true;
-        this.hub.listConversations().catch(() => {});
       }),
 
-      this.hub.conversationList$.subscribe((list) => this.conversations.set(list)),
-
       this.hub.conversationDeleted$.subscribe((id) => {
-        this.conversations.update((list) => list.filter((c) => c.id !== id));
         if (id === this.currentConversationId()) {
           this.forgetConversation();
+          this.nav.clearContinuingBanner();
           this.hub.startConversation(this.modelService.selectedModelId(), this.perspectiveService.selectedIds()).catch(() => {});
         }
       }),
 
       this.hub.complete$.subscribe(() => {
-        // The first answer is what creates a saved conversation, so refresh the list.
-        this.hub.listConversations().catch(() => {});
         this.messages.update((msgs) => {
           const last = msgs[msgs.length - 1];
           if (last?.streaming) {
@@ -230,11 +258,6 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.error.set(msg);
         // Remove any partial streaming bubble
         this.messages.update((msgs) => msgs.filter((m) => !m.streaming));
-      }),
-
-      this.hub.reset$.subscribe(() => {
-        this.messages.set([]);
-        this.error.set(null);
       }),
 
       this.hub.ragIndexing$.subscribe((ev: RagIndexingEvent) => {
@@ -324,7 +347,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.shouldScroll = true;
 
     try {
-      await this.hub.sendMessage(withContext, this.mode());
+      await this.hub.sendMessage(withContext, this.mode(), this.nav.location());
     } catch {
       this.error.set("Failed to send message.");
     }
@@ -346,42 +369,48 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   quickAsk(prompt: string): void {
-    if (!this.agentReady() || this.isStreaming()) return;
+    if (!this.agentReady() || this.isStreaming() || this.isFull()) return;
     this.send(prompt);
   }
 
-  /** Starts a fresh conversation. The old one stays in the history. */
+  /**
+   * Starts a fresh conversation directly (rather than through a server-side "reset") so it can
+   * never drop the model/perspective selection the way the old ResetConversation hub method did.
+   * The old conversation stays saved and can be reopened from Study sessions.
+   */
   async reset(): Promise<void> {
-    await this.hub.resetConversation();
-  }
-
-  toggleHistory(): void {
-    this.showHistory.update((v) => !v);
-    if (this.showHistory()) this.hub.listConversations().catch(() => {});
-  }
-
-  openConversation(id: string): void {
-    if (id === this.currentConversationId()) {
-      this.showHistory.set(false);
-      return;
-    }
     this.agentReady.set(false);
-    this.hub.resumeConversation(id).catch(() => this.error.set("Could not open that conversation."));
+    this.error.set(null);
+    try {
+      await this.hub.startConversation(this.modelService.selectedModelId(), this.perspectiveService.selectedIds());
+    } catch {
+      this.error.set("Failed to start a new conversation.");
+    }
   }
 
-  deleteConversation(event: Event, id: string): void {
-    event.stopPropagation();
-    this.hub.deleteConversation(id).catch(() => this.error.set("Could not delete that conversation."));
+  toggleSessions(): void {
+    this.nav.toggleSessions();
   }
 
-  conversationDate(c: ConversationSummary): string {
-    const d = new Date(c.updatedAt);
+  /** "Continue in a new session" on a full session's card (Phase 5): ends it and carries a recap into the next part. */
+  async continueSession(): Promise<void> {
+    this.agentReady.set(false);
+    this.error.set(null);
+    try {
+      await this.hub.continueConversation();
+    } catch {
+      this.error.set("Could not continue the session.");
+    }
+  }
+
+  formatBannerDate(iso: string): string {
+    const d = new Date(iso);
     return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
   }
 
   private savedConversationId(): string | null {
     try {
-      return localStorage.getItem(CONVERSATION_KEY);
+      return localStorage.getItem(currentConversationStorageKey());
     } catch {
       return null;
     }
@@ -389,13 +418,13 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   private rememberConversation(id: string): void {
     try {
-      localStorage.setItem(CONVERSATION_KEY, id);
+      localStorage.setItem(currentConversationStorageKey(), id);
     } catch {}
   }
 
   private forgetConversation(): void {
     try {
-      localStorage.removeItem(CONVERSATION_KEY);
+      localStorage.removeItem(currentConversationStorageKey());
     } catch {}
   }
 

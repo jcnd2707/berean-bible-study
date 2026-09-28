@@ -27,6 +27,10 @@ namespace Berean.Agent.Api
             llm.OllamaEndpoint = builder.Configuration["Ollama:Endpoint"] ?? llm.OllamaEndpoint;
             builder.Services.AddSingleton(llm);
 
+            // The session length limit (Phase 5).
+            var sessionLimits = builder.Configuration.GetSection(SessionLimits.SectionName).Get<SessionLimits>() ?? new SessionLimits();
+            builder.Services.AddSingleton(sessionLimits);
+
             builder.Services.AddSingleton<ModelRegistryService>();
             // StudySessionService is Singleton — it holds all active conversations and the shared library
             builder.Services.AddSingleton<StudySessionService>();
@@ -46,6 +50,17 @@ namespace Berean.Agent.Api
 
             var app = builder.Build();
 
+            // HistoryTurns must be at least MaxQuestions, or a session could be silently trimmed
+            // before it ever reaches its own question limit — raised here, never the other way
+            // round (D7: "no silent forgetting inside a session").
+            if (llm.HistoryTurns < sessionLimits.MaxQuestions)
+            {
+                app.Logger.LogWarning(
+                    "Llm:HistoryTurns ({Turns}) is below Sessions:MaxQuestions ({Max}) — raising it so no question inside a session is silently forgotten.",
+                    llm.HistoryTurns, sessionLimits.MaxQuestions);
+                llm.HistoryTurns = sessionLimits.MaxQuestions;
+            }
+
             app.UseCors();
 
             // Health check
@@ -58,6 +73,15 @@ namespace Berean.Agent.Api
             // Perspectives configured for this deployment (empty on the public default config).
             app.MapGet("/api/perspectives", (StudySessionService sessions) =>
                 Results.Ok(sessions.GetPerspectives()));
+
+            // The profile picker's "keep what's already here?" step (PROFILES_AND_SESSIONS_PLAN.md D6).
+            app.MapGet("/api/conversations/unowned", async (StudySessionService sessions) =>
+                Results.Ok(new { count = await sessions.CountUnownedConversationsAsync() }));
+            app.MapPost("/api/profiles/{id}/adopt-unowned-conversations", async (string id, StudySessionService sessions) =>
+            {
+                var moved = await sessions.AdoptUnownedConversationsAsync(id);
+                return Results.Ok(new { moved, remaining = await sessions.CountUnownedConversationsAsync() });
+            });
 
             // ── SignalR hub ────────────────────────────────────────────────────────────
 

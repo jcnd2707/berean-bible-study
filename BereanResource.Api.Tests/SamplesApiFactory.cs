@@ -17,6 +17,18 @@ public sealed class SamplesApiFactory : WebApplicationFactory<Program>
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly string _scratchDir = Path.Combine(Path.GetTempPath(), $"berean-resource-api-tests-{Guid.NewGuid():N}");
+    private readonly string? _explicitNotesDbPath;
+
+    /// <summary>Where this instance's notes.db lives — the scratch one, unless a migration test pointed it elsewhere.</summary>
+    public string NotesDbPath => _explicitNotesDbPath ?? Path.Combine(_scratchDir, "notes.db");
+
+    /// <summary>xUnit requires a class fixture to have exactly one public constructor.</summary>
+    public SamplesApiFactory() { }
+
+    private SamplesApiFactory(string explicitNotesDbPath) => _explicitNotesDbPath = explicitNotesDbPath;
+
+    /// <summary>For migration tests: points notes.db at an existing file instead of a fresh scratch one.</summary>
+    public static SamplesApiFactory WithNotesDb(string path) => new(path);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -28,7 +40,7 @@ public sealed class SamplesApiFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["BereanResources:RootPath"] = Path.Combine(repoRoot, "samples"),
-                ["BereanResources:NotesDbPath"] = Path.Combine(_scratchDir, "notes.db"),
+                ["BereanResources:NotesDbPath"] = NotesDbPath,
                 ["BereanResources:CrossReferencesDbFolder"] = Path.Combine(repoRoot, "samples", "cross_references"),
             });
         });

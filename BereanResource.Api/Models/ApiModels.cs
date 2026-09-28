@@ -80,6 +80,24 @@ public record UpsertNoteRequest(
     string Text
 );
 
+// ── Profiles ──────────────────────────────────────────────────────────────────
+
+public record ProfileRecord(
+    string Id,
+    string Name,
+    string? Color,
+    DateTime CreatedAt
+);
+
+public record CreateProfileRequest(
+    string Name,
+    string? Color = null
+);
+
+public record RenameProfileRequest(
+    string Name
+);
+
 // ── Strong's occurrences ──────────────────────────────────────────────────────
 
 public record StrongsBookCount(int Book, string BookName, int Count);

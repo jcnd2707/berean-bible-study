@@ -1,25 +1,38 @@
-import { Component, inject } from "@angular/core";
+import { Component, inject, signal } from "@angular/core";
 import { DesktopShellComponent } from "./features/shell/desktop-shell.component";
 import { TabletShellComponent } from "./features/shell/tablet-shell.component";
 import { PhoneShellComponent } from "./features/shell/phone-shell.component";
 import { KeyboardShortcutsService } from "./core/services/keyboard-shortcuts.service";
 import { LayoutService } from "./core/services/layout.service";
+import { ProfileService } from "./core/services/profile.service";
+import { ProfilePickerComponent } from "./features/profiles/profile-picker.component";
+import { NavigationStateService } from "./core/services/navigation-state.service";
 
-/** Picks the shell for the current viewport (MOBILE_PLAN.md §2/§6). */
+/** Picks the shell for the current viewport (MOBILE_PLAN.md §2/§6), behind the profile picker (D1). */
 @Component({
   selector: "app-root",
   standalone: true,
-  imports: [DesktopShellComponent, TabletShellComponent, PhoneShellComponent],
+  imports: [DesktopShellComponent, TabletShellComponent, PhoneShellComponent, ProfilePickerComponent],
   template: `
-    @switch (layout.layout()) {
-      @case ("tablet") {
-        <app-tablet-shell />
+    @if (!profileReady()) {
+      <!-- Waiting on ProfileService.ready — avoids flashing the picker before localStorage is checked. -->
+    } @else if (!profiles.current()) {
+      <app-profile-picker />
+    } @else {
+      @switch (layout.layout()) {
+        @case ("tablet") {
+          <app-tablet-shell />
+        }
+        @case ("phone") {
+          <app-phone-shell />
+        }
+        @default {
+          <app-desktop-shell />
+        }
       }
-      @case ("phone") {
-        <app-phone-shell />
-      }
-      @default {
-        <app-desktop-shell />
+
+      @if (nav.showProfileSwitcher()) {
+        <app-profile-picker [closable]="true" (closed)="nav.closeProfileSwitcher()" />
       }
     }
   `,
@@ -27,4 +40,11 @@ import { LayoutService } from "./core/services/layout.service";
 export class AppComponent {
   private readonly _kb = inject(KeyboardShortcutsService); // activates global shortcuts
   readonly layout = inject(LayoutService);
+  readonly profiles = inject(ProfileService);
+  readonly nav = inject(NavigationStateService);
+  readonly profileReady = signal(false);
+
+  constructor() {
+    this.profiles.ready.then(() => this.profileReady.set(true));
+  }
 }

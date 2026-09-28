@@ -9,6 +9,7 @@ import { WordSelectionService } from "../../core/services/word-selection.service
 import { BackStackService } from "../../core/services/back-stack.service";
 import { PreferencesService } from "../../core/services/preferences.service";
 import { LayoutService } from "../../core/services/layout.service";
+import { ProfileService } from "../../core/services/profile.service";
 
 type PhoneView = "read" | "study" | "ask" | "more";
 
@@ -89,9 +90,17 @@ type PhoneView = "read" | "study" | "ask" | "more";
             <button class="more-item" (click)="nav.toggleNotesList()">
               📝 My Notes
             </button>
+            <button class="more-item" (click)="nav.toggleSessions()">
+              🕘 Study sessions
+            </button>
             <button class="more-item" (click)="nav.toggleBooks()">
               📚 Books
             </button>
+            @if (profiles.current(); as p) {
+              <button class="more-item" (click)="nav.toggleProfileSwitcher()">
+                👤 Switch person ({{ p.name }})
+              </button>
+            }
             <div class="more-row">
               <button (click)="prefs.decreaseFontSize()">A−</button>
               <span>{{ prefs.fontSize() }}px</span>
@@ -399,6 +408,7 @@ export class PhoneShellComponent {
   readonly nav = inject(NavigationStateService);
   readonly prefs = inject(PreferencesService);
   readonly layout = inject(LayoutService);
+  readonly profiles = inject(ProfileService);
   private readonly wordSelection = inject(WordSelectionService);
   private readonly backStack = inject(BackStackService);
 
@@ -448,7 +458,8 @@ export class PhoneShellComponent {
       this.nav.showSearch() ||
       this.nav.showCompare() ||
       this.nav.showNotesList() ||
-      this.nav.showBooks()
+      this.nav.showBooks() ||
+      this.nav.showSessions()
     ) {
       this.setView("read");
     }

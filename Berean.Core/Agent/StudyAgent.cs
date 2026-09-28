@@ -44,9 +44,17 @@ public class StudyAgent
 
     /// <summary>
     /// Called after each turn with the messages it added (the plain question, any tool calls and
-    /// results, the answer) — what a store needs to persist the conversation.
+    /// results, the answer) and that turn's context size — what a store needs to persist the
+    /// conversation and enforce the session length limit (Phase 5).
     /// </summary>
-    public Func<IReadOnlyList<ChatMessage>, Task>? TurnCompleted { get; set; }
+    public Func<AgentTurn, Task>? TurnCompleted { get; set; }
+
+    /// <summary>
+    /// A recap of an earlier, now-full session (Phase 5's "continue in a new session"), put before
+    /// the retrieved material on the first turn only. Because it rides in that first user message,
+    /// it's stored and replayed on resume like anything else — no special-casing needed there.
+    /// </summary>
+    public string? CarryOver { get; set; }
 
     /// <summary>The messages so far, system prompt included.</summary>
     public IReadOnlyList<ChatMessage> History => _history;
@@ -99,7 +107,8 @@ public class StudyAgent
         else
             _log.LogInformation("[Agent] No RAG context for this query");
 
-        var userMessage = new ChatMessage(ChatRole.User, ComposeUserMessage(userInput, ragContext, perspectives, mode))
+        var isFirstTurn = _history.Count == 1; // just the system prompt so far — never true after LoadHistory
+        var userMessage = new ChatMessage(ChatRole.User, ComposeUserMessage(userInput, ragContext, perspectives, mode, isFirstTurn))
         {
             // The plain question, for building a transcript without the retrieved material.
             AdditionalProperties = new() { [TranscriptBuilder.QuestionProperty] = userInput },
@@ -140,7 +149,34 @@ public class StudyAgent
         UsageTracker.Record(_log, _llm, response.Usage, timer.Elapsed);
 
         if (TurnCompleted is not null)
-            await TurnCompleted(_history.GetRange(userIndex, _history.Count - userIndex));
+        {
+            var contextTokens = ComputeContextTokens(updates);
+            await TurnCompleted(new AgentTurn(_history.GetRange(userIndex, _history.Count - userIndex), contextTokens));
+        }
+    }
+
+    /// <summary>
+    /// The context size the model actually held for this turn — the largest single request's
+    /// input tokens, not the sum (function-invoking providers sum every tool round in
+    /// updates.ToChatResponse().Usage, which overstates it) and not just the last request (which
+    /// can understate a turn that briefly ballooned). This feeds a hard limit (Phase 5), so it
+    /// measures the worst case, not the latest one.
+    /// </summary>
+    private int ComputeContextTokens(List<ChatResponseUpdate> updates)
+    {
+        var reported = updates
+            .SelectMany(u => u.Contents.OfType<UsageContent>())
+            .Select(u => u.Details.InputTokenCount)
+            .Where(v => v is > 0)
+            .Select(v => v!.Value)
+            .DefaultIfEmpty(0L)
+            .Max();
+
+        if (reported > 0) return (int)Math.Min(reported, int.MaxValue);
+
+        // No usage reported at all (Ollama can be silent on this) — estimate from what was sent.
+        var estimatedChars = _history.Sum(m => (long)(m.Text?.Length ?? 0));
+        return (int)Math.Min(estimatedChars / 4, int.MaxValue);
     }
 
     /// <summary>
@@ -178,9 +214,12 @@ public class StudyAgent
         _initialized = true;
     }
 
-    private string ComposeUserMessage(string userInput, string? ragContext, IReadOnlyList<Perspective> perspectives, QueryMode mode)
+    private string ComposeUserMessage(
+        string userInput, string? ragContext, IReadOnlyList<Perspective> perspectives, QueryMode mode, bool isFirstTurn)
     {
         var parts = new List<string>();
+        if (isFirstTurn && !string.IsNullOrWhiteSpace(CarryOver))
+            parts.Add($"[Recap of the earlier part of this study]\n{CarryOver}");
         if (!string.IsNullOrWhiteSpace(_config.PerspectiveAddendumTemplate))
             foreach (var p in perspectives)
                 parts.Add(_config.PerspectiveAddendumTemplate
@@ -243,3 +282,6 @@ public class StudyAgent
     private static string TextOf(ChatResponseUpdate update) =>
         string.Concat(update.Contents.OfType<TextContent>().Select(t => t.Text));
 }
+
+/// <summary>What one turn added to the agent's history, and the context size it took to produce it.</summary>
+public sealed record AgentTurn(IReadOnlyList<ChatMessage> Messages, int ContextTokens);

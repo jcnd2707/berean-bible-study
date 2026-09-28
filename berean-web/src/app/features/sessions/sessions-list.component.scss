@@ -1,0 +1,217 @@
+:host { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.sl-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #FAF8F3;
+}
+
+.sl-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #F0EDE6;
+  border-bottom: 0.5px solid #DDD8CE;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.sl-title {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: #1C1917;
+  font-family: Georgia, serif;
+}
+
+.sl-search-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fff;
+  border: 0.5px solid #DDD8CE;
+  border-radius: 6px;
+  padding: 0 8px;
+  min-width: 140px;
+  &:focus-within { border-color: #C8922A; }
+}
+
+.sl-search-icon { color: #A09890; flex-shrink: 0; }
+
+.sl-search {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--fs-sm);
+  color: #1C1917;
+  padding: 6px 0;
+  font-family: inherit;
+  &::placeholder { color: #C0B8B0; }
+}
+
+.panel-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: none;
+  background: transparent;
+  color: #A09890;
+  cursor: pointer;
+  border-radius: 6px;
+  &:hover { background: rgba(160,152,144,0.12); color: #5C5650; }
+}
+
+.sl-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #DDD8CE transparent;
+}
+
+.sl-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.sl-empty {
+  font-size: var(--fs-base);
+  color: #A09890;
+  font-style: italic;
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.loading-dots {
+  display: flex; gap: 6px;
+  span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #C8922A; opacity: 0.6;
+    animation: dot-pulse 1.2s ease-in-out infinite;
+    &:nth-child(2) { animation-delay: 0.2s; }
+    &:nth-child(3) { animation-delay: 0.4s; }
+  }
+}
+@keyframes dot-pulse {
+  0%,80%,100% { transform: scale(0.7); opacity: 0.4; }
+  40%         { transform: scale(1); opacity: 1; }
+}
+
+.sl-section-label {
+  padding: 8px 16px 4px;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #A09890;
+}
+
+.sl-row {
+  padding: 10px 16px;
+  border-bottom: 0.5px solid #EAE6DE;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  transition: background 0.1s;
+
+  &:hover {
+    background: rgba(200,146,42,0.05);
+    border-left-color: #C8922A;
+  }
+}
+
+.sl-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.sl-full-mark {
+  color: #6a9955;
+  font-weight: 700;
+  margin-right: 4px;
+}
+
+.sl-name {
+  font-family: Georgia, serif;
+  font-size: var(--fs-base);
+  font-weight: bold;
+  color: #C8922A;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-rename-input {
+  flex: 1;
+  font-family: Georgia, serif;
+  font-size: var(--fs-base);
+  font-weight: bold;
+  color: #1C1917;
+  background: #fff;
+  border: 1px solid #C8922A;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.sl-date {
+  font-size: var(--fs-xs);
+  color: #C0B8B0;
+  white-space: nowrap;
+}
+
+.sl-meta {
+  font-family: Georgia, serif;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: #5C5650;
+  margin: 0 0 4px;
+}
+
+.sl-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sl-action {
+  min-width: var(--tap-min);
+  min-height: 26px;
+  background: transparent;
+  border: none;
+  color: #A09890;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: var(--fs-sm);
+  &:hover { background: rgba(160,152,144,0.12); color: #5C5650; }
+}
+.sl-action--on { color: #C8922A; }
+
+.sl-confirm {
+  font-size: var(--fs-xs);
+  color: #5C5650;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sl-confirm-yes, .sl-confirm-no {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.sl-confirm-yes { color: #C0392B; font-weight: 600; }
+.sl-confirm-no { color: #A09890; }

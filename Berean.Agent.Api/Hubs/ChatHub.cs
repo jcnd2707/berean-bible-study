@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Berean.Agent.Api.Services;
 using Microsoft.AspNetCore.SignalR;
 
@@ -12,13 +13,21 @@ namespace Berean.Agent.Api.Hubs;
 ///   StartConversation(modelId?, perspectives?)   a new conversation (StartSession is the same);
 ///                                                 perspectives is locked for the conversation
 ///   ResumeConversation(id)         reopen a saved conversation (keeps its perspective selection)
-///   ListConversations()
+///   ListConversations(query?)      pinned first, then most recently used; query matches title or
+///                                   the profile's own questions
 ///   DeleteConversation(id)
-///   SendMessage(text, mode)
+///   RenameConversation(id, title)
+///   SetPinned(id, pinned)
+///   SendMessage(text, mode, location?)   location is {moduleId,book,chapter,verse} or null;
+///                                         refused once the session is full (Phase 5)
+///   ContinueConversation()         ends a full session and starts the next part of the same study
 ///   SetLanguage(language)
-///   ResetConversation()
 ///   GetRagStatus()
 ///   ReindexDocuments()
+///
+/// There is no "reset" method — a new conversation is StartConversation(modelId, perspectives),
+/// called directly by the client, so it never loses the model/perspective selection the way a
+/// no-argument reset used to.
 ///
 /// Server → Client (for one answer, in this order):
 ///   TokenReceived("")            the answer has started
@@ -30,34 +39,59 @@ namespace Berean.Agent.Api.Hubs;
 /// Other events:
 ///   SessionStarted(ragChunks)
 ///   ConversationStarted(id)
-///   ConversationLoaded(id, title, modelId, messages)   reply to ResumeConversation
-///   ConversationList(list)         newest first
+///   ConversationLoaded(id, title, modelId, messages, perspectives, lastLocation, pinned)   reply to ResumeConversation
+///   ConversationList(list)         pinned first, then most recently used
 ///   ConversationDeleted(id)
-///   ConversationReset()
+///   SessionLimit(state)            sent after StartConversation/ResumeConversation/MessageComplete —
+///                                   {questionsUsed,maxQuestions,contextTokens,maxContextTokens,state}
+///   ConversationContinued(previousId, previousTitle, recap)   sent alongside ContinueConversation's
+///                                                              own ConversationStarted(newId)
 ///   RagStatus(hasIndex, chunks, details)
 ///   RagIndexing(message) / RagIndexed(success, message)
 ///   Error(message)
 /// </summary>
-public class ChatHub : Hub
+public partial class ChatHub : Hub
 {
     private readonly StudySessionService _sessions;
+    private readonly SessionLimits _limits;
     private readonly IHubContext<ChatHub> _hubContext;
     private readonly ILogger<ChatHub> _log;
 
-    public ChatHub(StudySessionService sessions, IHubContext<ChatHub> hubContext, ILogger<ChatHub> log)
+    public ChatHub(StudySessionService sessions, SessionLimits limits, IHubContext<ChatHub> hubContext, ILogger<ChatHub> log)
     {
         _sessions = sessions;
+        _limits = limits;
         _hubContext = hubContext;
         _log = log;
     }
 
     // ── Connection lifecycle ───────────────────────────────────────────────
 
+    /// <summary>
+    /// The profile travels as a query param (browsers can't set headers on a WebSocket — D3),
+    /// checked once here against the Resource API, which owns profiles (D2). This is separation,
+    /// not access control (D1): the check exists so a stale or missing profile fails fast with a
+    /// clear message instead of every later call throwing "no profile set".
+    /// </summary>
     public override async Task OnConnectedAsync()
     {
+        var profileId = Context.GetHttpContext()?.Request.Query["profile"].ToString();
+
+        if (string.IsNullOrEmpty(profileId) || !ProfileIdFormat().IsMatch(profileId) || !await _sessions.ProfileExistsAsync(profileId))
+        {
+            _log.LogWarning("[Hub] Rejected {Id}: no valid profile in the connection URL", Context.ConnectionId);
+            await Clients.Caller.SendAsync("Error", "Choose a profile first.");
+            Context.Abort();
+            return;
+        }
+
+        _sessions.SetProfile(Context.ConnectionId, profileId);
         _log.LogInformation("[Hub] Connected: {Id}", Context.ConnectionId);
         await base.OnConnectedAsync();
     }
+
+    [GeneratedRegex("^[0-9a-f]{32}$")]
+    private static partial Regex ProfileIdFormat();
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
@@ -81,6 +115,7 @@ public class ChatHub : Hub
             var pipeline = await _sessions.StartConversationAsync(Context.ConnectionId, modelId, perspectives);
             await AnnounceSessionAsync(pipeline);
             await Clients.Caller.SendAsync("ConversationStarted", pipeline.ConversationId);
+            await SendLimitStateAsync();
         }
         catch (ArgumentException ex)
         {
@@ -112,7 +147,8 @@ public class ChatHub : Hub
             await AnnounceSessionAsync(resumed.Pipeline);
             await Clients.Caller.SendAsync("ConversationLoaded",
                 resumed.Info.Id, resumed.Info.Title, resumed.Info.ModelId, resumed.Messages,
-                resumed.Pipeline.Perspectives.Select(p => p.Id).ToList());
+                resumed.Pipeline.Perspectives.Select(p => p.Id).ToList(), resumed.Info.LastLocation, resumed.Info.Pinned);
+            await SendLimitStateAsync();
         }
         catch (Exception ex)
         {
@@ -121,16 +157,29 @@ public class ChatHub : Hub
         }
     }
 
-    public async Task ListConversations()
+    public async Task ListConversations(string? query = null)
     {
-        var list = await _sessions.ListConversationsAsync();
-        await Clients.Caller.SendAsync("ConversationList", list.Select(ConversationDto.From).ToList());
+        var list = await _sessions.ListConversationsAsync(Context.ConnectionId, query);
+        await Clients.Caller.SendAsync("ConversationList", list.Select(c => ConversationDto.From(c, _limits)).ToList());
     }
 
     public async Task DeleteConversation(string conversationId)
     {
-        await _sessions.DeleteConversationAsync(conversationId);
+        await _sessions.DeleteConversationAsync(Context.ConnectionId, conversationId);
         await Clients.Caller.SendAsync("ConversationDeleted", conversationId);
+    }
+
+    public async Task RenameConversation(string conversationId, string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return;
+        await _sessions.RenameConversationAsync(Context.ConnectionId, conversationId, title.Trim());
+        await ListConversations();
+    }
+
+    public async Task SetPinned(string conversationId, bool pinned)
+    {
+        await _sessions.SetPinnedAsync(Context.ConnectionId, conversationId, pinned);
+        await ListConversations();
     }
 
     private async Task AnnounceSessionAsync(StudyPipeline pipeline)
@@ -147,7 +196,7 @@ public class ChatHub : Hub
 
     // ── SendMessage ────────────────────────────────────────────────────────
 
-    public async Task SendMessage(string text, string mode = "Deep")
+    public async Task SendMessage(string text, string mode = "Deep", LocationDto? location = null)
     {
         var pipeline = _sessions.GetPipeline(Context.ConnectionId);
         if (pipeline is null)
@@ -155,6 +204,20 @@ public class ChatHub : Hub
             await Clients.Caller.SendAsync("Error", "No session. Call StartSession first.");
             return;
         }
+
+        // The enforcement (D7): a session at its limit answers no further questions. The client
+        // also disables its input on "full", but this is what actually stops it.
+        var limitState = await _sessions.GetLimitStateAsync(Context.ConnectionId);
+        if (limitState.State == "full")
+        {
+            await Clients.Caller.SendAsync("SessionLimit", limitState);
+            return;
+        }
+
+        // Tracks where the study *ends*, not just where it began (Passage, set from the first
+        // message only) — read back by SaveTurnAsync once this turn completes.
+        if (location is not null)
+            pipeline.LastLocationJson = JsonSerializer.Serialize(location, JsonSerializerOptions.Web);
 
         var queryMode = Enum.TryParse<QueryMode>(mode, ignoreCase: true, out var parsed)
             ? parsed
@@ -190,6 +253,7 @@ public class ChatHub : Hub
             }
 
             await Clients.Caller.SendAsync("MessageComplete", reply.Length > 0 ? reply.ToString() : "(no response)");
+            await SendLimitStateAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -197,6 +261,33 @@ public class ChatHub : Hub
             _log.LogError(ex, "[Hub] SendMessage failed");
             await Clients.Caller.SendAsync("Error", $"Error: {ex.Message}");
         }
+    }
+
+    // ── ContinueConversation ───────────────────────────────────────────────
+
+    /// <summary>Ends a full session and starts the next part of the same study, recap carried over (Phase 5).</summary>
+    public async Task ContinueConversation()
+    {
+        try
+        {
+            var result = await _sessions.ContinueConversationAsync(Context.ConnectionId);
+            var pipeline = _sessions.GetPipeline(Context.ConnectionId)!;
+            await AnnounceSessionAsync(pipeline);
+            await Clients.Caller.SendAsync("ConversationStarted", result.NewConversationId);
+            await Clients.Caller.SendAsync("ConversationContinued", result.OldConversationId, result.OldTitle, result.Recap);
+            await SendLimitStateAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "[Hub] ContinueConversation failed");
+            await Clients.Caller.SendAsync("Error", $"Could not continue the session: {ex.Message}");
+        }
+    }
+
+    private async Task SendLimitStateAsync()
+    {
+        var state = await _sessions.GetLimitStateAsync(Context.ConnectionId);
+        await Clients.Caller.SendAsync("SessionLimit", state);
     }
 
     // ── SetLanguage ────────────────────────────────────────────────────────
@@ -210,15 +301,6 @@ public class ChatHub : Hub
         _sessions.SetLanguage(Context.ConnectionId, language);
         await Clients.Caller.SendAsync("LanguageSet", language);
         _log.LogInformation("[Hub] {ConnId} language={Lang}", Context.ConnectionId, language);
-    }
-
-    // ── ResetConversation ──────────────────────────────────────────────────
-
-    /// <summary>Starts a fresh conversation. The old one stays saved and can be reopened.</summary>
-    public async Task ResetConversation()
-    {
-        await StartConversation(null);
-        await Clients.Caller.SendAsync("ConversationReset");
     }
 
     // ── GetRagStatus ───────────────────────────────────────────────────────
@@ -331,7 +413,15 @@ public record SourceDto(
 }
 
 /// <summary>A saved conversation, as the conversation list shows it.</summary>
-public record ConversationDto(string Id, string Title, string UpdatedAt, string? Passage, string? ModelId)
+public record ConversationDto(
+    string Id, string Title, string UpdatedAt, string? Passage, string? ModelId, string? LastLocation, bool Pinned,
+    bool Full, string? Recap)
 {
-    public static ConversationDto From(ConversationInfo c) => new(c.Id, c.Title, c.UpdatedAt, c.Passage, c.ModelId);
+    public static ConversationDto From(ConversationInfo c, SessionLimits limits) => new(
+        c.Id, c.Title, c.UpdatedAt, c.Passage, c.ModelId, c.LastLocation, c.Pinned,
+        limits.Evaluate(c.QuestionCount, c.ContextTokens ?? 0).State == "full",
+        c.Recap);
 }
+
+/// <summary>Where the reader was when a message was sent — the client's BibleLocation, one to one.</summary>
+public record LocationDto(string? ModuleId, string? Book, int? Chapter, int? Verse);

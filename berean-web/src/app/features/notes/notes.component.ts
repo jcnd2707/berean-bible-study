@@ -15,10 +15,15 @@ import {
   switchMap,
   catchError,
 } from "rxjs/operators";
-import { Subject, EMPTY, of } from "rxjs";
+import { Subject, EMPTY, of, firstValueFrom } from "rxjs";
 
 import { NotesService } from "../../core/services/notes.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
+import { PendingSavesService } from "../../core/services/pending-saves.service";
+import { environment } from "../../../environments/environment";
+
+const PROFILE_STORAGE_KEY = "berean_profileId";
+const PROFILE_HEADER = "X-Berean-Profile";
 
 @Component({
   selector: "app-notes",
@@ -29,7 +34,11 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
 })
 export class NotesComponent implements OnInit, OnDestroy {
   private readonly notesService = inject(NotesService);
+  private readonly pendingSaves = inject(PendingSavesService);
   readonly nav = inject(NavigationStateService);
+
+  private unregisterFlush: (() => void) | null = null;
+  private readonly onPageHide = () => this.flushOnUnload();
 
   readonly noteText = signal<string>("");
   readonly savedText = signal<string>("");
@@ -65,6 +74,9 @@ export class NotesComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.refreshNotedRefs();
+
+    this.unregisterFlush = this.pendingSaves.register(() => this.flush());
+    window.addEventListener("pagehide", this.onPageHide);
 
     this.save$
       .pipe(
@@ -111,6 +123,48 @@ export class NotesComponent implements OnInit, OnDestroy {
     if (ref && this.isDirty() && text.trim()) {
       this.notesService.upsert(ref, text).subscribe();
     }
+    this.unregisterFlush?.();
+    window.removeEventListener("pagehide", this.onPageHide);
+  }
+
+  /**
+   * Same idea as the ngOnDestroy backstop above, but awaited: PendingSavesService.flushAll() calls
+   * this before a profile switch reloads the page (PROFILES_AND_SESSIONS_PLAN.md D4), and the
+   * switch must not proceed — and change which profile the interceptor stamps on requests — until
+   * this save under the *current* profile has actually landed.
+   */
+  private async flush(): Promise<void> {
+    const ref = this.reference();
+    const text = this.noteText();
+    if (!ref || !this.isDirty() || !text.trim()) return;
+    await firstValueFrom(this.notesService.upsert(ref, text));
+  }
+
+  /**
+   * pagehide can't wait for a promise, so this bypasses Angular's HttpClient (and its profile
+   * interceptor, which needs DI machinery this handler doesn't have time for) and fires a raw
+   * keepalive fetch with the profile header set by hand instead — the same gap the ngOnDestroy
+   * backstop above already had for closing the tab, now fixed for both.
+   */
+  private flushOnUnload(): void {
+    const ref = this.reference();
+    const text = this.noteText();
+    if (!ref || !this.isDirty() || !text.trim()) return;
+
+    let profileId: string | null = null;
+    try {
+      profileId = localStorage.getItem(PROFILE_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (!profileId) return;
+
+    fetch(`${environment.apiBaseUrl}/api/notes/${ref}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", [PROFILE_HEADER]: profileId },
+      body: JSON.stringify({ text }),
+      keepalive: true,
+    }).catch(() => {});
   }
 
   deleteNote(): void {

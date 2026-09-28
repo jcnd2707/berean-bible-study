@@ -72,23 +72,23 @@
         @for (qa of quickAsks(); track qa.label) {
           <button
             class="chip"
-            [disabled]="!agentReady() || isStreaming()"
+            [disabled]="!agentReady() || isStreaming() || isFull()"
             (click)="quickAsk(qa.prompt)"
           >
             {{ qa.label }}
           </button>
         }
         <button
-          class="reset-btn"
-          [class.reset-btn--on]="showHistory()"
-          title="Saved conversations"
-          [disabled]="!agentReady() && !showHistory()"
-          (click)="toggleHistory()"
+          class="reset-btn history-btn"
+          [class.reset-btn--on]="nav.showSessions()"
+          title="Study sessions"
+          (click)="toggleSessions()"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" />
             <polyline points="8 4.5 8 8 10.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
+          <span>History</span>
         </button>
         <button
           class="reset-btn"
@@ -129,16 +129,16 @@
           </svg>
         </button>
         <button
-          class="reset-btn"
-          [class.reset-btn--on]="showHistory()"
-          title="Saved conversations"
-          [disabled]="!agentReady() && !showHistory()"
-          (click)="toggleHistory()"
+          class="reset-btn history-btn"
+          [class.reset-btn--on]="nav.showSessions()"
+          title="Study sessions"
+          (click)="toggleSessions()"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" />
             <polyline points="8 4.5 8 8 10.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
+          <span>History</span>
         </button>
         <button
           class="reset-btn"
@@ -236,7 +236,7 @@
       @for (qa of quickAsks(); track qa.label) {
         <button
           class="chip"
-          [disabled]="!agentReady() || isStreaming()"
+          [disabled]="!agentReady() || isStreaming() || isFull()"
           (click)="quickAsk(qa.prompt)"
         >
           {{ qa.label }}
@@ -253,35 +253,26 @@
     </div>
   }
 
-  <!-- Saved conversations -->
-  @if (showHistory()) {
-    <div class="history-list">
-      @if (conversations().length === 0) {
-        <p class="history-empty">No saved conversations yet. A conversation is saved once its first question is answered.</p>
-      }
-      @for (c of conversations(); track c.id) {
-        <div
-          class="history-item"
-          [class.history-item--current]="c.id === currentConversationId()"
-          role="button"
-          tabindex="0"
-          (click)="openConversation(c.id)"
-          (keydown.enter)="openConversation(c.id)"
-        >
-          <span class="history-title">{{ c.title }}</span>
-          <span class="history-meta">
-            {{ conversationDate(c) }}@if (c.passage) { · {{ c.passage }} }
-          </span>
-          <button
-            type="button"
-            class="history-delete"
-            title="Delete this conversation"
-            (click)="deleteConversation($event, c.id)"
-          >×</button>
-        </div>
-      }
+  <!-- Continuing a reopened session (set by Study sessions' Open action; not shown for the silent auto-resume-after-reload) -->
+  @if (nav.continuingBanner(); as banner) {
+    <div class="continuing-banner">
+      <span>
+        Continuing: <strong>{{ banner.title }}</strong>
+        · last studied {{ formatBannerDate(banner.lastStudiedIso) }}
+        @if (banner.passage) { · {{ banner.passage }} }
+      </span>
+      <button type="button" class="continuing-dismiss" title="Dismiss" (click)="nav.clearContinuingBanner()">✕</button>
     </div>
-  } @else {
+  }
+
+  <!-- This session was started by "Continue in a new session" from a full one (Phase 5) -->
+  @if (continuedFrom(); as prev) {
+    <details class="continued-from-banner">
+      <summary>Continued from <strong>{{ prev.title }}</strong></summary>
+      <p>{{ prev.recap }}</p>
+    </details>
+  }
+
   <!-- Messages -->
   <div class="msg-list" #msgList>
     @if (messages().length === 0 && agentReady()) {
@@ -365,7 +356,6 @@
       </div>
     }
   </div>
-  }
 
   <!-- Context strip -->
   <div class="ctx-strip">
@@ -378,30 +368,53 @@
     }
   </div>
 
-  <!-- Input -->
-  <div class="chat-foot">
-    <input
-      class="chat-input"
-      [value]="inputText()"
-      (input)="setInput($any($event.target).value)"
-      (keydown)="onKeydown($event)"
-      placeholder="Ask about this passage…"
-      [disabled]="!agentReady() || isStreaming()"
-    />
-    <button class="send-btn" [disabled]="!canSend()" (click)="send()">
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 16 16"
-        fill="none"
-        stroke="white"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <line x1="2" y1="8" x2="14" y2="8" />
-        <polyline points="9 3 14 8 9 13" />
-      </svg>
-    </button>
-  </div>
+  <!-- Session limit notices (Phase 5) -->
+  @if (isFull()) {
+    <div class="limit-full-card">
+      <p>This session is complete.</p>
+      <div class="limit-full-actions">
+        <button type="button" class="limit-continue-btn" (click)="continueSession()">Continue in a new session</button>
+        <button type="button" class="limit-fresh-btn" (click)="reset()">Start fresh</button>
+      </div>
+    </div>
+  } @else {
+    @if (isNearing()) {
+      <div class="limit-nearing-notice">
+        @if (questionsAreTheCloseLimit()) {
+          {{ limitState()!.maxQuestions - limitState()!.questionsUsed }} question{{ limitState()!.maxQuestions - limitState()!.questionsUsed === 1 ? "" : "s" }} left in this session. Long sessions make the assistant less focused.
+        } @else {
+          This session is holding a lot of material. It will wrap up soon.
+        }
+      </div>
+    } @else if (showLimitCounter()) {
+      <div class="limit-counter">{{ limitState()!.questionsUsed }} / {{ limitState()!.maxQuestions }}</div>
+    }
+
+    <!-- Input -->
+    <div class="chat-foot">
+      <input
+        class="chat-input"
+        [value]="inputText()"
+        (input)="setInput($any($event.target).value)"
+        (keydown)="onKeydown($event)"
+        placeholder="Ask about this passage…"
+        [disabled]="!agentReady() || isStreaming() || isFull()"
+      />
+      <button class="send-btn" [disabled]="!canSend()" (click)="send()">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="white"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <line x1="2" y1="8" x2="14" y2="8" />
+          <polyline points="9 3 14 8 9 13" />
+        </svg>
+      </button>
+    </div>
+  }
 </div>
