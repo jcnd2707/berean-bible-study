@@ -446,6 +446,10 @@
   &--streaming {
     border-color: rgba(123, 110, 245, 0.3);
   }
+
+  &--stopped {
+    opacity: 0.75;
+  }
 }
 
 // ── Continuing a reopened session ─────────────────────────────────────────────
@@ -614,6 +618,13 @@
   font-size: var(--fs-xs);
   font-style: italic;
   color: rgba(255, 255, 255, 0.5);
+}
+
+.stopped-label {
+  margin-top: 3px;
+  font-size: var(--fs-2xs);
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .msg-actions {
@@ -856,5 +867,12 @@
   &:disabled {
     opacity: 0.35;
     cursor: default;
+  }
+
+  &--stop {
+    background: #a83b3b;
+    &:hover {
+      background: #c24545;
+    }
   }
 }
