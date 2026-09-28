@@ -70,6 +70,16 @@ const QUICK_ASKS_NEUTRAL = [
     label: "Context ↗",
     prompt: "What is the historical and cultural context of this passage?",
   },
+  {
+    label: "Questions ↗",
+    prompt:
+      "Write 6–8 discussion questions on this passage for a small group, moving from observation (what the text says) to interpretation (what it means) to application. Where readers or traditions interpret it differently, ask the question openly instead of assuming one reading.",
+  },
+  {
+    label: "Outline ↗",
+    prompt:
+      "Give an outline of this passage: its main sections with verse ranges, the key words or repeated ideas, and where the argument or story turns.",
+  },
 ];
 
 const perspectiveQuickAsk = (label: string) => [
