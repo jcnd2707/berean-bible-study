@@ -53,7 +53,7 @@ import { LayoutService } from "../../core/services/layout.service";
           here. Tablet/phone have no other home for them, so this panel
           becomes their tabbed "study panel" (MOBILE_PLAN.md §3/§5).
         -->
-        @if (layout.layout() !== "desktop") {
+        @if (layout.layout() === "tablet") {
           <button
             class="panel-tab"
             [class.active]="activeTab() === 'dictionary'"
@@ -80,7 +80,7 @@ import { LayoutService } from "../../core/services/layout.service";
         <app-commentary [hidden]="activeTab() !== 'commentary'" />
         <app-notes [hidden]="activeTab() !== 'notes'" />
         <app-cross-references [hidden]="activeTab() !== 'xrefs'" />
-        @if (layout.layout() !== "desktop") {
+        @if (layout.layout() === "tablet") {
           <app-dictionary-panel [hidden]="activeTab() !== 'dictionary'" />
           <app-ai-chat [hidden]="activeTab() !== 'ask'" />
         }
@@ -173,11 +173,13 @@ export class RightPanelComponent {
   });
 
   // MOBILE_PLAN.md §4.5: looking up a word should switch to the Dictionary
-  // tab where there's no separate always-visible dictionary panel to show it in.
+  // tab where there's no separate always-visible dictionary panel to show
+  // it in. Phone has no Dictionary tab (PhoneShellComponent opens its own
+  // sheet instead), so this is tablet-only.
   private readonly _wordLookupSwitch = effect(() => {
     const selection = this.wordSelection.selection();
     if (!selection) return;
-    if (this.layout.layout() === "desktop") return;
+    if (this.layout.layout() !== "tablet") return;
     this.activeTab.set("dictionary");
   });
 }
