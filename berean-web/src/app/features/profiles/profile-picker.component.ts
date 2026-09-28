@@ -52,9 +52,10 @@ import { Profile, ProfileService } from "../../core/services/profile.service";
             @if (showAdoptOption()) {
               <label class="adopt">
                 <input type="checkbox" [(ngModel)]="keepExisting" name="keepExisting" />
-                Keep the notes made before profiles?
-                @if (unownedCount() !== null && unownedCount()! > 0) {
-                  ({{ unownedCount() }} note{{ unownedCount() === 1 ? "" : "s" }})
+                Keep the notes and study sessions made before profiles?
+                @if (unownedNotes() !== null && unownedSessions() !== null) {
+                  ({{ unownedNotes() }} note{{ unownedNotes() === 1 ? "" : "s" }},
+                  {{ unownedSessions() }} session{{ unownedSessions() === 1 ? "" : "s" }})
                 }
               </label>
             }
@@ -246,7 +247,8 @@ export class ProfilePickerComponent {
   readonly creating = signal(false);
   readonly switching = signal(false);
   readonly error = signal<string | null>(null);
-  readonly unownedCount = signal<number | null>(null);
+  readonly unownedNotes = signal<number | null>(null);
+  readonly unownedSessions = signal<number | null>(null);
 
   newName = "";
   keepExisting = true;
@@ -256,10 +258,14 @@ export class ProfilePickerComponent {
   startAdding(): void {
     this.error.set(null);
     this.adding.set(true);
-    if (this.showAdoptOption() && this.unownedCount() === null) {
-      this.profileService.unownedCounts().subscribe({
-        next: (r) => this.unownedCount.set(r.notes),
-        error: () => this.unownedCount.set(null),
+    if (this.showAdoptOption() && this.unownedNotes() === null) {
+      this.profileService.unownedNotesCount().subscribe({
+        next: (r) => this.unownedNotes.set(r.notes),
+        error: () => this.unownedNotes.set(null),
+      });
+      this.profileService.unownedSessionsCount().subscribe({
+        next: (r) => this.unownedSessions.set(r.count),
+        error: () => this.unownedSessions.set(null),
       });
     }
   }
@@ -298,9 +304,14 @@ export class ProfilePickerComponent {
     try {
       const profile = await this.profileService.create(name);
       if (isFirstProfile && this.keepExisting) {
-        await new Promise<void>((resolve) =>
-          this.profileService.adoptUnowned(profile.id).subscribe({ next: () => resolve(), error: () => resolve() }),
-        );
+        await Promise.all([
+          new Promise<void>((resolve) =>
+            this.profileService.adoptUnownedNotes(profile.id).subscribe({ next: () => resolve(), error: () => resolve() }),
+          ),
+          new Promise<void>((resolve) =>
+            this.profileService.adoptUnownedSessions(profile.id).subscribe({ next: () => resolve(), error: () => resolve() }),
+          ),
+        ]);
       }
       this.adding.set(false);
       this.newName = "";

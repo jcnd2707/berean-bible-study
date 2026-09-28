@@ -59,6 +59,15 @@ namespace Berean.Agent.Api
             app.MapGet("/api/perspectives", (StudySessionService sessions) =>
                 Results.Ok(sessions.GetPerspectives()));
 
+            // The profile picker's "keep what's already here?" step (PROFILES_AND_SESSIONS_PLAN.md D6).
+            app.MapGet("/api/conversations/unowned", async (StudySessionService sessions) =>
+                Results.Ok(new { count = await sessions.CountUnownedConversationsAsync() }));
+            app.MapPost("/api/profiles/{id}/adopt-unowned-conversations", async (string id, StudySessionService sessions) =>
+            {
+                var moved = await sessions.AdoptUnownedConversationsAsync(id);
+                return Results.Ok(new { moved, remaining = await sessions.CountUnownedConversationsAsync() });
+            });
+
             // ── SignalR hub ────────────────────────────────────────────────────────────
 
             app.MapHub<ChatHub>("/hubs/chat");

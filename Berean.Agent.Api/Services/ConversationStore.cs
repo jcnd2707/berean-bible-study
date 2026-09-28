@@ -12,7 +12,8 @@ public record ConversationInfo(
     string? Passage,
     string? ModelId,
     string? ClaudeSessionId,
-    IReadOnlyList<string>? PerspectiveIds = null);
+    IReadOnlyList<string>? PerspectiveIds = null,
+    string? ProfileId = null); // null = unowned, written before profiles existed (see AdoptUnownedAsync)
 
 /// <summary>One stored message: the text for display, and the full message for replaying it to a model.</summary>
 public record StoredMessage(
@@ -46,6 +47,8 @@ public sealed class ConversationStore
 
     private void EnsureCreated()
     {
+        BackUpBeforeProfilesIfNeeded();
+
         using var conn = Open();
         using (var cmd = conn.CreateCommand())
         {
@@ -74,18 +77,58 @@ public sealed class ConversationStore
             cmd.ExecuteNonQuery();
         }
 
-        // Upgrades a database created before perspectives existed.
+        // Upgrades a database created before perspectives (and, later, profiles) existed.
         AddColumnIfMissing(conn, "Conversations", "Perspectives", "TEXT");
+        AddColumnIfMissing(conn, "Conversations", "ProfileId", "TEXT"); // null = unowned
+
+        using (var idx = conn.CreateCommand())
+        {
+            idx.CommandText = "CREATE INDEX IF NOT EXISTS IX_Conversations_Profile ON Conversations (ProfileId, UpdatedAt)";
+            idx.ExecuteNonQuery();
+        }
 
         _log.LogInformation("[Conversations] Stored in {Path}", _dbPath);
     }
 
+    /// <summary>
+    /// Backs up chat.db once, the first time it's opened without a ProfileId column — mirrors
+    /// NotesService's pre-profiles backup, even though this migration is additive (ALTER TABLE ADD
+    /// COLUMN) rather than a full rebuild.
+    /// </summary>
+    private void BackUpBeforeProfilesIfNeeded()
+    {
+        if (!File.Exists(_dbPath)) return;
+
+        bool needsBackup;
+        using (var conn = Open())
+            needsBackup = TableExists(conn, "Conversations") && !ColumnExists(conn, "Conversations", "ProfileId");
+        if (!needsBackup) return;
+
+        var backupPath = _dbPath + ".pre-profiles.bak";
+        if (File.Exists(backupPath)) return;
+
+        File.Copy(_dbPath, backupPath);
+        _log.LogInformation("[Conversations] Backed up pre-profiles chat.db to {Path}", backupPath);
+    }
+
+    private static bool TableExists(SqliteConnection conn, string table)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $name";
+        cmd.Parameters.AddWithValue("$name", table);
+        return (long)cmd.ExecuteScalar()! > 0;
+    }
+
+    private static bool ColumnExists(SqliteConnection conn, string table, string column)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{column}'";
+        return (long)cmd.ExecuteScalar()! > 0;
+    }
+
     private static void AddColumnIfMissing(SqliteConnection conn, string table, string column, string definition)
     {
-        using var check = conn.CreateCommand();
-        check.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name='{column}'";
-        var exists = (long)check.ExecuteScalar()! > 0;
-        if (exists) return;
+        if (ColumnExists(conn, table, column)) return;
 
         using var alter = conn.CreateCommand();
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition}";
@@ -108,8 +151,8 @@ public sealed class ConversationStore
         await using var conn = Open();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO Conversations (Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives)
-            VALUES ($id, $title, $created, $updated, $passage, $model, $session, $perspectives)
+            INSERT INTO Conversations (Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives, ProfileId)
+            VALUES ($id, $title, $created, $updated, $passage, $model, $session, $perspectives, $profile)
             """;
         cmd.Parameters.AddWithValue("$id", c.Id);
         cmd.Parameters.AddWithValue("$title", c.Title);
@@ -119,28 +162,38 @@ public sealed class ConversationStore
         cmd.Parameters.AddWithValue("$model", (object?)c.ModelId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$session", (object?)c.ClaudeSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$perspectives", SerializePerspectives(c.PerspectiveIds));
+        cmd.Parameters.AddWithValue("$profile", (object?)c.ProfileId ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<ConversationInfo?> GetAsync(string id, CancellationToken ct = default)
-    {
-        await using var conn = Open();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives FROM Conversations WHERE Id = $id";
-        cmd.Parameters.AddWithValue("$id", id);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        return await r.ReadAsync(ct) ? Map(r) : null;
-    }
-
-    /// <summary>Most recently used first.</summary>
-    public async Task<List<ConversationInfo>> ListAsync(int limit = 100, CancellationToken ct = default)
+    /// <summary>
+    /// A stale or foreign id (wrong profile, or gone) comes back null just like a missing one —
+    /// callers (ResumeConversationAsync) already treat that as "start fresh" rather than an error.
+    /// </summary>
+    public async Task<ConversationInfo?> GetAsync(string id, string profileId, CancellationToken ct = default)
     {
         await using var conn = Open();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives
-            FROM Conversations ORDER BY UpdatedAt DESC LIMIT $limit
+            SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives, ProfileId
+            FROM Conversations WHERE Id = $id AND ProfileId = $profile
             """;
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.Parameters.AddWithValue("$profile", profileId);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        return await r.ReadAsync(ct) ? Map(r) : null;
+    }
+
+    /// <summary>Most recently used first, scoped to one profile.</summary>
+    public async Task<List<ConversationInfo>> ListAsync(string profileId, int limit = 100, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives, ProfileId
+            FROM Conversations WHERE ProfileId = $profile ORDER BY UpdatedAt DESC LIMIT $limit
+            """;
+        cmd.Parameters.AddWithValue("$profile", profileId);
         cmd.Parameters.AddWithValue("$limit", limit);
         var list = new List<ConversationInfo>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
@@ -148,17 +201,41 @@ public sealed class ConversationStore
         return list;
     }
 
-    public async Task<bool> DeleteAsync(string id, CancellationToken ct = default)
+    public async Task<bool> DeleteAsync(string id, string profileId, CancellationToken ct = default)
     {
         await using var conn = Open();
         await using var cmd = conn.CreateCommand();
-        // Foreign keys are off by default in SQLite, so delete the messages explicitly.
+        // Foreign keys are off by default in SQLite, so delete the messages explicitly. Both
+        // statements are guarded by ProfileId, so a foreign id deletes nothing at all.
         cmd.CommandText = """
-            DELETE FROM Messages WHERE ConversationId = $id;
-            DELETE FROM Conversations WHERE Id = $id;
+            DELETE FROM Messages WHERE ConversationId IN (SELECT Id FROM Conversations WHERE Id = $id AND ProfileId = $profile);
+            DELETE FROM Conversations WHERE Id = $id AND ProfileId = $profile;
             """;
         cmd.Parameters.AddWithValue("$id", id);
+        cmd.Parameters.AddWithValue("$profile", profileId);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    public async Task<int> CountUnownedAsync(CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM Conversations WHERE ProfileId IS NULL";
+        return Convert.ToInt32((long)(await cmd.ExecuteScalarAsync(ct))!);
+    }
+
+    /// <summary>
+    /// Moves every unowned conversation to <paramref name="profileId"/>. Unlike notes, conversation
+    /// ids are globally unique (server-generated GUIDs), so there's no primary-key clash to guard
+    /// against — every unowned conversation moves.
+    /// </summary>
+    public async Task<int> AdoptUnownedAsync(string profileId, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE Conversations SET ProfileId = $profile WHERE ProfileId IS NULL";
+        cmd.Parameters.AddWithValue("$profile", profileId);
+        return await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task RenameAsync(string id, string title, CancellationToken ct = default)
@@ -286,7 +363,8 @@ public sealed class ConversationStore
         r.IsDBNull(4) ? null : r.GetString(4),
         r.IsDBNull(5) ? null : r.GetString(5),
         r.IsDBNull(6) ? null : r.GetString(6),
-        r.IsDBNull(7) ? null : DeserializePerspectives(r.GetString(7)));
+        r.IsDBNull(7) ? null : DeserializePerspectives(r.GetString(7)),
+        r.IsDBNull(8) ? null : r.GetString(8));
 
     private static object SerializePerspectives(IReadOnlyList<string>? ids) =>
         ids is { Count: > 0 } ? JsonSerializer.Serialize(ids) : DBNull.Value;

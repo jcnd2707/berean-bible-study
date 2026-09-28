@@ -32,7 +32,19 @@ import { NotesService } from "../../core/services/notes.service";
 import { LayoutService } from "../../core/services/layout.service";
 import { renderAnswerHtml } from "./answer-html";
 
-const CONVERSATION_KEY = "berean_conversationId";
+const CONVERSATION_KEY_PREFIX = "berean_conversationId";
+const PROFILE_STORAGE_KEY = "berean_profileId";
+
+/** One saved-conversation-id slot per profile, so a shared PC resumes the right person's last chat. */
+function conversationStorageKey(): string {
+  try {
+    const profileId = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (profileId) return `${CONVERSATION_KEY_PREFIX}:${profileId}`;
+  } catch {
+    /* ignore */
+  }
+  return CONVERSATION_KEY_PREFIX;
+}
 
 export interface ChatMessage {
   role: "user" | "agent";
@@ -381,7 +393,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   private savedConversationId(): string | null {
     try {
-      return localStorage.getItem(CONVERSATION_KEY);
+      return localStorage.getItem(conversationStorageKey());
     } catch {
       return null;
     }
@@ -389,13 +401,13 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   private rememberConversation(id: string): void {
     try {
-      localStorage.setItem(CONVERSATION_KEY, id);
+      localStorage.setItem(conversationStorageKey(), id);
     } catch {}
   }
 
   private forgetConversation(): void {
     try {
-      localStorage.removeItem(CONVERSATION_KEY);
+      localStorage.removeItem(conversationStorageKey());
     } catch {}
   }
 

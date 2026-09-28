@@ -103,6 +103,12 @@ public class BereanResourceApiClient : IDisposable
         => GetListAsync<ApiDictionaryEntry>(
             $"api/dictionary/{Uri.EscapeDataString(moduleId)}/transliteration?q={Uri.EscapeDataString(term)}&limit={limit}", ct);
 
+    // ── Profiles ──────────────────────────────────────────────────────────────
+
+    /// <summary>Null if there is no such profile — the caller decides what that means (see ChatHub.OnConnectedAsync).</summary>
+    public Task<ApiProfileRecord?> GetProfileAsync(string profileId, CancellationToken ct = default)
+        => GetAsync<ApiProfileRecord>($"api/profiles/{Uri.EscapeDataString(profileId)}", ct);
+
     // ── Books ─────────────────────────────────────────────────────────────────
 
     public Task<List<ApiBookChapterSummary>> GetBookChaptersAsync(

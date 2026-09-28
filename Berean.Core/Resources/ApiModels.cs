@@ -21,3 +21,5 @@ public record ApiBookChapterContent(string ModuleId, int ChapterId, int ChapterN
 public record ApiStrongsBookCount(int Book, string BookName, int Count);
 public record ApiStrongsSample(string Reference, string Word, string Text);
 public record ApiStrongsOccurrences(string Number, int Count, List<ApiStrongsBookCount> ByBook, List<ApiStrongsSample> Sample);
+
+public record ApiProfileRecord(string Id, string Name, string? Color, DateTime CreatedAt);

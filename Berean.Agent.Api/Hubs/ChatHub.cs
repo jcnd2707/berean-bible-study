@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Berean.Agent.Api.Services;
 using Microsoft.AspNetCore.SignalR;
 
@@ -38,7 +39,7 @@ namespace Berean.Agent.Api.Hubs;
 ///   RagIndexing(message) / RagIndexed(success, message)
 ///   Error(message)
 /// </summary>
-public class ChatHub : Hub
+public partial class ChatHub : Hub
 {
     private readonly StudySessionService _sessions;
     private readonly IHubContext<ChatHub> _hubContext;
@@ -53,11 +54,31 @@ public class ChatHub : Hub
 
     // ── Connection lifecycle ───────────────────────────────────────────────
 
+    /// <summary>
+    /// The profile travels as a query param (browsers can't set headers on a WebSocket — D3),
+    /// checked once here against the Resource API, which owns profiles (D2). This is separation,
+    /// not access control (D1): the check exists so a stale or missing profile fails fast with a
+    /// clear message instead of every later call throwing "no profile set".
+    /// </summary>
     public override async Task OnConnectedAsync()
     {
+        var profileId = Context.GetHttpContext()?.Request.Query["profile"].ToString();
+
+        if (string.IsNullOrEmpty(profileId) || !ProfileIdFormat().IsMatch(profileId) || !await _sessions.ProfileExistsAsync(profileId))
+        {
+            _log.LogWarning("[Hub] Rejected {Id}: no valid profile in the connection URL", Context.ConnectionId);
+            await Clients.Caller.SendAsync("Error", "Choose a profile first.");
+            Context.Abort();
+            return;
+        }
+
+        _sessions.SetProfile(Context.ConnectionId, profileId);
         _log.LogInformation("[Hub] Connected: {Id}", Context.ConnectionId);
         await base.OnConnectedAsync();
     }
+
+    [GeneratedRegex("^[0-9a-f]{32}$")]
+    private static partial Regex ProfileIdFormat();
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
@@ -123,13 +144,13 @@ public class ChatHub : Hub
 
     public async Task ListConversations()
     {
-        var list = await _sessions.ListConversationsAsync();
+        var list = await _sessions.ListConversationsAsync(Context.ConnectionId);
         await Clients.Caller.SendAsync("ConversationList", list.Select(ConversationDto.From).ToList());
     }
 
     public async Task DeleteConversation(string conversationId)
     {
-        await _sessions.DeleteConversationAsync(conversationId);
+        await _sessions.DeleteConversationAsync(Context.ConnectionId, conversationId);
         await Clients.Caller.SendAsync("ConversationDeleted", conversationId);
     }
 

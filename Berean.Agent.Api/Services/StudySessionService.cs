@@ -31,9 +31,11 @@ public partial class StudySessionService
 
     private readonly ConcurrentDictionary<string, StudyPipeline> _sessions = new();
     private readonly ConcurrentDictionary<string, string> _languages = new();
+    private readonly ConcurrentDictionary<string, string> _profiles = new();
 
     private readonly object _knowledgeGate = new();
     private Task<BibleKnowledge>? _knowledge;
+    private readonly BereanResourceApiClient? _resourceApi;
 
     public StudySessionService(
         ILoggerFactory logFactory, IConfiguration config, ModelRegistryService models,
@@ -53,6 +55,11 @@ public partial class StudySessionService
             // of "Agents:BibleAgent" — bound here rather than duplicating RetrievalOptions per API.
             _bibleRagConfig.Perspectives = config.GetSection("Perspectives").Get<List<Perspective>>() ?? [];
             _bibleRagConfig.MaxPerspectivesPerQuestion = config.GetValue("MaxPerspectivesPerQuestion", 1);
+
+            // The Agent API doesn't store profiles — it just checks the id with the Resource API,
+            // which already owns them (PROFILES_AND_SESSIONS_PLAN.md D2), reusing the same URL
+            // BibleKnowledge uses for retrieval.
+            _resourceApi = new BereanResourceApiClient(_bibleRagConfig.ResourceApiBaseUrl);
         }
 
         // chat.db lives next to the vector index.
@@ -71,6 +78,21 @@ public partial class StudySessionService
 
     public string GetLanguage(string connectionId) =>
         _languages.TryGetValue(connectionId, out var l) ? l : "en";
+
+    // ── Profile ────────────────────────────────────────────────────────────
+
+    /// <summary>Checked once per connection in ChatHub.OnConnectedAsync (D2) — the Resource API owns profiles, this is one call to it.</summary>
+    public async Task<bool> ProfileExistsAsync(string profileId) =>
+        _resourceApi is not null && await _resourceApi.GetProfileAsync(profileId) is not null;
+
+    /// <summary>Set once in ChatHub.OnConnectedAsync, after the profile id in the query string has been checked to exist.</summary>
+    public void SetProfile(string connectionId, string profileId) => _profiles[connectionId] = profileId;
+
+    /// <summary>Every method below that touches chat.db needs this — a connection with no profile set is a bug, not a 404.</summary>
+    public string GetProfile(string connectionId) =>
+        _profiles.TryGetValue(connectionId, out var id)
+            ? id
+            : throw new InvalidOperationException($"Connection {connectionId} has no profile set.");
 
     // ── Shared library ─────────────────────────────────────────────────────
 
@@ -135,7 +157,7 @@ public partial class StudySessionService
         var pipeline = await BuildPipelineAsync(connectionId, modelId);
         pipeline.ConversationId = Guid.NewGuid().ToString("N");
         pipeline.Perspectives = perspectives;
-        Persist(pipeline, modelId);
+        Persist(pipeline, modelId, GetProfile(connectionId));
 
         _sessions[connectionId] = pipeline;
         return pipeline;
@@ -144,11 +166,13 @@ public partial class StudySessionService
     /// <summary>
     /// Reopens a saved conversation on this connection: the stored messages are replayed to the
     /// model (or, with Claude Code, its CLI session is resumed — with a transcript as the fallback
-    /// when that session is gone). Returns null if there is no such conversation.
+    /// when that session is gone). Returns null if there is no such conversation for this profile —
+    /// a stale id, or one belonging to the other profile, is indistinguishable from "not found".
     /// </summary>
     public async Task<ResumedConversation?> ResumeConversationAsync(string connectionId, string conversationId)
     {
-        var info = await _store.GetAsync(conversationId);
+        var profileId = GetProfile(connectionId);
+        var info = await _store.GetAsync(conversationId, profileId);
         if (info is null) return null;
 
         var stored = await _store.GetMessagesAsync(conversationId);
@@ -160,7 +184,7 @@ public partial class StudySessionService
         if (info.ClaudeSessionId is not null && pipeline.ClaudeCode is { } claude)
             claude.RestoreSession(conversationId, info.ClaudeSessionId, pipeline.MessageCount);
 
-        Persist(pipeline, info.ModelId);
+        Persist(pipeline, info.ModelId, profileId);
         _sessions[connectionId] = pipeline;
 
         _log.LogInformation("[Session] {ConnId} resumed '{Title}' ({Count} stored messages)",
@@ -168,9 +192,14 @@ public partial class StudySessionService
         return new ResumedConversation(info, pipeline, ConversationStore.ToDisplay(stored));
     }
 
-    public Task<List<ConversationInfo>> ListConversationsAsync() => _store.ListAsync();
+    public Task<List<ConversationInfo>> ListConversationsAsync(string connectionId) => _store.ListAsync(GetProfile(connectionId));
 
-    public Task<bool> DeleteConversationAsync(string conversationId) => _store.DeleteAsync(conversationId);
+    public Task<bool> DeleteConversationAsync(string connectionId, string conversationId) =>
+        _store.DeleteAsync(conversationId, GetProfile(connectionId));
+
+    public Task<int> CountUnownedConversationsAsync() => _store.CountUnownedAsync();
+
+    public Task<int> AdoptUnownedConversationsAsync(string profileId) => _store.AdoptUnownedAsync(profileId);
 
     public string? CurrentConversationId(string connectionId) =>
         _sessions.TryGetValue(connectionId, out var p) ? p.ConversationId : null;
@@ -187,11 +216,11 @@ public partial class StudySessionService
 
     // ── Saving ─────────────────────────────────────────────────────────────
 
-    private void Persist(StudyPipeline pipeline, string? modelId) =>
-        pipeline.TurnCompleted = turn => SaveTurnAsync(pipeline, modelId, turn);
+    private void Persist(StudyPipeline pipeline, string? modelId, string profileId) =>
+        pipeline.TurnCompleted = turn => SaveTurnAsync(pipeline, modelId, profileId, turn);
 
     /// <summary>A save that fails is logged, never allowed to break the chat.</summary>
-    private async Task SaveTurnAsync(StudyPipeline pipeline, string? modelId, TurnRecord turn)
+    private async Task SaveTurnAsync(StudyPipeline pipeline, string? modelId, string profileId, TurnRecord turn)
     {
         try
         {
@@ -202,7 +231,7 @@ public partial class StudySessionService
             if (!await _store.ExistsAsync(id))
                 await _store.CreateAsync(new ConversationInfo(
                     id, MakeTitle(firstQuestion), now, now, PassageOf(firstQuestion), modelId, null,
-                    pipeline.Perspectives.Select(p => p.Id).ToList()));
+                    pipeline.Perspectives.Select(p => p.Id).ToList(), profileId));
 
             // The sources ride on the last answer message of the turn.
             var sourcesJson = turn.Retrieval is { Sources.Count: > 0 } r
@@ -268,6 +297,7 @@ public partial class StudySessionService
     {
         _sessions.TryRemove(connectionId, out _);
         _languages.TryRemove(connectionId, out _);
+        _profiles.TryRemove(connectionId, out _);
         _log.LogInformation("[Session] {ConnId} removed", connectionId);
     }
 

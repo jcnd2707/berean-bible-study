@@ -79,12 +79,23 @@ export class ProfileService {
     return profile;
   }
 
-  unownedCounts(): Observable<{ notes: number }> {
+  unownedNotesCount(): Observable<{ notes: number }> {
     return this.http.get<{ notes: number }>(`${this.base}/api/profiles/unowned`);
   }
 
-  adoptUnowned(id: string): Observable<{ moved: number; remaining: number }> {
+  unownedSessionsCount(): Observable<{ count: number }> {
+    return this.http.get<{ count: number }>(`${environment.agentApiUrl}/api/conversations/unowned`);
+  }
+
+  adoptUnownedNotes(id: string): Observable<{ moved: number; remaining: number }> {
     return this.http.post<{ moved: number; remaining: number }>(`${this.base}/api/profiles/${id}/adopt-unowned`, {});
+  }
+
+  adoptUnownedSessions(id: string): Observable<{ moved: number; remaining: number }> {
+    return this.http.post<{ moved: number; remaining: number }>(
+      `${environment.agentApiUrl}/api/profiles/${id}/adopt-unowned-conversations`,
+      {},
+    );
   }
 
   /** The picker's first-ever choice: nothing has loaded under any profile yet, so no reload is needed. */
