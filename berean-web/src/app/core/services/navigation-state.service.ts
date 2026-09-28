@@ -17,6 +17,13 @@ export interface WordContext {
   source: string; // e.g. "Strong's H430" or "Easton's"
 }
 
+/** What the "Continuing: <title> · last studied <date> · <passage>" banner shows. */
+export interface ContinuingSessionInfo {
+  title: string;
+  passage: string | null;
+  lastStudiedIso: string;
+}
+
 @Injectable({ providedIn: "root" })
 export class NavigationStateService {
   private readonly backStack = inject(BackStackService);
@@ -29,6 +36,7 @@ export class NavigationStateService {
   private readonly closeBooksFn = () => this.closeBooks();
   private readonly closeBookDrawerFn = () => this.closeBookDrawer();
   private readonly closeProfileSwitcherFn = () => this.closeProfileSwitcher();
+  private readonly closeSessionsFn = () => this.closeSessions();
 
   private readonly _location = signal<BibleLocation | null>(null);
   private readonly _maxChapter = signal<number>(1);
@@ -46,6 +54,8 @@ export class NavigationStateService {
   // Tablet/phone book+chapter navigation drawer (desktop shows BookSidebar inline instead).
   private readonly _showBookDrawer = signal<boolean>(false);
   private readonly _showProfileSwitcher = signal<boolean>(false);
+  private readonly _showSessions = signal<boolean>(false);
+  private readonly _continuingBanner = signal<ContinuingSessionInfo | null>(null);
   private readonly _requestedRightTab = signal<RightTab | null>(null);
   private readonly _requestedCommentaryModule = signal<string | null>(null);
   private readonly _requestedBook = signal<BookRequest | null>(null);
@@ -65,6 +75,8 @@ export class NavigationStateService {
   readonly showBooks = this._showBooks.asReadonly();
   readonly showBookDrawer = this._showBookDrawer.asReadonly();
   readonly showProfileSwitcher = this._showProfileSwitcher.asReadonly();
+  readonly showSessions = this._showSessions.asReadonly();
+  readonly continuingBanner = this._continuingBanner.asReadonly();
 
   // One-shot requests the panels consume (used when a chat citation is clicked).
   readonly requestedRightTab = this._requestedRightTab.asReadonly();
@@ -99,6 +111,7 @@ export class NavigationStateService {
       return;
     }
     this._showCompare.set(false); // mutual exclusion only — doesn't touch the back stack, open() below replaces it in place
+    this._showSessions.set(false);
     this._showSearch.set(true);
     this.backStack.open(this.closeSearchFn);
   }
@@ -113,6 +126,7 @@ export class NavigationStateService {
       return;
     }
     this._showSearch.set(false);
+    this._showSessions.set(false);
     this._showCompare.set(true);
     this.backStack.open(this.closeCompareFn);
   }
@@ -127,6 +141,7 @@ export class NavigationStateService {
       return;
     }
     this._showBooks.set(false);
+    this._showSessions.set(false);
     this._showNotesList.set(true);
     this.backStack.open(this.closeNotesListFn);
   }
@@ -135,12 +150,30 @@ export class NavigationStateService {
     this._showNotesList.set(false);
     this.backStack.close(this.closeNotesListFn);
   }
+  toggleSessions(): void {
+    if (this._showSessions()) {
+      this.closeSessions();
+      return;
+    }
+    this._showBooks.set(false);
+    this._showNotesList.set(false);
+    this._showSearch.set(false);
+    this._showCompare.set(false);
+    this._showSessions.set(true);
+    this.backStack.open(this.closeSessionsFn);
+  }
+  closeSessions(): void {
+    if (!this._showSessions()) return;
+    this._showSessions.set(false);
+    this.backStack.close(this.closeSessionsFn);
+  }
   toggleBooks(): void {
     if (this._showBooks()) {
       this.closeBooks();
       return;
     }
     this._showNotesList.set(false);
+    this._showSessions.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);
     this._showBooks.set(true);
@@ -218,6 +251,14 @@ export class NavigationStateService {
   }
   clearRequestedBook(): void {
     this._requestedBook.set(null);
+  }
+
+  /** Shown when a session is opened *from the list* (not the silent auto-resume after a reload). */
+  announceContinuing(info: ContinuingSessionInfo): void {
+    this._continuingBanner.set(info);
+  }
+  clearContinuingBanner(): void {
+    this._continuingBanner.set(null);
   }
 
   setNotedReferences(refs: string[]): void {

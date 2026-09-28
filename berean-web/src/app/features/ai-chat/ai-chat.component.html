@@ -79,16 +79,16 @@
           </button>
         }
         <button
-          class="reset-btn"
-          [class.reset-btn--on]="showHistory()"
-          title="Saved conversations"
-          [disabled]="!agentReady() && !showHistory()"
-          (click)="toggleHistory()"
+          class="reset-btn history-btn"
+          [class.reset-btn--on]="nav.showSessions()"
+          title="Study sessions"
+          (click)="toggleSessions()"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" />
             <polyline points="8 4.5 8 8 10.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
+          <span>History</span>
         </button>
         <button
           class="reset-btn"
@@ -129,16 +129,16 @@
           </svg>
         </button>
         <button
-          class="reset-btn"
-          [class.reset-btn--on]="showHistory()"
-          title="Saved conversations"
-          [disabled]="!agentReady() && !showHistory()"
-          (click)="toggleHistory()"
+          class="reset-btn history-btn"
+          [class.reset-btn--on]="nav.showSessions()"
+          title="Study sessions"
+          (click)="toggleSessions()"
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
             <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" />
             <polyline points="8 4.5 8 8 10.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
+          <span>History</span>
         </button>
         <button
           class="reset-btn"
@@ -253,35 +253,18 @@
     </div>
   }
 
-  <!-- Saved conversations -->
-  @if (showHistory()) {
-    <div class="history-list">
-      @if (conversations().length === 0) {
-        <p class="history-empty">No saved conversations yet. A conversation is saved once its first question is answered.</p>
-      }
-      @for (c of conversations(); track c.id) {
-        <div
-          class="history-item"
-          [class.history-item--current]="c.id === currentConversationId()"
-          role="button"
-          tabindex="0"
-          (click)="openConversation(c.id)"
-          (keydown.enter)="openConversation(c.id)"
-        >
-          <span class="history-title">{{ c.title }}</span>
-          <span class="history-meta">
-            {{ conversationDate(c) }}@if (c.passage) { · {{ c.passage }} }
-          </span>
-          <button
-            type="button"
-            class="history-delete"
-            title="Delete this conversation"
-            (click)="deleteConversation($event, c.id)"
-          >×</button>
-        </div>
-      }
+  <!-- Continuing a reopened session (set by Study sessions' Open action; not shown for the silent auto-resume-after-reload) -->
+  @if (nav.continuingBanner(); as banner) {
+    <div class="continuing-banner">
+      <span>
+        Continuing: <strong>{{ banner.title }}</strong>
+        · last studied {{ formatBannerDate(banner.lastStudiedIso) }}
+        @if (banner.passage) { · {{ banner.passage }} }
+      </span>
+      <button type="button" class="continuing-dismiss" title="Dismiss" (click)="nav.clearContinuingBanner()">✕</button>
     </div>
-  } @else {
+  }
+
   <!-- Messages -->
   <div class="msg-list" #msgList>
     @if (messages().length === 0 && agentReady()) {
@@ -365,7 +348,6 @@
       </div>
     }
   </div>
-  }
 
   <!-- Context strip -->
   <div class="ctx-strip">

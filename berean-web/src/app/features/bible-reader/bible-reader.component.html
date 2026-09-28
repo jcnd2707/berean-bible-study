@@ -50,6 +50,18 @@
     </div>
   }
 
+  <!-- Study sessions overlay -->
+  @if (
+    navState.showSessions() &&
+    !navState.showSearch() &&
+    !navState.showCompare() &&
+    !navState.showNotesList()
+  ) {
+    <div class="search-overlay">
+      <app-sessions-list />
+    </div>
+  }
+
   <!-- Books overlay -->
   @if (navState.showBooks()) {
     <div class="search-overlay">
@@ -62,7 +74,8 @@
     !navState.showSearch() &&
     !navState.showCompare() &&
     !navState.showNotesList() &&
-    !navState.showBooks()
+    !navState.showBooks() &&
+    !navState.showSessions()
   ) {
     <!-- Passage heading -->
     @if (passageTitle() && !loading()) {

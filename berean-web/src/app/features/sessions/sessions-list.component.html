@@ -1,0 +1,95 @@
+<div class="sl-shell">
+
+  <div class="sl-header">
+    <span class="sl-title">Study sessions</span>
+    <div class="sl-search-wrap">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" class="sl-search-icon">
+        <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <input class="sl-search"
+             type="text"
+             placeholder="Search sessions…"
+             [value]="filterText()"
+             (input)="onFilterInput($any($event.target).value)" />
+    </div>
+    <button class="panel-close-btn" title="Close" (click)="nav.closeSessions()">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="sl-body">
+
+    @if (loading()) {
+      <div class="sl-state">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+      </div>
+    } @else if (sessions().length === 0) {
+      <div class="sl-state">
+        <p class="sl-empty">No study sessions yet. A session is saved once its first question is answered.</p>
+      </div>
+    } @else {
+
+      @if (pinned().length > 0) {
+        <div class="sl-section-label">Pinned</div>
+        @for (s of pinned(); track s.id) {
+          <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: s }" />
+        }
+      }
+
+      @for (g of groups(); track g.group) {
+        <div class="sl-section-label">{{ g.group }}</div>
+        @for (s of g.items; track s.id) {
+          <ng-container [ngTemplateOutlet]="row" [ngTemplateOutletContext]="{ $implicit: s }" />
+        }
+      }
+
+    }
+
+  </div>
+
+</div>
+
+<ng-template #row let-s>
+  <div class="sl-row" (click)="open(s)">
+    <div class="sl-row-head">
+      @if (renamingId() === s.id) {
+        <input
+          class="sl-rename-input"
+          [(ngModel)]="renameText"
+          (click)="$event.stopPropagation()"
+          (keydown.enter)="saveRename(s)"
+          (keydown.escape)="cancelRename($event)"
+          (blur)="saveRename(s)"
+          autofocus
+        />
+      } @else {
+        <span class="sl-name">{{ s.title }}</span>
+      }
+      <span class="sl-date">{{ formatDate(s.updatedAt) }}</span>
+    </div>
+    <p class="sl-meta">
+      @if (s.passage) { {{ s.passage }} }
+      @if (s.modelId) { · {{ s.modelId }} }
+    </p>
+
+    <div class="sl-actions">
+      <button type="button" class="sl-action" [class.sl-action--on]="s.pinned" title="Pin" (click)="togglePin($event, s)">
+        {{ s.pinned ? "★" : "☆" }}
+      </button>
+      <button type="button" class="sl-action" title="Rename" (click)="startRename($event, s)">✎</button>
+
+      @if (confirmingDeleteId() === s.id) {
+        <span class="sl-confirm">
+          Delete?
+          <button type="button" class="sl-confirm-yes" (click)="confirmDelete($event, s)">Yes</button>
+          <button type="button" class="sl-confirm-no" (click)="cancelDelete($event)">No</button>
+        </span>
+      } @else {
+        <button type="button" class="sl-action" title="Delete this session" (click)="askDelete($event, s)">×</button>
+      }
+    </div>
+  </div>
+</ng-template>

@@ -2,6 +2,7 @@ import { Injectable, NgZone, OnDestroy, signal } from "@angular/core";
 import * as signalR from "@microsoft/signalr";
 import { Subject, BehaviorSubject } from "rxjs";
 import { environment } from "../../../environments/environment";
+import { BibleLocation } from "../models";
 
 const PROFILE_STORAGE_KEY = "berean_profileId";
 
@@ -30,13 +31,16 @@ export interface ChatSource {
   bookChapterIndex: number | null;
 }
 
-/** A saved conversation, as listed in the history. */
+/** A saved conversation, as listed in the history — a "study session" in the UI. */
 export interface ConversationSummary {
   id: string;
   title: string;
   updatedAt: string;
   passage: string | null;
   modelId: string | null;
+  /** Where the study ended (JSON — see BibleLocation), or null if no location was ever recorded. */
+  lastLocation: string | null;
+  pinned: boolean;
 }
 
 /** A message of a reopened conversation. */
@@ -53,6 +57,8 @@ export interface ConversationLoadedEvent {
   messages: StoredChatMessage[];
   /** The conversation's locked-in perspective selection (see StartConversation). */
   perspectives: string[];
+  lastLocation: string | null;
+  pinned: boolean;
 }
 
 export interface ToolActivityEvent {
@@ -96,7 +102,6 @@ export class AgentHubService implements OnDestroy {
   readonly toolActivity$ = new Subject<ToolActivityEvent>();
   readonly sessionStarted$ = new Subject<SessionStartedEvent>();
   readonly error$ = new Subject<string>();
-  readonly reset$ = new Subject<void>();
   readonly ragIndexing$ = new Subject<RagIndexingEvent>();
   readonly ragIndexed$ = new Subject<RagIndexedEvent>();
   readonly ragStatus$ = new Subject<RagStatusEvent>();
@@ -140,9 +145,11 @@ export class AgentHubService implements OnDestroy {
         modelId: string | null,
         messages: StoredChatMessage[],
         perspectives: string[],
+        lastLocation: string | null,
+        pinned: boolean,
       ) =>
         this.zone.run(() =>
-          this.conversationLoaded$.next({ id, title, modelId, messages, perspectives }),
+          this.conversationLoaded$.next({ id, title, modelId, messages, perspectives, lastLocation, pinned }),
         ),
     );
     this.hub.on("ConversationDeleted", (id: string) =>
@@ -162,9 +169,6 @@ export class AgentHubService implements OnDestroy {
     );
     this.hub.on("Error", (msg: string) =>
       this.zone.run(() => this.error$.next(msg)),
-    );
-    this.hub.on("ConversationReset", () =>
-      this.zone.run(() => this.reset$.next()),
     );
     this.hub.on("RagIndexing", (message: string) =>
       this.zone.run(() => this.ragIndexing$.next({ message })),
@@ -213,17 +217,26 @@ export class AgentHubService implements OnDestroy {
     await this.hub.send("ResumeConversation", id);
   }
 
-  async listConversations(): Promise<void> {
-    await this.hub.send("ListConversations");
+  /** query matches a conversation's title or any of the profile's own questions in it. */
+  async listConversations(query?: string): Promise<void> {
+    await this.hub.send("ListConversations", query ?? null);
   }
 
   async deleteConversation(id: string): Promise<void> {
     await this.hub.send("DeleteConversation", id);
   }
 
-  async sendMessage(text: string, mode: ChatMode = "Quick"): Promise<void> {
+  async renameConversation(id: string, title: string): Promise<void> {
+    await this.hub.send("RenameConversation", id, title);
+  }
+
+  async setPinned(id: string, pinned: boolean): Promise<void> {
+    await this.hub.send("SetPinned", id, pinned);
+  }
+
+  async sendMessage(text: string, mode: ChatMode = "Quick", location: BibleLocation | null = null): Promise<void> {
     this.isAnswering.set(true);
-    await this.hub.send("SendMessage", text, mode);
+    await this.hub.send("SendMessage", text, mode, location);
   }
 
   private currentProfileId(): string | null {
@@ -232,10 +245,6 @@ export class AgentHubService implements OnDestroy {
     } catch {
       return null;
     }
-  }
-
-  async resetConversation(): Promise<void> {
-    await this.hub.send("ResetConversation");
   }
 
   async getRagStatus(): Promise<void> {

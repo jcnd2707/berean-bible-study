@@ -80,6 +80,14 @@ import { LayoutService } from "../../core/services/layout.service";
       </button>
       <button
         class="tb-btn"
+        [class.tb-btn--active]="nav.showSessions()"
+        (click)="nav.toggleSessions()"
+        title="Browse study sessions"
+      >
+        Sessions
+      </button>
+      <button
+        class="tb-btn"
         [class.tb-btn--active]="nav.showBooks()"
         (click)="nav.toggleBooks()"
         title="Read books"

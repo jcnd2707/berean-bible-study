@@ -90,6 +90,9 @@ type PhoneView = "read" | "study" | "ask" | "more";
             <button class="more-item" (click)="nav.toggleNotesList()">
               📝 My Notes
             </button>
+            <button class="more-item" (click)="nav.toggleSessions()">
+              🕘 Study sessions
+            </button>
             <button class="more-item" (click)="nav.toggleBooks()">
               📚 Books
             </button>
@@ -455,7 +458,8 @@ export class PhoneShellComponent {
       this.nav.showSearch() ||
       this.nav.showCompare() ||
       this.nav.showNotesList() ||
-      this.nav.showBooks()
+      this.nav.showBooks() ||
+      this.nav.showSessions()
     ) {
       this.setView("read");
     }
