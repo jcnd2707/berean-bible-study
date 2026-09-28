@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#070e18"/>
+  <g fill="none" stroke="#c8922a" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+    <!-- outer cover -->
+    <path d="M112,338
+             L112,164
+             C112,164 186,164 256,187
+             C326,164 400,164 400,164
+             L400,338
+             C400,338 326,361 256,363
+             C186,361 112,338 112,338
+             Z"/>
+    <!-- inner cover edge: a touch of depth, only worth the ink at large sizes -->
+    <path d="M128,326
+             L128,178
+             C128,178 194,178 256,199
+             C318,178 384,178 384,178
+             L384,326
+             C384,326 318,347 256,349
+             C194,347 128,326 128,326
+             Z" stroke-width="6" opacity="0.55"/>
+    <!-- spine -->
+    <path d="M256,187 L256,363"/>
+    <!-- text lines: right page -->
+    <path d="M278,202 C308,193 340,190 372,192"/>
+    <path d="M278,228 C308,219 340,216 372,218"/>
+    <path d="M278,254 C308,245 340,242 372,244"/>
+    <!-- text lines: left page -->
+    <path d="M234,202 C204,193 172,190 140,192"/>
+    <path d="M234,228 C204,219 172,216 140,218"/>
+    <path d="M234,254 C204,245 172,242 140,244"/>
+    <path d="M234,280 C204,271 172,268 140,270"/>
+  </g>
+  <!-- magnifying glass, positioned over the book's lower-right corner -->
+  <circle cx="338" cy="308" r="62" fill="#070e18" stroke="#c8922a" stroke-width="17"/>
+  <line x1="382" y1="352" x2="417" y2="387" stroke="#c8922a" stroke-width="24" stroke-linecap="round"/>
+  <!-- latin cross inside the lens -->
+  <g fill="#c8922a">
+    <rect x="331" y="270" width="14" height="80" rx="6"/>
+    <rect x="314" y="290" width="48" height="14" rx="6"/>
+  </g>
+</svg>
