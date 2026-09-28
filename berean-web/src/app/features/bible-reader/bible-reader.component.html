@@ -106,6 +106,8 @@
       <div
         class="verse-list"
         (dblclick)="onVerseDoubleClick($event)"
+        (contextmenu)="onVerseListContextMenu($event)"
+        (click)="closeWordMenu()"
         (pointerdown)="onVerseListPointerDown($event)"
         (pointermove)="onVerseListPointerMove($event)"
         (pointerup)="onVerseListPointerUp($event)"
@@ -174,17 +176,21 @@
     }
   }
 
-  <!-- Touch word lookup: shown when a coarse pointer selects a word (§4.3) -->
-  @if (touchLookup(); as lookup) {
-    <button
-      type="button"
-      class="touch-lookup-chip"
-      [style.left.px]="lookup.x"
-      [style.top.px]="lookup.y"
+  <!-- Word menu: long press (touch) or right-click (desktop) on a word (§D4) -->
+  @if (wordMenu(); as menu) {
+    <div
+      class="word-menu"
+      [style.left.px]="menu.x"
+      [style.top.px]="menu.y"
       (pointerdown)="$event.preventDefault()"
-      (click)="confirmTouchLookup()"
     >
-      Look up "{{ lookup.word }}"
-    </button>
+      <button type="button" class="word-menu-btn" (click)="confirmWordLookup()">
+        Look up "{{ menu.word }}"
+      </button>
+      <button type="button" class="word-menu-btn" (click)="hearWord()">🔊 Hear it</button>
+      @if (wordMenuMessage()) {
+        <p class="word-menu-msg">{{ wordMenuMessage() }}</p>
+      }
+    </div>
   }
 </div>

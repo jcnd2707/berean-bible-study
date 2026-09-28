@@ -396,19 +396,44 @@
 }
 
 // ── Touch word lookup (MOBILE_PLAN.md §4.3) ─────────────────────────────────
-.touch-lookup-chip {
+.word-menu {
   position: fixed;
   transform: translate(-50%, calc(-100% - 8px));
   z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #1c1917;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  min-width: 140px;
+}
+
+.word-menu-btn {
   padding: var(--pad-btn);
   min-height: var(--tap-min);
-  background: #1c1917;
+  background: transparent;
   color: #faf8f3;
   border: none;
-  border-radius: 8px;
+  border-bottom: 0.5px solid rgba(250, 248, 243, 0.12);
   font: inherit;
   font-size: var(--fs-sm);
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   white-space: nowrap;
+  text-align: left;
+  &:last-of-type {
+    border-bottom: none;
+  }
+  &:hover {
+    background: rgba(250, 248, 243, 0.08);
+  }
+}
+
+.word-menu-msg {
+  margin: 0;
+  padding: 4px 9px 6px;
+  font-size: var(--fs-2xs);
+  color: #c8ac70;
+  font-style: italic;
+  white-space: normal;
 }

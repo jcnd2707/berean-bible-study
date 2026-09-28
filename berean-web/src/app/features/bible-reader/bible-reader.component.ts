@@ -21,6 +21,8 @@ import { BibleService } from "../../core/services/bible.service";
 import { ResourcesService } from "../../core/services/resources.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { WordSelectionService } from "../../core/services/word-selection.service";
+import { BackStackService } from "../../core/services/back-stack.service";
+import { SpeechService } from "../../core/services/speech.service";
 import {
   BibleModuleDetails,
   ChapterResponse,
@@ -34,12 +36,23 @@ import { ComparePanelComponent } from "../compare/compare-panel.component";
 import { NotesListComponent } from "../notes/notes-list.component";
 import { BookReaderComponent } from "../books/book-reader.component";
 import { SessionsListComponent } from "../sessions/sessions-list.component";
+import { wordForSpeech, overrideKey } from "./speech-word";
 
 interface TabModule {
   moduleId: string;
   label: string; // short display label e.g. "BSB", "KJV"
   title: string; // full title for tooltip
   hasStrongs: boolean;
+  language: string;
+}
+
+interface WordMenuEntry {
+  word: string; // cleaned, ASCII/lowercase — for lookup and display
+  speechWord: string; // accents and case kept — for Hear it
+  strongs: string | null;
+  lang: string;
+  x: number;
+  y: number;
 }
 
 @Component({
@@ -61,6 +74,8 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
   private readonly resourcesService = inject(ResourcesService);
   readonly navState = inject(NavigationStateService);
   private readonly wordSelection = inject(WordSelectionService);
+  private readonly backStack = inject(BackStackService);
+  private readonly speech = inject(SpeechService);
   readonly prefs = inject(PreferencesService);
   readonly layout = inject(LayoutService);
 
@@ -122,12 +137,23 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
    * selection to read text from. Desktop keeps `onVerseDoubleClick`
    * unchanged; this only runs for a touch pointer.
    */
-  readonly touchLookup = signal<{
-    word: string;
-    strongs: string | null;
-    x: number;
-    y: number;
-  } | null>(null);
+  readonly wordMenu = signal<WordMenuEntry | null>(null);
+  readonly wordMenuMessage = signal<string | null>(null);
+  private readonly closeWordMenuFn = () => this.closeWordMenu();
+
+  private openWordMenu(entry: WordMenuEntry): void {
+    this.wordMenu.set(entry);
+    this.wordMenuMessage.set(null);
+    this.backStack.open(this.closeWordMenuFn);
+  }
+
+  /** Shared by Esc, the Android back button (via BackStackService), and tapping elsewhere. */
+  closeWordMenu(): void {
+    if (!this.wordMenu()) return;
+    this.wordMenu.set(null);
+    this.wordMenuMessage.set(null);
+    this.backStack.close(this.closeWordMenuFn);
+  }
 
   private touchStart: { x: number; y: number } | null = null;
   private longPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -136,7 +162,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
   private readonly MOVE_TOLERANCE = 10;
 
   onVerseListPointerDown(e: PointerEvent): void {
-    this.touchLookup.set(null);
+    this.closeWordMenu();
     if (!this.layout.coarsePointer() || e.pointerType !== "touch") return;
     this.touchStart = { x: e.clientX, y: e.clientY };
     this.longPressFired = false;
@@ -197,14 +223,58 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
       ? this.passage()?.verses.find((v) => v.verse === verseNum)
       : undefined;
     const strongs = this.findStrongs(clean, verseData?.strongsWords ?? []);
-    this.touchLookup.set({ word: clean, strongs, x, y });
+    this.openWordMenu({
+      word: clean,
+      speechWord: wordForSpeech(raw),
+      strongs,
+      lang: this.activeTab()?.language ?? "en",
+      x,
+      y,
+    });
   }
 
-  confirmTouchLookup(): void {
-    const lookup = this.touchLookup();
-    if (!lookup) return;
-    this.wordSelection.select(lookup.word, lookup.strongs);
-    this.touchLookup.set(null);
+  /**
+   * Desktop's half of the word menu (§D4): right-clicking a word shows the same two choices as
+   * a long press. The browser's own context menu is kept when text is selected (so Copy still
+   * works) or the pointer isn't over a word. Double-click (unchanged, below) still looks a word
+   * up directly.
+   */
+  onVerseListContextMenu(event: MouseEvent): void {
+    const selected = window.getSelection()?.toString().trim() ?? "";
+    if (selected) return;
+    const raw = this.wordAtPoint(event.clientX, event.clientY);
+    const clean = raw.replace(/[^a-zA-Z'-]/g, "").toLowerCase();
+    if (!clean) return;
+
+    event.preventDefault();
+    const verseNum = this.verseNumberAt(event);
+    const verseData = this.passage()?.verses.find((v) => v.verse === verseNum);
+    const strongs = this.findStrongs(clean, verseData?.strongsWords ?? []);
+    this.openWordMenu({
+      word: clean,
+      speechWord: wordForSpeech(raw),
+      strongs,
+      lang: this.activeTab()?.language ?? "en",
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  confirmWordLookup(): void {
+    const menu = this.wordMenu();
+    if (!menu) return;
+    this.wordSelection.select(menu.word, menu.strongs);
+    this.closeWordMenu();
+  }
+
+  /** Stays open afterward (§D4) so a second tap/click replays the word. */
+  async hearWord(): Promise<void> {
+    const menu = this.wordMenu();
+    if (!menu) return;
+    this.wordMenuMessage.set(null);
+    const override = await this.speech.resolveOverride(menu.lang, overrideKey(menu.speechWord));
+    const result = await this.speech.speak(override ?? menu.speechWord, { lang: menu.lang });
+    if (!result.ok) this.wordMenuMessage.set(result.message ?? null);
   }
 
   ngOnInit(): void {
@@ -217,6 +287,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
           label: m.moduleId,
           title: m.name,
           hasStrongs: false,
+          language: m.language,
         }));
         this.tabs.set(initial);
 
@@ -232,6 +303,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
                 label: d.translation ?? m.moduleId,
                 title: d.title ?? m.name,
                 hasStrongs: d.hasStrongs ?? false,
+                language: m.language,
               };
             });
             this.tabs.set(enriched);
@@ -358,15 +430,29 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
    * (zero-width), so `.toString()` on it alone is always empty; there's no
    * selection to read text from when nothing was selected to begin with
    * (the long-press lookup above disables selection entirely).
+   *
+   * Unicode letters/marks (`\p{L}\p{M}`), not just `[A-Za-z']`, so an accented word like
+   * "Jehová" is picked up whole instead of truncated at the accent (D5). Firefox has no
+   * `caretRangeFromPoint`, only the standard `caretPositionFromPoint`.
    */
   private wordAtPoint(x: number, y: number): string {
-    if (!document.caretRangeFromPoint) return "";
-    const range = document.caretRangeFromPoint(x, y);
-    const node = range?.startContainer;
+    let node: Node | null = null;
+    let offset = 0;
+
+    if (document.caretRangeFromPoint) {
+      const range = document.caretRangeFromPoint(x, y);
+      node = range?.startContainer ?? null;
+      offset = range?.startOffset ?? 0;
+    } else if (typeof (document as any).caretPositionFromPoint === "function") {
+      const pos = (document as any).caretPositionFromPoint(x, y);
+      node = pos?.offsetNode ?? null;
+      offset = pos?.offset ?? 0;
+    }
+
     if (!node || node.nodeType !== Node.TEXT_NODE) return "";
     const text = node.textContent ?? "";
-    const isWordChar = (c: string) => /[A-Za-z']/.test(c);
-    let start = range!.startOffset;
+    const isWordChar = (c: string) => /[\p{L}\p{M}']/u.test(c);
+    let start = offset;
     let end = start;
     while (start > 0 && isWordChar(text[start - 1])) start--;
     while (end < text.length && isWordChar(text[end])) end++;

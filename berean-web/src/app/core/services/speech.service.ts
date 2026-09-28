@@ -34,6 +34,7 @@ export class SpeechService {
   private voicesPromise: Promise<SpeechSynthesisVoice[]> | null = null;
   // Remembered per language for the session, not persisted — a fresh page load re-picks.
   private readonly chosenVoice = new Map<string, SpeechSynthesisVoice>();
+  private overridesPromise: Promise<Record<string, Record<string, string>>> | null = null;
 
   private get synth(): SpeechSynthesis | null {
     return typeof speechSynthesis === "undefined" ? null : speechSynthesis;
@@ -98,6 +99,25 @@ export class SpeechService {
   /** Whether this device has a voice for the given language (after voices have loaded). */
   async hasVoice(lang: string): Promise<boolean> {
     return (await this.pickVoice(lang)) !== null;
+  }
+
+  /**
+   * Name overrides for words the voice gets wrong (`public/speech/pronunciation-overrides.json`,
+   * keyed by language then lowercase word), loaded once on first use.
+   */
+  private loadOverrides(): Promise<Record<string, Record<string, string>>> {
+    if (!this.overridesPromise) {
+      this.overridesPromise = fetch("/speech/pronunciation-overrides.json")
+        .then((r) => (r.ok ? r.json() : {}))
+        .catch(() => ({}));
+    }
+    return this.overridesPromise;
+  }
+
+  /** The respelling for `key` in `lang`, if one is configured, else null. */
+  async resolveOverride(lang: string, key: string): Promise<string | null> {
+    const overrides = await this.loadOverrides();
+    return overrides[lang]?.[key] ?? null;
   }
 
   /**
