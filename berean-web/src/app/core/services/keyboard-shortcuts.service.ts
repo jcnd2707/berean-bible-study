@@ -1,9 +1,11 @@
 import { Injectable, inject, OnDestroy } from "@angular/core";
 import { NavigationStateService } from "./navigation-state.service";
+import { BackStackService } from "./back-stack.service";
 
 @Injectable({ providedIn: "root" })
 export class KeyboardShortcutsService implements OnDestroy {
   private readonly nav = inject(NavigationStateService);
+  private readonly backStack = inject(BackStackService);
   private readonly handler = (e: KeyboardEvent) => this.onKeydown(e);
 
   constructor() {
@@ -18,25 +20,10 @@ export class KeyboardShortcutsService implements OnDestroy {
     const tag = (e.target as HTMLElement).tagName.toLowerCase();
     const isInput = tag === "input" || tag === "textarea" || tag === "select";
 
-    // Escape — close any open overlay
+    // Escape — close the top-most open overlay, sharing the same
+    // "close top-most" logic as the Android back button (MOBILE_PLAN.md §4.4).
     if (e.key === "Escape") {
-      if (this.nav.showSearch()) {
-        this.nav.closeSearch();
-        e.preventDefault();
-        return;
-      }
-      if (this.nav.showCompare()) {
-        this.nav.closeCompare();
-        e.preventDefault();
-        return;
-      }
-      if (this.nav.showNotesList()) {
-        this.nav.closeNotesList();
-        e.preventDefault();
-        return;
-      }
-      if (this.nav.showBooks()) {
-        this.nav.closeBooks();
+      if (this.backStack.closeTopMost()) {
         e.preventDefault();
         return;
       }

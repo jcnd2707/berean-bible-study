@@ -51,7 +51,10 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
             <app-bible-reader />
           </div>
 
-          <div class="divider divider-h" (mousedown)="startDragCenterV($event)">
+          <div
+            class="divider divider-h"
+            (pointerdown)="startDragCenterV($event)"
+          >
             <div class="divider-handle-h"></div>
           </div>
 
@@ -60,7 +63,7 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
           </div>
         </main>
 
-        <div class="divider divider-v" (mousedown)="startDragRight($event)">
+        <div class="divider divider-v" (pointerdown)="startDragRight($event)">
           <div class="divider-handle"></div>
         </div>
 
@@ -69,7 +72,10 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
             <app-right-panel />
           </div>
 
-          <div class="divider divider-h" (mousedown)="startDragRightV($event)">
+          <div
+            class="divider divider-h"
+            (pointerdown)="startDragRightV($event)"
+          >
             <div class="divider-handle-h"></div>
           </div>
 
@@ -143,6 +149,7 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
       .divider-v {
         width: 5px;
         cursor: col-resize;
+        touch-action: none;
         flex-shrink: 0;
         display: flex;
         align-items: center;
@@ -155,6 +162,11 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
           background: rgba(200, 146, 42, 0.18);
         }
       }
+      @media (pointer: coarse) {
+        .divider-v {
+          width: 20px;
+        }
+      }
       .divider-handle {
         width: 1px;
         height: 40px;
@@ -164,6 +176,7 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
       .divider-h {
         height: 5px;
         cursor: row-resize;
+        touch-action: none;
         flex-shrink: 0;
         display: flex;
         align-items: center;
@@ -173,6 +186,11 @@ import { DictionaryPanelComponent } from "./features/dictionary/dictionary-panel
         &:hover,
         &.dragging {
           background: rgba(200, 146, 42, 0.18);
+        }
+      }
+      @media (pointer: coarse) {
+        .divider-h {
+          height: 20px;
         }
       }
       .divider-handle-h {
@@ -214,21 +232,23 @@ export class AppComponent implements AfterViewInit, OnDestroy {
   private startCommentary = 0;
   private activeDivider: HTMLElement | null = null;
 
-  private readonly mousemove = (e: MouseEvent) => this.onMouseMove(e);
-  private readonly mouseup = () => this.onMouseUp();
+  private readonly pointermove = (e: PointerEvent) => this.onPointerMove(e);
+  private readonly pointerup = (e: PointerEvent) => this.onPointerUp(e);
   private readonly resize = () => this.reclampSizes();
 
   ngAfterViewInit(): void {
     this.initSizes();
     window.addEventListener("resize", this.resize);
-    window.addEventListener("mousemove", this.mousemove);
-    window.addEventListener("mouseup", this.mouseup);
+    window.addEventListener("pointermove", this.pointermove);
+    window.addEventListener("pointerup", this.pointerup);
+    window.addEventListener("pointercancel", this.pointerup);
   }
 
   ngOnDestroy(): void {
     window.removeEventListener("resize", this.resize);
-    window.removeEventListener("mousemove", this.mousemove);
-    window.removeEventListener("mouseup", this.mouseup);
+    window.removeEventListener("pointermove", this.pointermove);
+    window.removeEventListener("pointerup", this.pointerup);
+    window.removeEventListener("pointercancel", this.pointerup);
   }
 
   /** Sets the initial pane sizes on first render. */
@@ -301,7 +321,7 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     e.preventDefault();
   }
 
-  startDragRight(e: MouseEvent): void {
+  startDragRight(e: PointerEvent): void {
     this.dragging = "right";
     this.startX = e.clientX;
     this.startCenter = this.centerWidth();
@@ -309,29 +329,33 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     this.setDragging(e);
   }
 
-  startDragCenterV(e: MouseEvent): void {
+  startDragCenterV(e: PointerEvent): void {
     this.dragging = "centerV";
     this.startY = e.clientY;
     this.startReader = this.readerHeight();
     this.setDragging(e);
   }
 
-  startDragRightV(e: MouseEvent): void {
+  startDragRightV(e: PointerEvent): void {
     this.dragging = "rightV";
     this.startY = e.clientY;
     this.startCommentary = this.commentaryHeight();
     this.setDragging(e);
   }
 
-  private setDragging(e: MouseEvent): void {
+  private setDragging(e: PointerEvent): void {
     this.activeDivider = (e.target as HTMLElement).closest(
       ".divider",
     ) as HTMLElement;
     this.activeDivider?.classList.add("dragging");
+    // Redirects subsequent pointermove/pointerup to this element (and, via
+    // bubbling, to the window listeners below) even once a touch drag moves
+    // outside the 5px divider — without this a fast drag loses the pointer.
+    this.activeDivider?.setPointerCapture(e.pointerId);
     e.preventDefault();
   }
 
-  private onMouseMove(e: MouseEvent): void {
+  private onPointerMove(e: PointerEvent): void {
     if (!this.dragging) return;
     const el = this.mainAreaRef.nativeElement;
 
@@ -369,8 +393,12 @@ export class AppComponent implements AfterViewInit, OnDestroy {
     }
   }
 
-  private onMouseUp(): void {
+  private onPointerUp(e: PointerEvent): void {
     this.dragging = null;
+    // pointercancel means capture is already gone; releasing again throws.
+    if (this.activeDivider?.hasPointerCapture(e.pointerId)) {
+      this.activeDivider.releasePointerCapture(e.pointerId);
+    }
     this.activeDivider?.classList.remove("dragging");
     this.activeDivider = null;
   }

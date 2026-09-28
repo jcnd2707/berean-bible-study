@@ -28,6 +28,22 @@
 
 .picker-wrap { position: relative; }
 
+.panel-close-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: none;
+  background: transparent;
+  color: #A09890;
+  cursor: pointer;
+  border-radius: 6px;
+  &:hover { background: rgba(160,152,144,0.12); color: #5C5650; }
+}
+
 .book-pick-btn {
   display: flex;
   align-items: center;

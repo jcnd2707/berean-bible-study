@@ -43,13 +43,15 @@ import {
         </button>
       </div>
       <div class="panel-content">
-        @if (activeTab() === "commentary") {
-          <app-commentary />
-        } @else if (activeTab() === "notes") {
-          <app-notes />
-        } @else {
-          <app-cross-references />
-        }
+        <!--
+          Kept mounted and hidden via [hidden], not @if — switching tabs
+          used to destroy/recreate these, which silently dropped an
+          in-progress note save that hadn't hit its debounce yet
+          (MOBILE_PLAN.md §1, "one important catch").
+        -->
+        <app-commentary [hidden]="activeTab() !== 'commentary'" />
+        <app-notes [hidden]="activeTab() !== 'notes'" />
+        <app-cross-references [hidden]="activeTab() !== 'xrefs'" />
       </div>
     </div>
   `,
@@ -100,6 +102,16 @@ import {
         overflow: hidden;
         display: flex;
         flex-direction: column;
+      }
+      /*
+       * Each child sets its own :host { display: flex }, which as an author
+       * rule beats the UA [hidden] rule regardless of specificity — so
+       * [hidden] alone wouldn't hide them. This overrides it explicitly.
+       */
+      app-commentary[hidden],
+      app-notes[hidden],
+      app-cross-references[hidden] {
+        display: none;
       }
     `,
   ],

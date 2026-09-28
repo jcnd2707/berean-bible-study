@@ -90,7 +90,11 @@
 
     <!-- Verses -->
     @if (passage() && !loading() && !error()) {
-      <div class="verse-list" (dblclick)="onVerseDoubleClick($event)">
+      <div
+        class="verse-list"
+        #verseList
+        (dblclick)="onVerseDoubleClick($event)"
+      >
         @for (v of passage()!.verses; track v.verse) {
           <div
             class="v-row"
@@ -139,5 +143,19 @@
         </button>
       </div>
     }
+  }
+
+  <!-- Touch word lookup: shown when a coarse pointer selects a word (§4.3) -->
+  @if (touchLookup(); as lookup) {
+    <button
+      type="button"
+      class="touch-lookup-chip"
+      [style.left.px]="lookup.x"
+      [style.top.px]="lookup.y"
+      (pointerdown)="$event.preventDefault()"
+      (click)="confirmTouchLookup()"
+    >
+      Look up "{{ lookup.word }}"
+    </button>
   }
 </div>

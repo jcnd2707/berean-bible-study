@@ -24,7 +24,14 @@
   gap: 10px;
 }
 
+.search-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .search-input-wrap {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -35,6 +42,21 @@
   transition: border-color 0.15s;
 
   &:focus-within { border-color: #C8922A; }
+}
+
+.panel-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: none;
+  background: transparent;
+  color: #A09890;
+  cursor: pointer;
+  border-radius: 6px;
+  &:hover { background: rgba(160,152,144,0.12); color: #5C5650; }
 }
 
 .search-icon {

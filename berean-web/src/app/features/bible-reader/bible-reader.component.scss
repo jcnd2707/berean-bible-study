@@ -350,3 +350,21 @@
   color: #c8922a;
   letter-spacing: 0.2px;
 }
+
+// ── Touch word lookup (MOBILE_PLAN.md §4.3) ─────────────────────────────────
+.touch-lookup-chip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: 50;
+  padding: var(--pad-btn);
+  min-height: var(--tap-min);
+  background: #1c1917;
+  color: #faf8f3;
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+}

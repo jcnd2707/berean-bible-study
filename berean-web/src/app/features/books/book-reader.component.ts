@@ -28,6 +28,10 @@ export class BookReaderComponent implements OnInit {
 
   @ViewChild('readingPane') readingPaneRef!: ElementRef<HTMLElement>;
 
+  close(): void {
+    this.nav.closeBooks();
+  }
+
   // ── Catalog ───────────────────────────────────────────────────────────────
   readonly books          = signal<BookSummary[]>([]);
   readonly activeBook     = signal<BookSummary | null>(null);

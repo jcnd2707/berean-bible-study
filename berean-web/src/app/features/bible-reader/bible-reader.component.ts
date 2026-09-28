@@ -1,6 +1,9 @@
 import {
   Component,
   OnInit,
+  OnDestroy,
+  ElementRef,
+  ViewChild,
   inject,
   signal,
   computed,
@@ -27,6 +30,7 @@ import {
   StrongsWord,
 } from "../../core/models";
 import { PreferencesService } from "../../core/services/preferences.service";
+import { LayoutService } from "../../core/services/layout.service";
 import { SearchPanelComponent } from "../search/search-panel.component";
 import { ComparePanelComponent } from "../compare/compare-panel.component";
 import { NotesListComponent } from "../notes/notes-list.component";
@@ -52,12 +56,15 @@ interface TabModule {
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",
 })
-export class BibleReaderComponent implements OnInit {
+export class BibleReaderComponent implements OnInit, OnDestroy {
   private readonly bibleService = inject(BibleService);
   private readonly resourcesService = inject(ResourcesService);
   readonly navState = inject(NavigationStateService);
   private readonly wordSelection = inject(WordSelectionService);
   readonly prefs = inject(PreferencesService);
+  private readonly layout = inject(LayoutService);
+
+  @ViewChild("verseList") verseListRef?: ElementRef<HTMLElement>;
 
   @HostBinding("style.--reader-font-size")
   get hostFontSize(): string {
@@ -105,7 +112,77 @@ export class BibleReaderComponent implements OnInit {
     distinctUntilChanged((a, b) => a?.moduleId === b?.moduleId),
   );
 
+  /**
+   * Touch word lookup (MOBILE_PLAN.md §4.3): a coarse pointer can't
+   * double-click, and a long-press starts Android's own text-selection UI
+   * instead. Rather than fight that, this watches `selectionchange` for a
+   * selection Android already made inside the verse list and offers to look
+   * it up — leaving Android's native copy/share menu alone. Desktop keeps
+   * `onVerseDoubleClick` below; this is additive, gated on coarse pointer so
+   * a mouse drag-select on desktop never triggers it.
+   */
+  readonly touchLookup = signal<{ word: string; x: number; y: number } | null>(
+    null,
+  );
+  private readonly onSelectionChange = () => this.checkSelectionForLookup();
+
+  private checkSelectionForLookup(): void {
+    if (!this.layout.coarsePointer()) {
+      this.touchLookup.set(null);
+      return;
+    }
+    const sel = window.getSelection();
+    const verseListEl = this.verseListRef?.nativeElement;
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !verseListEl) {
+      this.touchLookup.set(null);
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    if (!verseListEl.contains(range.commonAncestorContainer)) {
+      this.touchLookup.set(null);
+      return;
+    }
+    const firstWord = sel.toString().trim().split(/\s+/)[0] ?? "";
+    const clean = firstWord.replace(/[^a-zA-Z'-]/g, "").toLowerCase();
+    if (!clean) {
+      this.touchLookup.set(null);
+      return;
+    }
+    const rect = range.getBoundingClientRect();
+    this.touchLookup.set({
+      word: clean,
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+    });
+  }
+
+  confirmTouchLookup(): void {
+    const lookup = this.touchLookup();
+    if (!lookup) return;
+    const sel = window.getSelection();
+    let anchor: Element | null = null;
+    if (sel && sel.rangeCount > 0) {
+      const container = sel.getRangeAt(0).commonAncestorContainer;
+      anchor =
+        container.nodeType === Node.TEXT_NODE
+          ? container.parentElement
+          : (container as Element);
+    }
+    const row = anchor?.closest(".v-row");
+    const vn = row?.querySelector(".vn")?.textContent?.trim();
+    const verseNum = vn ? parseInt(vn, 10) : null;
+    const verseData = verseNum
+      ? this.passage()?.verses.find((v) => v.verse === verseNum)
+      : undefined;
+    const strongs = this.findStrongs(lookup.word, verseData?.strongsWords ?? []);
+    this.wordSelection.select(lookup.word, strongs);
+    this.touchLookup.set(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
   ngOnInit(): void {
+    document.addEventListener("selectionchange", this.onSelectionChange);
+
     // Load all bible modules + their details in parallel for proper tab labels
     this.resourcesService.getBibles().subscribe({
       next: (mods) => {
@@ -178,6 +255,10 @@ export class BibleReaderComponent implements OnInit {
         this.passage.set(deduped);
         this.navState.setVerses(deduped.verses);
       });
+  }
+
+  ngOnDestroy(): void {
+    document.removeEventListener("selectionchange", this.onSelectionChange);
   }
 
   onModuleTabClick(tab: TabModule): void {
