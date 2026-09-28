@@ -3,9 +3,18 @@ using BereanResourceApi.Models;
 
 namespace BereanResource.Api.Tests;
 
-public class NotesTests(SamplesApiFactory factory) : IClassFixture<SamplesApiFactory>
+public class NotesTests(SamplesApiFactory factory) : IClassFixture<SamplesApiFactory>, IAsyncLifetime
 {
     private readonly HttpClient _client = factory.CreateClient();
+
+    public async Task InitializeAsync()
+    {
+        var response = await _client.PostAsJsonAsync("/api/profiles", new CreateProfileRequest("Tester"), SamplesApiFactory.Json);
+        var profile = await response.Content.ReadFromJsonAsync<ProfileRecord>(SamplesApiFactory.Json);
+        _client.DefaultRequestHeaders.Add("X-Berean-Profile", profile!.Id);
+    }
+
+    public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task Append_CreatesThenAddsToTheNote_WithoutReplacingIt()

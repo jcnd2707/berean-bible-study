@@ -32,6 +32,7 @@ public class Program
         builder.Services.AddSingleton<CommentaryService>();
         builder.Services.AddSingleton<DictionaryService>();
         builder.Services.AddSingleton<NotesService>();
+        builder.Services.AddSingleton<ProfileService>();
         builder.Services.AddSingleton<CrossReferenceService>();
         builder.Services.AddSingleton<BookService>();
         builder.Services.AddSingleton<ModuleProfileService>();
@@ -68,7 +69,8 @@ public class Program
 
     private static void ConfigurePipeline(WebApplication app)
     {
-        // Ensure notes DB and table exist before accepting requests
+        // Ensure the profiles and notes tables exist (and any pre-profiles notes.db is migrated) before accepting requests
+        app.Services.GetRequiredService<ProfileService>().EnsureCreated();
         app.Services.GetRequiredService<NotesService>().EnsureCreated();
 
         if (app.Environment.IsDevelopment())

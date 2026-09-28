@@ -1,4 +1,5 @@
 using BereanResourceApi.Models;
+using BereanResourceApi.Profiles;
 using BereanResourceApi.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -6,14 +7,15 @@ namespace BereanResourceApi.Controllers;
 
 [ApiController]
 [Route("api/notes")]
+[RequireProfile]
 public class NotesController(NotesService notesService) : ControllerBase
 {
-    /// <summary>Returns all notes ordered by reference.</summary>
+    /// <summary>Returns all of this profile's notes ordered by reference.</summary>
     [HttpGet]
-    public IActionResult GetAll() => Ok(notesService.GetAll());
+    public IActionResult GetAll() => Ok(notesService.GetAll(HttpContext.ProfileId()));
 
     /// <summary>
-    /// Returns the note for a specific reference e.g. GET /api/notes/Gen.1.1
+    /// Returns this profile's note for a specific reference e.g. GET /api/notes/Gen.1.1
     /// The catch-all constraint {reference:regex(.*)} ensures dotted segments
     /// like "Gen.1.1" are not stripped by ASP.NET Core's static-file middleware.
     /// </summary>
@@ -23,12 +25,12 @@ public class NotesController(NotesService notesService) : ControllerBase
         if (string.IsNullOrWhiteSpace(reference))
             return BadRequest(new { error = "Reference cannot be empty." });
 
-        var note = notesService.Get(reference);
+        var note = notesService.Get(HttpContext.ProfileId(), reference);
         return note is null ? NotFound() : Ok(note);
     }
 
     /// <summary>
-    /// Creates or updates a note for a reference e.g. POST /api/notes/Gen.1.1
+    /// Creates or updates this profile's note for a reference e.g. POST /api/notes/Gen.1.1
     /// The catch-all constraint keeps dotted references intact.
     /// </summary>
     [HttpPost("{**reference}")]
@@ -40,12 +42,12 @@ public class NotesController(NotesService notesService) : ControllerBase
         if (string.IsNullOrWhiteSpace(request?.Text))
             return BadRequest(new { error = "Note text cannot be empty." });
 
-        var note = notesService.Upsert(reference, request.Text);
+        var note = notesService.Upsert(HttpContext.ProfileId(), reference, request.Text);
         return Ok(note);
     }
 
     /// <summary>
-    /// Adds text to the end of the note for a reference without replacing it,
+    /// Adds text to the end of this profile's note for a reference without replacing it,
     /// e.g. POST /api/notes/Gen.1.1/append. Creates the note if there is none.
     /// </summary>
     [HttpPost("{reference}/append")]
@@ -57,11 +59,11 @@ public class NotesController(NotesService notesService) : ControllerBase
         if (string.IsNullOrWhiteSpace(request?.Text))
             return BadRequest(new { error = "Note text cannot be empty." });
 
-        return Ok(notesService.Append(reference, request.Text));
+        return Ok(notesService.Append(HttpContext.ProfileId(), reference, request.Text));
     }
 
     /// <summary>
-    /// Deletes the note for a reference e.g. DELETE /api/notes/Gen.1.1
+    /// Deletes this profile's note for a reference e.g. DELETE /api/notes/Gen.1.1
     /// </summary>
     [HttpDelete("{**reference}")]
     public IActionResult Delete(string reference)
@@ -69,7 +71,7 @@ public class NotesController(NotesService notesService) : ControllerBase
         if (string.IsNullOrWhiteSpace(reference))
             return BadRequest(new { error = "Reference cannot be empty." });
 
-        var deleted = notesService.Delete(reference);
+        var deleted = notesService.Delete(HttpContext.ProfileId(), reference);
         return deleted ? NoContent() : NotFound();
     }
 }
