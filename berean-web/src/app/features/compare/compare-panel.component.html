@@ -25,6 +25,9 @@
         + Add
       </button>
       @if (showPicker()) {
+        @if (layout.coarsePointer()) {
+          <div class="picker-backdrop" (click)="showPicker.set(false)"></div>
+        }
         <div class="mod-dropdown">
           @for (mod of allModules(); track mod.moduleId) {
             @if (!isSelected(mod.moduleId)) {
@@ -40,12 +43,14 @@
     </div>
 
     <div class="bar-right">
-      <!-- Sync scroll toggle -->
-      <label class="sync-toggle" title="Synchronise scrolling across columns">
-        <input type="checkbox" [checked]="syncScroll()"
-               (change)="syncScroll.set($any($event.target).checked)">
-        Sync scroll
-      </label>
+      <!-- Sync scroll toggle: meaningless once everything's in one interleaved column -->
+      @if (!interleaved()) {
+        <label class="sync-toggle" title="Synchronise scrolling across columns">
+          <input type="checkbox" [checked]="syncScroll()"
+                 (change)="syncScroll.set($any($event.target).checked)">
+          Sync scroll
+        </label>
+      }
       <button class="panel-close-btn" title="Close compare" (click)="nav.closeCompare()">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -54,41 +59,71 @@
     </div>
   </div>
 
-  <!-- Column grid -->
-  <div class="columns-wrap">
-    @for (col of columns(); track col.moduleId) {
-      <div class="col">
-
-        <!-- Column header -->
-        <div class="col-head">
-          <span class="col-label" [title]="col.title">{{ col.label }}</span>
-          <span class="col-title">{{ col.title }}</span>
+  @if (interleaved()) {
+    <!-- Interleaved view (MOBILE_PLAN.md §5): each verse, all chosen
+         translations stacked underneath it — readable at phone/tablet
+         widths where side-by-side columns would be a few characters wide. -->
+    <div class="interleaved-list">
+      @if (anyLoading() && interleavedRows().length === 0) {
+        <div class="col-state">
+          <div class="loading-dots"><span></span><span></span><span></span></div>
         </div>
-
-        <!-- Column body -->
-        <div class="col-body" #colBody>
-          @if (col.loading) {
-            <div class="col-state">
-              <div class="loading-dots"><span></span><span></span><span></span></div>
-            </div>
-          } @else if (col.error) {
-            <div class="col-state">
-              <p class="col-error">{{ col.error }}</p>
-            </div>
-          } @else if (col.passage) {
-            @for (v of col.passage.verses; track v.verse) {
-              <div class="v-row"
-                   [class.v-row--active]="isActiveVerse(v)"
-                   (click)="onVerseClick(v)">
-                <span class="vn">{{ v.verse }}</span>
-                <span class="vt" [innerHTML]="v.text"></span>
-              </div>
+      }
+      @for (row of interleavedRows(); track row.verse) {
+        <div class="il-group"
+             [class.il-group--active]="nav.verse() === row.verse"
+             (click)="onVerseClickByNum(row.verse)">
+          <span class="il-vn">{{ row.verse }}</span>
+          <div class="il-entries">
+            @for (entry of row.entries; track entry.moduleId) {
+              @if (entry.text) {
+                <div class="il-entry">
+                  <span class="il-label">{{ entry.label }}</span>
+                  <span class="il-text" [innerHTML]="entry.text"></span>
+                </div>
+              }
             }
-          }
+          </div>
         </div>
+      }
+    </div>
+  } @else {
+    <!-- Column grid -->
+    <div class="columns-wrap">
+      @for (col of columns(); track col.moduleId) {
+        <div class="col">
 
-      </div>
-    }
-  </div>
+          <!-- Column header -->
+          <div class="col-head">
+            <span class="col-label" [title]="col.title">{{ col.label }}</span>
+            <span class="col-title">{{ col.title }}</span>
+          </div>
+
+          <!-- Column body -->
+          <div class="col-body" #colBody>
+            @if (col.loading) {
+              <div class="col-state">
+                <div class="loading-dots"><span></span><span></span><span></span></div>
+              </div>
+            } @else if (col.error) {
+              <div class="col-state">
+                <p class="col-error">{{ col.error }}</p>
+              </div>
+            } @else if (col.passage) {
+              @for (v of col.passage.verses; track v.verse) {
+                <div class="v-row"
+                     [class.v-row--active]="isActiveVerse(v)"
+                     (click)="onVerseClick(v)">
+                  <span class="vn">{{ v.verse }}</span>
+                  <span class="vt" [innerHTML]="v.text"></span>
+                </div>
+              }
+            }
+          </div>
+
+        </div>
+      }
+    </div>
+  }
 
 </div>

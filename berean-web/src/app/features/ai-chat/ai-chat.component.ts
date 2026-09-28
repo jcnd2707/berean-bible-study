@@ -29,6 +29,7 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
 import { ModelService } from "../../core/services/model.service";
 import { PerspectiveService } from "../../core/services/perspective.service";
 import { NotesService } from "../../core/services/notes.service";
+import { LayoutService } from "../../core/services/layout.service";
 import { renderAnswerHtml } from "./answer-html";
 
 const CONVERSATION_KEY = "berean_conversationId";
@@ -81,6 +82,11 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   readonly perspectiveService = inject(PerspectiveService);
   private readonly notes = inject(NotesService);
   private readonly sanitizer = inject(DomSanitizer);
+  readonly layout = inject(LayoutService);
+
+  /** MOBILE_PLAN.md §5: the collapsed tablet/phone header moves Mode/
+   *  Perspective/Model into this sheet instead of cramming them into the row. */
+  readonly showSettingsSheet = signal(false);
 
   @ViewChild("msgList") msgListRef!: ElementRef<HTMLElement>;
 

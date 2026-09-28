@@ -10,6 +10,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
   background: #0e0c26;
   color: rgba(255, 255, 255, 0.82);
   font-family: "Segoe UI", system-ui, sans-serif;
@@ -227,6 +228,117 @@
   &:disabled {
     opacity: 0.3;
     cursor: default;
+  }
+  &--on {
+    background: rgba(123, 110, 245, 0.2);
+    border-color: rgba(123, 110, 245, 0.4);
+    color: rgba(175, 165, 255, 0.9);
+  }
+}
+
+@media (pointer: coarse) {
+  .reset-btn,
+  .chip,
+  .mode-btn {
+    min-width: var(--tap-min);
+    min-height: var(--tap-min);
+  }
+}
+
+// ── Settings sheet (MOBILE_PLAN.md §5) ──────────────────────────────────────
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 40;
+}
+
+.settings-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 41;
+  background: #16143a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+}
+
+.sheet-close {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+
+  .mode-toggle {
+    align-self: flex-start;
+  }
+  .mode-btn {
+    min-height: var(--tap-min);
+    padding: 4px 14px;
+  }
+}
+
+.settings-label {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.model-select--full {
+  width: 100%;
+  max-width: none;
+  min-height: var(--tap-min);
+  font-size: var(--fs-base);
+  padding: 6px 8px;
+}
+
+// ── Quick-asks row (MOBILE_PLAN.md §5) ──────────────────────────────────────
+.quick-asks-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+  &::-webkit-scrollbar { display: none; }
+
+  .chip {
+    flex-shrink: 0;
+    min-height: var(--tap-min);
+    padding: 4px 12px;
   }
 }
 
