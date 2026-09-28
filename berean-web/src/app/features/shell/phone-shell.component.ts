@@ -20,21 +20,17 @@ type PhoneView = "read" | "study" | "ask" | "more";
  * components, just one visible at a time instead of two side by side.
  * Picked by AppComponent when `LayoutService.layout() === 'phone'`.
  *
- * Not implemented here (deferred, see MOBILE_PLAN.md §3/§5 and phase 5):
- * - The verse action bar (Ask AI/Commentary/Notes/Xrefs/Look up word)
- *   that the phone mockup shows under a selected verse — same reason as
- *   phase 1: it needs a defined "jump to X" target, which only exists now
- *   that this shell does, but building it is its own pass, not bundled in
- *   here.
+ * Not implemented here (deferred, see MOBILE_PLAN.md §3/§5):
  * - The dictionary sheet's peek/half/full drag gesture — it's a plain
  *   slide-up sheet with a close button, no drag-to-resize.
  * - Hiding the top bar on scroll-down / revealing on scroll-up in the
  *   short landscape case — the bottom-nav-becomes-a-side-rail part is
  *   implemented (pure CSS), the scroll-tracking part is not.
- * - Back-button support for bottom-nav tab switches (only the dictionary
- *   sheet and book picker are wired to BackStackService, matching phase
- *   1's overlay set) — see back-stack.service.ts for why this only
- *   tracks one active overlay, not a real nested stack.
+ * - Back button closes the single most-recently-opened thing (dictionary
+ *   sheet, book picker, or a non-Read tab via setView()), not a full
+ *   nested history — see back-stack.service.ts's doc comment for why. If
+ *   the dictionary sheet opens while already on a non-Read tab, back
+ *   closes the sheet but a second press won't then return to Read.
  */
 @Component({
   selector: "app-phone-shell",
@@ -108,11 +104,18 @@ type PhoneView = "read" | "study" | "ask" | "more";
         }
       </div>
 
-      <!-- Dictionary bottom sheet: opened by touch word lookup (§4.3/§4.5) -->
+      <!-- Dictionary bottom sheet: opened by touch word lookup (§4.3/§4.5),
+           drag the handle to resize (peek/half/full), snapping on release. -->
       @if (showDictSheet()) {
         <div class="sheet-backdrop" (click)="closeDictSheet()"></div>
-        <div class="dict-sheet">
-          <div class="sheet-handle-row">
+        <div class="dict-sheet" [style.height.vh]="sheetHeightFrac() * 100">
+          <div
+            class="sheet-handle-row"
+            (pointerdown)="onSheetHandlePointerDown($event)"
+            (pointermove)="onSheetHandlePointerMove($event)"
+            (pointerup)="onSheetHandlePointerUp($event)"
+            (pointercancel)="onSheetHandlePointerUp($event)"
+          >
             <div class="sheet-handle"></div>
             <button class="sheet-close" (click)="closeDictSheet()">✕</button>
           </div>
@@ -137,28 +140,28 @@ type PhoneView = "read" | "study" | "ask" | "more";
         <button
           class="nav-btn"
           [class.active]="activeView() === 'read'"
-          (click)="activeView.set('read')"
+          (click)="setView('read')"
         >
           <span class="nav-icon">📖</span><span class="nav-label">Read</span>
         </button>
         <button
           class="nav-btn"
           [class.active]="activeView() === 'study'"
-          (click)="activeView.set('study')"
+          (click)="setView('study')"
         >
           <span class="nav-icon">📝</span><span class="nav-label">Study</span>
         </button>
         <button
           class="nav-btn"
           [class.active]="activeView() === 'ask'"
-          (click)="activeView.set('ask')"
+          (click)="setView('ask')"
         >
           <span class="nav-icon">💬</span><span class="nav-label">Ask</span>
         </button>
         <button
           class="nav-btn"
           [class.active]="activeView() === 'more'"
-          (click)="activeView.set('more')"
+          (click)="setView('more')"
         >
           <span class="nav-icon">⋯</span><span class="nav-label">More</span>
         </button>
@@ -303,7 +306,8 @@ type PhoneView = "read" | "study" | "ask" | "more";
         left: 0;
         right: 0;
         bottom: 0;
-        max-height: 70vh;
+        min-height: 15vh;
+        max-height: 95vh;
         background: #f5f2eb;
         border-radius: 14px 14px 0 0;
         z-index: 31;
@@ -319,6 +323,8 @@ type PhoneView = "read" | "study" | "ask" | "more";
         position: relative;
         padding: 8px;
         flex-shrink: 0;
+        touch-action: none;
+        cursor: row-resize;
       }
       .sheet-handle {
         width: 36px;
@@ -395,6 +401,14 @@ export class PhoneShellComponent {
   readonly activeView = signal<PhoneView>("read");
   readonly showDictSheet = signal(false);
 
+  /** Peek/half/full drag gesture (MOBILE_PLAN.md §3), as a fraction of viewport height. */
+  readonly sheetHeightFrac = signal(0.5);
+  private readonly SHEET_SNAPS = [0.25, 0.5, 0.9];
+  private readonly SHEET_MIN_FRAC = 0.18;
+  private sheetDragging = false;
+  private sheetDragStartY = 0;
+  private sheetDragStartFrac = 0.5;
+
   readonly canGoPrev = computed(() => (this.nav.chapter() ?? 1) > 1);
   readonly canGoNext = computed(
     () => (this.nav.chapter() ?? 1) < this.nav.maxChapter(),
@@ -407,11 +421,13 @@ export class PhoneShellComponent {
   });
 
   private readonly closeDictSheetFn = () => this.closeDictSheet();
+  private readonly closeToReadFn = () => this.setView("read");
 
   // §4.5: cross-panel requests must switch views since only one is visible.
   private readonly _wordLookupOpensSheet = effect(() => {
     if (this.wordSelection.selection() && !this.showDictSheet()) {
       this.showDictSheet.set(true);
+      this.sheetHeightFrac.set(0.5);
       this.backStack.open(this.closeDictSheetFn);
     }
   });
@@ -421,7 +437,7 @@ export class PhoneShellComponent {
   private readonly _tabRequestSwitchesView = effect(() => {
     const tab = this.nav.requestedRightTab();
     if (!tab) return;
-    this.activeView.set(tab === "ask" ? "ask" : "study");
+    this.setView(tab === "ask" ? "ask" : "study");
   });
   private readonly _overlaySwitchesToRead = effect(() => {
     if (
@@ -430,13 +446,61 @@ export class PhoneShellComponent {
       this.nav.showNotesList() ||
       this.nav.showBooks()
     ) {
-      this.activeView.set("read");
+      this.setView("read");
     }
   });
+
+  /**
+   * Switches the visible view, registering with the back button only when
+   * crossing the Read/non-Read boundary — switching e.g. Study -> Ask
+   * doesn't touch it, so the existing "back returns to Read" registration
+   * survives. BackStackService tracks a single most-recent entry (see its
+   * own doc comment), so this and the dictionary sheet/overlays share it;
+   * back always closes whatever opened last, not a full nested history.
+   */
+  setView(view: PhoneView): void {
+    if (view === this.activeView()) return;
+    if (view === "read") {
+      this.backStack.close(this.closeToReadFn);
+    } else if (this.activeView() === "read") {
+      this.backStack.open(this.closeToReadFn);
+    }
+    this.activeView.set(view);
+  }
 
   closeDictSheet(): void {
     if (!this.showDictSheet()) return;
     this.showDictSheet.set(false);
     this.backStack.close(this.closeDictSheetFn);
+  }
+
+  onSheetHandlePointerDown(e: PointerEvent): void {
+    this.sheetDragging = true;
+    this.sheetDragStartY = e.clientY;
+    this.sheetDragStartFrac = this.sheetHeightFrac();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }
+
+  onSheetHandlePointerMove(e: PointerEvent): void {
+    if (!this.sheetDragging) return;
+    const dy = e.clientY - this.sheetDragStartY;
+    const deltaFrac = dy / window.innerHeight;
+    const next = this.sheetDragStartFrac - deltaFrac;
+    this.sheetHeightFrac.set(Math.max(0.15, Math.min(0.95, next)));
+  }
+
+  onSheetHandlePointerUp(_e: PointerEvent): void {
+    if (!this.sheetDragging) return;
+    this.sheetDragging = false;
+    const current = this.sheetHeightFrac();
+    if (current < this.SHEET_MIN_FRAC) {
+      this.closeDictSheet();
+      return;
+    }
+    const nearest = this.SHEET_SNAPS.reduce((a, b) =>
+      Math.abs(b - current) < Math.abs(a - current) ? b : a,
+    );
+    this.sheetHeightFrac.set(nearest);
   }
 }
