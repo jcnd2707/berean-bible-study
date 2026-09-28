@@ -90,13 +90,14 @@ Claude Code runs locked down for plain text generation: no built-in tools, no MC
 
 Committed `appsettings.json` files hold placeholders; put machine-specific values in `appsettings.Development.json` (or user-secrets). API keys are only ever read from environment variables.
 
-**`BereanResource.Api`**: `BereanResources:RootPath`, `NotesDbPath`, `CrossReferencesDbFolder`; `ModuleProfiles`; `Cors:AllowedOrigins`.
+**`BereanResource.Api`**: `BereanResources:RootPath`, `NotesDbPath`, `CrossReferencesDbFolder`; `ModuleProfiles`; `Cors:AllowedOrigins`. Profiles live in a `Profiles` table in the same `notes.db` (no separate config).
 
 **`Berean.Agent.Api`**
 - `Llm`: `Provider`, `Model`, `Models` (the ones the UI offers), `Effort`, `HistoryTurns`, and `ClaudeCode` (`ExecutablePath`, `WorkingDirectory`, `TimeoutSeconds`, `Effort`). On Windows an npm install of Claude Code puts a `claude.cmd` shim on the PATH; the real `claude.exe` beside it is used automatically.
 - `Ollama`: `Endpoint`, `EmbeddingModel`, `DefaultModel`, `ToolCompatibleModels`.
 - `Agents:BibleAgent`: `RagDbPath`, `ResourceApiBaseUrl` (required), `AllowedBibleModules`, `AllowedCommentaryModules` (empty = all), `MaxPerModule`, `TopK`, `MaxContextTokens`, `AutoIndexMissingModules`, chunk sizes.
 - `Perspectives`, `MaxPerspectivesPerQuestion`: see [Perspectives](#perspectives) above.
+- `Sessions`: `MaxQuestions` (default 12), `WarnQuestionsLeft` (3), `MaxContextTokens` (60000), `WarnContextFraction` (0.8) — the study-session length limit; see [Profiles & study sessions](#profiles--study-sessions) below. At startup, `Llm:HistoryTurns` is raised to at least `MaxQuestions` if it's configured lower (logged as a warning), so a question is never trimmed out of history before a session reaches its own limit.
 
 ## Running
 
@@ -113,7 +114,17 @@ The vector index (`bible.rag.db`, next to it `chat.db` for saved conversations) 
 2. tags existing rows from the module profiles (no re-embedding);
 3. works out which modules aren't indexed yet, and logs them.
 
+`chat.db` and `notes.db` get the same one-time treatment for profiles: the first start after upgrading backs each up (`chat.db.pre-profiles.bak`, `notes.db.pre-profiles.bak`) before adding the `ProfileId` column, and every row from before is left unowned rather than guessed at.
+
 Indexing missing modules is **off by default** (`AutoIndexMissingModules: false`) because embedding runs at only a few chunks a second on CPU and a full commentary is hours of work. Verse questions don't need it: they read every commentary directly from the API. Semantic search over a commentary needs it indexed. Turn the setting on, or send `ReindexDocuments` from the hub, to build what's missing; nothing already indexed is touched, and an interrupted module is redone from scratch.
+
+## Profiles & study sessions
+
+A full-screen "Who's studying?" picker gates the app until a profile is chosen (see [Security model](#security-model) for what a profile is and isn't). The first profile created is offered the notes and conversations written before profiles existed; declining leaves them unowned, adoptable later from the same picker. Switching profiles (the title bar chip, or the phone shell's More menu) flushes any note still mid-autosave under the old profile, refuses while an answer is streaming, then reloads the page.
+
+A saved conversation is a **study session** in the UI: rename, pin, search (by title or your own questions in it), and reopening one returns the reader to where it last ended (not just where it began) with a dismissible "Continuing…" banner. Find them from the toolbar's "Sessions" button, the phone shell's More menu, or the "History" button in the Ask panel header.
+
+A session becomes **read-only** once it reaches `Sessions:MaxQuestions` or `Sessions:MaxContextTokens` (see [Configuration](#configuration)) — enforced server-side, not just by disabling the input. "Continue in a new session" writes a short recap (a separate, one-shot model call that never touches the full session's own history or, for Claude Code, its CLI session) and starts the next part with that recap folded into its first question; "Start fresh" begins an unrelated new session instead. A counter appears once either limit passes about half, and a notice once it's close.
 
 ## Mobile & tablet
 
@@ -133,7 +144,9 @@ to origin-relative API URLs whenever the page is loaded over `https:`.
 
 ## Security model
 
-Berean has **no authentication or authorization** anywhere: any request that reaches an API is served. There's no multi-user support — notes, saved conversations and RAG state are shared by whoever can reach the app. Run it on `localhost` or on a trusted private network only, behind your own reverse proxy and auth if you need to expose it further. CORS is restricted to the origins in `Cors:AllowedOrigins`, but that only stops browsers from other sites from calling in on a victim's behalf — it isn't a substitute for real access control.
+Berean has **no authentication or authorization** anywhere: any request that reaches an API is served. Run it on `localhost` or on a trusted private network only, behind your own reverse proxy and auth if you need to expose it further. CORS is restricted to the origins in `Cors:AllowedOrigins`, but that only stops browsers from other sites from calling in on a victim's behalf — it isn't a substitute for real access control.
+
+Berean does support more than one person: a "Who's studying?" **profile** picker keeps each person's notes and saved conversations ("study sessions") apart. This is **separation, not access control** — a profile is a name and a server-generated id, no password. `GET /api/profiles` lists every profile, and anyone who can reach the APIs can send any profile's id in the `X-Berean-Profile` header (REST) or `?profile=` (the SignalR hub) and read or write that profile's data, with `curl` or browser dev tools, without ever touching the picker. That's an acceptable tradeoff on a trusted private network among people who already share the household — it stops the two of you from overwriting each other's notes in *normal use*, nothing more. If Berean is ever exposed past a trusted network, real authentication (the profile id coming from an authenticated session instead of a header) becomes necessary.
 
 ## Deployment
 
@@ -165,11 +178,13 @@ The Claude Code client is tested against a fake `claude` executable (built with 
 
 ## Hub reference
 
-Client → server: `StartConversation(modelId?, perspectives?)` (locked for the conversation's lifetime), `ResumeConversation(id)`, `ListConversations()`, `DeleteConversation(id)`, `SendMessage(text, mode)`, `SetLanguage`, `ResetConversation`, `GetRagStatus`, `ReindexDocuments`.
+The hub URL carries `?profile=<id>` (browsers can't set headers on a WebSocket), checked once in `OnConnectedAsync` against `BereanResource.Api`; a missing or unknown profile gets `Error` and the connection is closed.
 
-Server → client, for one answer in order: `TokenReceived("")`, `Sources(list)`, `ToolActivity(name, text)`, `TokenReceived(chunk)`…, `MessageComplete(text)`. Also `SessionStarted`, `ConversationStarted`, `ConversationLoaded`, `ConversationList`, `ConversationDeleted`, `RagStatus`, `RagIndexing`, `RagIndexed`, `Error`.
+Client → server: `StartConversation(modelId?, perspectives?)` (locked for the conversation's lifetime), `ResumeConversation(id)`, `ListConversations(query?)` (pinned first, then most recent; query matches the title or the profile's own questions), `DeleteConversation(id)`, `RenameConversation(id, title)`, `SetPinned(id, pinned)`, `SendMessage(text, mode, location?)` (`location` is `{moduleId,book,chapter,verse}` or null; refused once the session is full), `ContinueConversation()` (ends a full session and starts the next part, recap carried over), `SetLanguage`, `GetRagStatus`, `ReindexDocuments`.
 
-REST: `Berean.Agent.Api`: `GET /health`, `GET /api/models`. `BereanResource.Api`: `/api/bible` (including `/{module}/strongs/{number}/occurrences`), `/api/books`, `/api/commentary`, `/api/crossreferences`, `/api/dictionary` (including `/transliteration`), `/api/notes` (including `POST /{reference}/append`), `/api/resources` (including `/profiles/unclassified`). Swagger UI in Development.
+Server → client, for one answer in order: `TokenReceived("")`, `Sources(list)`, `ToolActivity(name, text)`, `TokenReceived(chunk)`…, `MessageComplete(text)`. Also `SessionStarted`, `ConversationStarted`, `ConversationLoaded` (now includes `lastLocation`, `pinned`), `ConversationList`, `ConversationDeleted`, `SessionLimit(state)` (sent after `StartConversation`/`ResumeConversation`/`MessageComplete`/`ContinueConversation`: `{questionsUsed,maxQuestions,contextTokens,maxContextTokens,state}`, `state` one of `ok`/`nearing`/`full`), `ConversationContinued(previousId, previousTitle, recap)`, `RagStatus`, `RagIndexing`, `RagIndexed`, `Error`.
+
+REST: `Berean.Agent.Api`: `GET /health`, `GET /api/models`, `GET /api/conversations/unowned`, `POST /api/profiles/{id}/adopt-unowned-conversations`. `BereanResource.Api`: `/api/bible` (including `/{module}/strongs/{number}/occurrences`), `/api/books`, `/api/commentary`, `/api/crossreferences`, `/api/dictionary` (including `/transliteration`), `/api/resources` (including `/profiles/unclassified`), `/api/profiles` (`GET`/`POST`, `GET/PUT /{id}`, `GET /unowned`, `POST /{id}/adopt-unowned`), `/api/notes` (including `POST /{reference}/append`) — every notes endpoint requires an `X-Berean-Profile: <id>` header naming an existing profile, and returns `400` without one; the other endpoints ignore it. Swagger UI in Development.
 
 ## Known limits
 
