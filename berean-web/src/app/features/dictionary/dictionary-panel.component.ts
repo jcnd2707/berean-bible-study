@@ -15,7 +15,9 @@ import {
 import { ResourcesService } from "../../core/services/resources.service";
 import { WordSelectionService } from "../../core/services/word-selection.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
+import { SpeechService } from "../../core/services/speech.service";
 import { parseDefinition, ParsedDefinition } from "./definition-parser";
+import { phoneticToSpeech, PhoneticSpeech, PHONETIC_NORMAL_RATE, PHONETIC_SLOW_RATE } from "./phonetic-speech";
 import { catchError } from "rxjs/operators";
 import { forkJoin, of, EMPTY } from "rxjs";
 
@@ -37,6 +39,7 @@ export class DictionaryPanelComponent implements OnInit {
   private readonly resourcesService = inject(ResourcesService);
   readonly wordSelection = inject(WordSelectionService);
   private readonly nav = inject(NavigationStateService);
+  private readonly speech = inject(SpeechService);
 
   readonly tabs = signal<DictTab[]>([]);
   readonly activeTabId = signal<string>("");
@@ -44,12 +47,33 @@ export class DictionaryPanelComponent implements OnInit {
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
   readonly lastWord = signal<string>("");
+  readonly speechMessage = signal<string | null>(null);
 
   readonly parsed = computed<ParsedDefinition | null>(() => {
     const r = this.rawResult();
     if (!r) return null;
     return parseDefinition(r.topic, r.definition);
   });
+
+  readonly phoneticSpeech = computed<PhoneticSpeech | null>(() => {
+    const phonetic = this.parsed()?.phonetic;
+    return phonetic ? phoneticToSpeech(phonetic) : null;
+  });
+
+  /**
+   * An English voice always reads the pronunciation spelling (never the Greek/Hebrew letters):
+   * Hebrew here has no vowel points, a modern Greek voice reads Koine with modern sounds, and
+   * every device has an English voice.
+   */
+  async playPronunciation(slow: boolean): Promise<void> {
+    const ps = this.phoneticSpeech();
+    if (!ps) return;
+    this.speechMessage.set(null);
+    const text = slow ? ps.spokenSlow : ps.spokenNormal;
+    const rate = slow ? PHONETIC_SLOW_RATE : PHONETIC_NORMAL_RATE;
+    const result = await this.speech.speak(text, { lang: "en", rate });
+    if (!result.ok) this.speechMessage.set(result.message ?? null);
+  }
 
   private readonly _lookupEffect = effect(() => {
     const sel = this.wordSelection.selection();
@@ -115,6 +139,7 @@ export class DictionaryPanelComponent implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     this.rawResult.set(null);
+    this.speechMessage.set(null);
 
     if (t.isStrongs) {
       if (strongs) {

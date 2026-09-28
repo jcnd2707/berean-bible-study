@@ -32,6 +32,7 @@ import { NotesService } from "../../core/services/notes.service";
 import { LayoutService } from "../../core/services/layout.service";
 import { conversationStorageKey } from "../../core/services/conversation-storage-key";
 import { renderAnswerHtml } from "./answer-html";
+import { applyStoppedMessage } from "./stopped-message";
 
 const PROFILE_STORAGE_KEY = "berean_profileId";
 
@@ -54,6 +55,8 @@ export interface ChatMessage {
   /** What the model is doing right now ("Looking up hesed…"). */
   activity?: string;
   saved?: boolean;
+  /** Stopped mid-answer (D11) — not saved, gone on reload; "Save to notes" is hidden for it. */
+  stopped?: boolean;
 }
 
 const QUICK_ASKS_NEUTRAL = [
@@ -69,6 +72,16 @@ const QUICK_ASKS_NEUTRAL = [
   {
     label: "Context ↗",
     prompt: "What is the historical and cultural context of this passage?",
+  },
+  {
+    label: "Questions ↗",
+    prompt:
+      "Write 6–8 discussion questions on this passage for a small group, moving from observation (what the text says) to interpretation (what it means) to application. Where readers or traditions interpret it differently, ask the question openly instead of assuming one reading.",
+  },
+  {
+    label: "Outline ↗",
+    prompt:
+      "Give an outline of this passage: its main sections with verse ranges, the key words or repeated ideas, and where the argument or story turns.",
   },
 ];
 
@@ -245,6 +258,15 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.shouldScroll = true;
       }),
 
+      this.hub.stopped$.subscribe(() => {
+        const { messages, stoppedQuestion } = applyStoppedMessage(this.messages());
+        this.messages.set(messages);
+        // So asking again is one Enter (D11) — only when the box is empty, so it never clobbers
+        // something the user has already started typing.
+        if (stoppedQuestion && !this.inputText().trim()) this.inputText.set(stoppedQuestion);
+        this.shouldScroll = true;
+      }),
+
       // The sources the answer may cite arrive before its text.
       this.hub.sources$.subscribe((sources) =>
         this.updateStreamingMessage((m) => ({ ...m, sources })),
@@ -350,6 +372,14 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       await this.hub.sendMessage(withContext, this.mode(), this.nav.location());
     } catch {
       this.error.set("Failed to send message.");
+    }
+  }
+
+  async stopAnswer(): Promise<void> {
+    try {
+      await this.hub.cancelMessage();
+    } catch {
+      // Best effort — if this fails the answer just keeps streaming; the user can try again.
     }
   }
 

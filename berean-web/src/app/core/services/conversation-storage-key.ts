@@ -1,4 +1,5 @@
 const PREFIX = "berean_conversationId";
+const READING_POSITION_PREFIX = "berean_readingPosition";
 
 /**
  * One saved-conversation-id localStorage slot per profile, so a shared PC resumes the right
@@ -7,4 +8,9 @@ const PREFIX = "berean_conversationId";
  */
 export function conversationStorageKey(profileId: string | null): string {
   return profileId ? `${PREFIX}:${profileId}` : PREFIX;
+}
+
+/** Same per-profile pattern as {@link conversationStorageKey}, for the remembered reading position. */
+export function readingPositionStorageKey(profileId: string | null): string {
+  return profileId ? `${READING_POSITION_PREFIX}:${profileId}` : READING_POSITION_PREFIX;
 }

@@ -36,10 +36,40 @@
             @if (parsed()!.transliteration) {
               <span class="dict-trans">{{ parsed()!.transliteration }}</span>
             }
-            @if (parsed()!.phonetic) {
+            @if (phoneticSpeech(); as ps) {
+              <span class="dict-phonetic">
+                @for (syl of ps.syllables; track $index) {
+                  <span [class.stressed]="$index === ps.stressIndex">{{ syl }}</span>
+                  @if (!$last) {
+                    <span class="syl-sep">-</span>
+                  }
+                }
+              </span>
+              <button
+                type="button"
+                class="speech-btn"
+                (click)="playPronunciation(false)"
+                title="Hear it"
+                aria-label="Hear pronunciation"
+              >
+                🔊
+              </button>
+              <button
+                type="button"
+                class="speech-btn"
+                (click)="playPronunciation(true)"
+                title="Hear it slowly"
+                aria-label="Hear pronunciation slowly"
+              >
+                🐢
+              </button>
+            } @else if (parsed()!.phonetic) {
               <span class="dict-phonetic">{{ parsed()!.phonetic }}</span>
             }
           </div>
+          @if (speechMessage()) {
+            <p class="speech-msg">{{ speechMessage() }}</p>
+          }
 
           @if (parsed()!.partOfSpeech) {
             <div class="dict-pos">{{ parsed()!.partOfSpeech }}</div>

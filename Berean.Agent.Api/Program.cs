@@ -20,6 +20,13 @@ namespace Berean.Agent.Api
             {
                 opts.MaximumReceiveMessageSize = 64 * 1024; // 64 KB
                 opts.EnableDetailedErrors = builder.Environment.IsDevelopment();
+
+                // 2, not the default of 1, so CancelMessage isn't queued behind the SendMessage
+                // it's meant to stop (D11 in PR1_QUICK_WINS_PLAN.md). This also means a hub method
+                // that switches conversations can now run concurrently with a streaming SendMessage
+                // on the same connection — see ActiveAnswers.WaitForIdleAsync for how ChatHub keeps
+                // the two from interleaving their sends to the client.
+                opts.MaximumParallelInvocationsPerClient = 2;
             });
 
             // Which model answers ("Llm" section). Ollama still does the embeddings.
@@ -34,6 +41,7 @@ namespace Berean.Agent.Api
             builder.Services.AddSingleton<ModelRegistryService>();
             // StudySessionService is Singleton — it holds all active conversations and the shared library
             builder.Services.AddSingleton<StudySessionService>();
+            builder.Services.AddSingleton<ActiveAnswers>();
 
             // Origins the web app may be served from ("Cors:AllowedOrigins"); SignalR needs them listed exactly.
             var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()

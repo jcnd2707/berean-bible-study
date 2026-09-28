@@ -127,6 +127,8 @@ export class AgentHubService implements OnDestroy {
   readonly ragStatus$ = new Subject<RagStatusEvent>();
   readonly sessionLimit$ = new Subject<SessionLimitState>();
   readonly conversationContinued$ = new Subject<ConversationContinuedEvent>();
+  /** The answer streaming on this connection was stopped (CancelMessage, or a conversation switch mid-answer). */
+  readonly stopped$ = new Subject<void>();
 
   /** True from sendMessage() until the answer completes or errors — see PROFILES_AND_SESSIONS_PLAN.md D4. */
   readonly isAnswering = signal(false);
@@ -134,6 +136,7 @@ export class AgentHubService implements OnDestroy {
   constructor(private zone: NgZone) {
     this.complete$.subscribe(() => this.isAnswering.set(false));
     this.error$.subscribe(() => this.isAnswering.set(false));
+    this.stopped$.subscribe(() => this.isAnswering.set(false));
   }
 
   /**
@@ -192,6 +195,9 @@ export class AgentHubService implements OnDestroy {
     );
     this.hub.on("MessageComplete", (t: string) =>
       this.zone.run(() => this.complete$.next(t)),
+    );
+    this.hub.on("MessageStopped", () =>
+      this.zone.run(() => this.stopped$.next()),
     );
     this.hub.on("SessionStarted", (chunks: number) =>
       this.zone.run(() => this.sessionStarted$.next({ ragChunks: chunks })),
@@ -273,6 +279,11 @@ export class AgentHubService implements OnDestroy {
   async sendMessage(text: string, mode: ChatMode = "Quick", location: BibleLocation | null = null): Promise<void> {
     this.isAnswering.set(true);
     await this.hub.send("SendMessage", text, mode, location);
+  }
+
+  /** Stops the answer currently streaming on this connection, if any. */
+  async cancelMessage(): Promise<void> {
+    await this.hub.send("CancelMessage");
   }
 
   /** Ends a full session and starts the next part of the same study, recap carried over (Phase 5). */

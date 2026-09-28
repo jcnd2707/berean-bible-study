@@ -253,10 +253,10 @@ public sealed class ClaudeCodeChatClientTests : IDisposable
         await run;
     }
 
-    private async Task WaitUntilLogged()
+    private async Task WaitUntilLogged(int minCount = 1)
     {
         var deadline = DateTime.UtcNow.AddSeconds(10);
-        while (CallsIfReadable().Count == 0)
+        while (CallsIfReadable().Count < minCount)
         {
             if (DateTime.UtcNow > deadline) throw new TimeoutException("FakeClaude never logged the call.");
             await Task.Delay(10);
@@ -272,6 +272,56 @@ public sealed class ClaudeCodeChatClientTests : IDisposable
     {
         try { return Calls(); }
         catch (IOException) { return []; }
+    }
+
+    /// <summary>
+    /// D11 (PR1_QUICK_WINS_PLAN.md): a cancelled follow-up may have already had its question
+    /// written into the CLI's own on-disk session, so the next message must not --resume it —
+    /// the fix is _sessions.TryRemove in ClaudeCodeChatClient's finally.
+    /// </summary>
+    [Fact]
+    public async Task ACancelledFollowUp_TheNextMessageStartsFresh_NotResume()
+    {
+        var c = Client();
+        await Stream(c, [Sys(), User("q1")]); // establishes the session (call 0)
+
+        using var cts = new CancellationTokenSource();
+        var run = Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in c.GetStreamingResponseAsync(
+                [Sys(), User("q1"), Bot("Echo: q1"), User("SLEEP")], new ChatOptions { ConversationId = "c1" }, cts.Token)) { }
+        });
+        await WaitUntilLogged(minCount: 2); // the resumed follow-up call (call 1) has been logged
+        cts.Cancel();
+        await run;
+
+        var (text, _) = await Stream(c, [Sys(), User("q1"), Bot("Echo: q1"), User("q2")], conversation: "c1");
+
+        Assert.Equal("Echo: q2", text);
+        var calls = Calls();
+        Assert.Equal(3, calls.Count); // start, cancelled follow-up, fresh start
+        Assert.Null(calls[2].After("--resume"));
+        Assert.NotNull(calls[2].After("--session-id"));
+        Assert.Contains("User: q1", calls[2].Prompt); // condensed transcript, not a bare resume
+    }
+
+    /// <summary>Same fix, exercised via a timeout instead of an explicit cancel.</summary>
+    [Fact]
+    public async Task ATimedOutFollowUp_TheNextMessageStartsFresh_NotResume()
+    {
+        var c = Client(timeoutSeconds: 1);
+        await Stream(c, [Sys(), User("q1")]); // establishes the session (call 0)
+
+        await Assert.ThrowsAsync<TimeoutException>(() => Stream(
+            c, [Sys(), User("q1"), Bot("Echo: q1"), User("SLEEP")], conversation: "c1"));
+
+        var (text, _) = await Stream(c, [Sys(), User("q1"), Bot("Echo: q1"), User("q2")], conversation: "c1");
+
+        Assert.Equal("Echo: q2", text);
+        var calls = Calls();
+        Assert.Equal(3, calls.Count); // start, timed-out follow-up, fresh start
+        Assert.Null(calls[2].After("--resume"));
+        Assert.Contains("User: q1", calls[2].Prompt);
     }
 
     [Fact]

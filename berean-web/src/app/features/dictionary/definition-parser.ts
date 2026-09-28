@@ -39,8 +39,12 @@ export function parseDefinition(topic: string, raw: string): ParsedDefinition {
   );
   result.transliteration = transMatch?.[1]?.trim();
 
-  // Phonetic
-  const phonMatch = raw.match(/Phonetic:\s*([^\n]+?)(?=\s+BDB Definition|$)/);
+  // Phonetic — bounded by whichever "definition" section label follows: "BDB Definition" for
+  // Hebrew entries, "Thayer Definition" for Greek ones. Missing the Greek case here used to let
+  // this capture the rest of the whole entry (definitions, origin, KJV occurrences and all).
+  const phonMatch = raw.match(
+    /Phonetic:\s*([^\n]+?)(?=\s+(?:BDB Definition|Thayer Definition|Origin:|TDNT entry:|TWOT entry:|Part\(s\) of speech|Strong's Definition)|$)/,
+  );
   result.phonetic = phonMatch?.[1]?.trim();
 
   // BDB Definition — the list of meanings between "BDB Definition :" and "Origin:"

@@ -330,6 +330,21 @@ public sealed class ConversationStore
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>
+    /// Clears the stored Claude Code session id after a stopped turn (D11), so a page reload
+    /// doesn't --resume a CLI session that may already contain the stopped question. A no-op if
+    /// the conversation isn't in chat.db yet — the first question was the one that got stopped.
+    /// </summary>
+    public async Task ClearClaudeSessionAsync(string id, string profileId, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE Conversations SET ClaudeSessionId = NULL WHERE Id = $id AND ProfileId = $profile";
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.Parameters.AddWithValue("$profile", profileId);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     // ── Messages ───────────────────────────────────────────────────────────
 
     /// <summary>

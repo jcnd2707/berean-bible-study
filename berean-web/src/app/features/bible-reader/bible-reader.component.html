@@ -106,6 +106,8 @@
       <div
         class="verse-list"
         (dblclick)="onVerseDoubleClick($event)"
+        (contextmenu)="onVerseListContextMenu($event)"
+        (click)="closeWordMenu()"
         (pointerdown)="onVerseListPointerDown($event)"
         (pointermove)="onVerseListPointerMove($event)"
         (pointerup)="onVerseListPointerUp($event)"
@@ -148,6 +150,7 @@
         </span>
         @if (layout.layout() === "desktop") {
           <span class="strip-hint">Selected · context sent to AI chat</span>
+          <button class="strip-copy-btn" (click)="copyVerse()">Copy</button>
         } @else {
           <!-- Verse action bar (MOBILE_PLAN.md §3): one-tap jumps replace
                desktop's always-visible panels. "Look up word" isn't here —
@@ -158,7 +161,11 @@
             <button class="va-btn" (click)="navState.requestRightTab('commentary')">Commentary</button>
             <button class="va-btn" (click)="navState.requestRightTab('notes')">Notes</button>
             <button class="va-btn" (click)="navState.requestRightTab('xrefs')">Cross-refs</button>
+            <button class="va-btn" (click)="copyVerse()">Copy</button>
           </div>
+        }
+        @if (copyMessage(); as msg) {
+          <span class="strip-copied">{{ msg }}</span>
         }
         <button class="strip-clear" (click)="navState.clearVerse()">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -174,17 +181,21 @@
     }
   }
 
-  <!-- Touch word lookup: shown when a coarse pointer selects a word (§4.3) -->
-  @if (touchLookup(); as lookup) {
-    <button
-      type="button"
-      class="touch-lookup-chip"
-      [style.left.px]="lookup.x"
-      [style.top.px]="lookup.y"
+  <!-- Word menu: long press (touch) or right-click (desktop) on a word (§D4) -->
+  @if (wordMenu(); as menu) {
+    <div
+      class="word-menu"
+      [style.left.px]="menu.x"
+      [style.top.px]="menu.y"
       (pointerdown)="$event.preventDefault()"
-      (click)="confirmTouchLookup()"
     >
-      Look up "{{ lookup.word }}"
-    </button>
+      <button type="button" class="word-menu-btn" (click)="confirmWordLookup()">
+        Look up "{{ menu.word }}"
+      </button>
+      <button type="button" class="word-menu-btn" (click)="hearWord()">🔊 Hear it</button>
+      @if (wordMenuMessage()) {
+        <p class="word-menu-msg">{{ wordMenuMessage() }}</p>
+      }
+    </div>
   }
 </div>

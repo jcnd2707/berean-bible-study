@@ -97,57 +97,70 @@ public sealed class ClaudeCodeChatClient : IChatClient
             _log.LogInformation("[ClaudeCode] History changed ({Expected} expected, {Actual} present) — starting a new session",
                 state.ExpectedPriorCount, lastUser);
 
-        while (true)
+        var completed = false;
+        try
         {
-            var sessionId = resume ? state!.SessionId : Guid.NewGuid().ToString();
-            var prompt = resume ? userText : WithTranscript(list, lastUser, userText);
-
-            var sawText = false;
-            ResultEvent? result = null;
-
-            await foreach (var ev in RunAsync(system, prompt, sessionId, resume, oneShot: false, cancellationToken))
+            while (true)
             {
-                if (ev.Text is not null)
+                var sessionId = resume ? state!.SessionId : Guid.NewGuid().ToString();
+                var prompt = resume ? userText : WithTranscript(list, lastUser, userText);
+
+                var sawText = false;
+                ResultEvent? result = null;
+
+                await foreach (var ev in RunAsync(system, prompt, sessionId, resume, oneShot: false, cancellationToken))
                 {
-                    sawText = true;
-                    yield return new ChatResponseUpdate(ChatRole.Assistant, ev.Text)
+                    if (ev.Text is not null)
                     {
-                        ConversationId = sessionId,
-                        ModelId = _model,
-                    };
+                        sawText = true;
+                        yield return new ChatResponseUpdate(ChatRole.Assistant, ev.Text)
+                        {
+                            ConversationId = sessionId,
+                            ModelId = _model,
+                        };
+                    }
+                    else if (ev.Result is not null)
+                    {
+                        result = ev.Result;
+                    }
                 }
-                else if (ev.Result is not null)
+
+                if (result is null)
+                    throw new InvalidOperationException("Claude Code ended without a result.");
+
+                if (result.IsError)
                 {
-                    result = ev.Result;
+                    // The session was deleted (retention period) or never existed on this machine.
+                    if (resume && !sawText && result.Message.Contains("No conversation found", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _log.LogWarning("[ClaudeCode] Session {Id} is gone — restarting with a condensed transcript", sessionId);
+                        resume = false;
+                        continue;
+                    }
+                    throw new InvalidOperationException($"Claude Code failed: {result.Message}");
                 }
-            }
 
-            if (result is null)
-                throw new InvalidOperationException("Claude Code ended without a result.");
+                _sessions[key] = new SessionState(sessionId, lastUser + 2);
+                completed = true;
 
-            if (result.IsError)
-            {
-                // The session was deleted (retention period) or never existed on this machine.
-                if (resume && !sawText && result.Message.Contains("No conversation found", StringComparison.OrdinalIgnoreCase))
+                yield return new ChatResponseUpdate
                 {
-                    _log.LogWarning("[ClaudeCode] Session {Id} is gone — restarting with a condensed transcript", sessionId);
-                    resume = false;
-                    continue;
-                }
-                throw new InvalidOperationException($"Claude Code failed: {result.Message}");
+                    Role = ChatRole.Assistant,
+                    FinishReason = ChatFinishReason.Stop,
+                    ConversationId = sessionId,
+                    ModelId = _model,
+                    Contents = [new UsageContent(result.Usage)],
+                };
+                yield break;
             }
-
-            _sessions[key] = new SessionState(sessionId, lastUser + 2);
-
-            yield return new ChatResponseUpdate
-            {
-                Role = ChatRole.Assistant,
-                FinishReason = ChatFinishReason.Stop,
-                ConversationId = sessionId,
-                ModelId = _model,
-                Contents = [new UsageContent(result.Usage)],
-            };
-            yield break;
+        }
+        finally
+        {
+            // A run that didn't complete (stop, timeout or error) may have already written its
+            // question into the CLI's own on-disk session — the caller's history has already
+            // dropped it (StudyAgent's rollback), so the next call must not --resume that session.
+            if (!completed && _sessions.TryRemove(key, out _))
+                _log.LogWarning("[ClaudeCode] Run for '{Key}' did not complete — dropping the cached session so the next question starts fresh", key);
         }
     }
 
