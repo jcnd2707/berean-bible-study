@@ -2,7 +2,7 @@ import { Injectable, inject, signal, computed } from "@angular/core";
 import { BibleLocation, Verse, CommentaryEntry, BookEntry } from "../models";
 import { BackStackService } from "./back-stack.service";
 
-export type RightTab = "commentary" | "notes" | "xrefs";
+export type RightTab = "commentary" | "notes" | "xrefs" | "dictionary" | "ask";
 
 /** Asks the book reader to open a book at a chapter (1-based position in the book's chapter list). */
 export interface BookRequest {
@@ -27,6 +27,7 @@ export class NavigationStateService {
   private readonly closeCompareFn = () => this.closeCompare();
   private readonly closeNotesListFn = () => this.closeNotesList();
   private readonly closeBooksFn = () => this.closeBooks();
+  private readonly closeBookDrawerFn = () => this.closeBookDrawer();
 
   private readonly _location = signal<BibleLocation | null>(null);
   private readonly _maxChapter = signal<number>(1);
@@ -41,6 +42,8 @@ export class NavigationStateService {
   private readonly _notedReferences = signal<Set<string>>(new Set());
   private readonly _showNotesList = signal<boolean>(false);
   private readonly _showBooks = signal<boolean>(false);
+  // Tablet/phone book+chapter navigation drawer (desktop shows BookSidebar inline instead).
+  private readonly _showBookDrawer = signal<boolean>(false);
   private readonly _requestedRightTab = signal<RightTab | null>(null);
   private readonly _requestedCommentaryModule = signal<string | null>(null);
   private readonly _requestedBook = signal<BookRequest | null>(null);
@@ -58,6 +61,7 @@ export class NavigationStateService {
   readonly notedReferences = this._notedReferences.asReadonly();
   readonly showNotesList = this._showNotesList.asReadonly();
   readonly showBooks = this._showBooks.asReadonly();
+  readonly showBookDrawer = this._showBookDrawer.asReadonly();
 
   // One-shot requests the panels consume (used when a chat citation is clicked).
   readonly requestedRightTab = this._requestedRightTab.asReadonly();
@@ -143,6 +147,20 @@ export class NavigationStateService {
     if (!this._showBooks()) return;
     this._showBooks.set(false);
     this.backStack.close(this.closeBooksFn);
+  }
+
+  toggleBookDrawer(): void {
+    if (this._showBookDrawer()) {
+      this.closeBookDrawer();
+      return;
+    }
+    this._showBookDrawer.set(true);
+    this.backStack.open(this.closeBookDrawerFn);
+  }
+  closeBookDrawer(): void {
+    if (!this._showBookDrawer()) return;
+    this._showBookDrawer.set(false);
+    this.backStack.close(this.closeBookDrawerFn);
   }
 
   /** Shows a commentary on a passage: go to the verse and open that module in the commentary tab. */

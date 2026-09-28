@@ -3,6 +3,7 @@ import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { PreferencesService } from "../../core/services/preferences.service";
+import { LayoutService } from "../../core/services/layout.service";
 
 @Component({
   selector: "app-toolbar",
@@ -10,6 +11,16 @@ import { PreferencesService } from "../../core/services/preferences.service";
   imports: [CommonModule, FormsModule],
   template: `
     <div class="toolbar">
+      <!-- Desktop shows BookSidebar inline; tablet/phone open it as a drawer instead. -->
+      @if (layout.layout() !== "desktop") {
+        <button
+          class="tb-btn tb-btn--icon"
+          (click)="nav.toggleBookDrawer()"
+          title="Books & chapters"
+        >
+          ☰
+        </button>
+      }
       <button
         class="tb-btn"
         (click)="nav.prevChapter()"
@@ -114,9 +125,10 @@ import { PreferencesService } from "../../core/services/preferences.service";
       .toolbar {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         min-height: 36px;
         background: #0d1a26;
-        padding: 0 12px;
+        padding: 6px 12px;
         gap: var(--gap);
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         flex-shrink: 0;
@@ -209,6 +221,7 @@ import { PreferencesService } from "../../core/services/preferences.service";
 export class ToolbarComponent {
   readonly nav = inject(NavigationStateService);
   readonly prefs = inject(PreferencesService);
+  readonly layout = inject(LayoutService);
 
   readonly editing = signal(false);
   readonly refInput = signal("");
