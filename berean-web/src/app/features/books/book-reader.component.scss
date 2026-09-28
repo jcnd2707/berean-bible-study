@@ -11,6 +11,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  position: relative;
   background: #FAF8F3;
   color: #2C2825;
 }
@@ -84,6 +85,34 @@
   max-height: 360px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 39;
+}
+
+// The book dropdown becomes a sheet on touch (MOBILE_PLAN.md §5) — an
+// absolutely-positioned dropdown pinned to the button doesn't work well
+// at phone/tablet widths.
+@media (pointer: coarse) {
+  .book-dropdown {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    z-index: 40;
+    border-radius: 14px 14px 0 0;
+    max-height: 70vh;
+    min-width: 0;
+  }
+  .book-option {
+    min-height: var(--tap-min);
+    justify-content: center;
+  }
 }
 
 .dropdown-empty {
@@ -227,6 +256,49 @@
   background: #F5F2EB;
   overflow: hidden;
   flex-shrink: 0;
+}
+
+// Drawer variant (MOBILE_PLAN.md §5): tablet/phone have no room for a
+// permanent 200px column, so it overlays the reading pane instead.
+.chapter-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 30;
+}
+
+.chapter-sidebar--drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(280px, 85vw);
+  z-index: 31;
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.25);
+
+  .sidebar-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 6px;
+  }
+  .chapter-item {
+    min-height: var(--tap-min);
+    align-items: center;
+  }
+}
+
+.sheet-close {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #A09890;
+  font-size: var(--fs-sm);
+  cursor: pointer;
 }
 
 .sidebar-label {

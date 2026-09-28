@@ -10,6 +10,7 @@ import { Subject, EMPTY } from 'rxjs';
 import { BooksService } from '../../core/services/books.service';
 import { PreferencesService } from '../../core/services/preferences.service';
 import { NavigationStateService } from '../../core/services/navigation-state.service';
+import { LayoutService } from '../../core/services/layout.service';
 import {
   BookSummary, BookChapter, BookParagraph,
 } from '../../core/models';
@@ -25,11 +26,21 @@ export class BookReaderComponent implements OnInit {
   private readonly booksService = inject(BooksService);
   readonly prefs                 = inject(PreferencesService);
   private readonly nav           = inject(NavigationStateService);
+  readonly layout                 = inject(LayoutService);
 
   @ViewChild('readingPane') readingPaneRef!: ElementRef<HTMLElement>;
 
+  /** MOBILE_PLAN.md §5: the fixed 200px chapter sidebar has no room on
+   *  tablet/phone — it becomes a drawer opened by a "Chapters" button. */
+  readonly showChapterDrawer = signal(false);
+
   close(): void {
     this.nav.closeBooks();
+  }
+
+  selectChapterFromDrawer(chapterId: number): void {
+    this.loadChapter(chapterId);
+    this.showChapterDrawer.set(false);
   }
 
   // ── Catalog ───────────────────────────────────────────────────────────────

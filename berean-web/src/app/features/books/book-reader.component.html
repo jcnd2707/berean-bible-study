@@ -17,6 +17,9 @@
       </button>
 
       @if (showBookPicker()) {
+        @if (layout.coarsePointer()) {
+          <div class="picker-backdrop" (click)="showBookPicker.set(false)"></div>
+        }
         <div class="book-dropdown">
           @if (books().length === 0) {
             <div class="dropdown-empty">No books available.</div>
@@ -37,6 +40,13 @@
     <!-- Chapter nav -->
     <button class="bar-btn" [disabled]="!canGoPrev()" (click)="prevChapter()" title="Previous chapter">◀</button>
     <button class="bar-btn" [disabled]="!canGoNext()" (click)="nextChapter()" title="Next chapter">▶</button>
+
+    @if (layout.layout() !== "desktop" && activeBook()) {
+      <button class="bar-btn" [class.bar-btn--active]="showChapterDrawer()"
+              (click)="showChapterDrawer.set(!showChapterDrawer())" title="Chapters">
+        Chapters
+      </button>
+    }
 
     <div class="bar-sep"></div>
 
@@ -83,8 +93,8 @@
   <!-- ── Main area ── -->
   <div class="main-area">
 
-    <!-- Chapter sidebar -->
-    @if (activeBook()) {
+    <!-- Chapter sidebar: inline column on desktop -->
+    @if (activeBook() && layout.layout() === "desktop") {
       <div class="chapter-sidebar">
         <div class="sidebar-label">Chapters</div>
         @if (loadingChapters()) {
@@ -97,6 +107,34 @@
               <div class="chapter-item"
                    [class.active]="ch.id === activeChapterId()"
                    (click)="loadChapter(ch.id)"
+                   [title]="ch.title">
+                <span class="ch-num">{{ ch.chapterNumber }}</span>
+                <span class="ch-title">{{ ch.title }}</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Chapter sidebar: drawer on tablet/phone (MOBILE_PLAN.md §5) -->
+    @if (showChapterDrawer() && layout.layout() !== "desktop") {
+      <div class="chapter-drawer-backdrop" (click)="showChapterDrawer.set(false)"></div>
+      <div class="chapter-sidebar chapter-sidebar--drawer">
+        <div class="sidebar-label">
+          <span>Chapters</span>
+          <button class="sheet-close" (click)="showChapterDrawer.set(false)">✕</button>
+        </div>
+        @if (loadingChapters()) {
+          <div class="sidebar-loading">
+            <div class="loading-dots"><span></span><span></span><span></span></div>
+          </div>
+        } @else {
+          <div class="chapter-list">
+            @for (ch of chapters(); track ch.id) {
+              <div class="chapter-item"
+                   [class.active]="ch.id === activeChapterId()"
+                   (click)="selectChapterFromDrawer(ch.id)"
                    [title]="ch.title">
                 <span class="ch-num">{{ ch.chapterNumber }}</span>
                 <span class="ch-title">{{ ch.title }}</span>
