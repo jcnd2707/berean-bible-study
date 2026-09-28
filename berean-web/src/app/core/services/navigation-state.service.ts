@@ -28,6 +28,7 @@ export class NavigationStateService {
   private readonly closeNotesListFn = () => this.closeNotesList();
   private readonly closeBooksFn = () => this.closeBooks();
   private readonly closeBookDrawerFn = () => this.closeBookDrawer();
+  private readonly closeProfileSwitcherFn = () => this.closeProfileSwitcher();
 
   private readonly _location = signal<BibleLocation | null>(null);
   private readonly _maxChapter = signal<number>(1);
@@ -44,6 +45,7 @@ export class NavigationStateService {
   private readonly _showBooks = signal<boolean>(false);
   // Tablet/phone book+chapter navigation drawer (desktop shows BookSidebar inline instead).
   private readonly _showBookDrawer = signal<boolean>(false);
+  private readonly _showProfileSwitcher = signal<boolean>(false);
   private readonly _requestedRightTab = signal<RightTab | null>(null);
   private readonly _requestedCommentaryModule = signal<string | null>(null);
   private readonly _requestedBook = signal<BookRequest | null>(null);
@@ -62,6 +64,7 @@ export class NavigationStateService {
   readonly showNotesList = this._showNotesList.asReadonly();
   readonly showBooks = this._showBooks.asReadonly();
   readonly showBookDrawer = this._showBookDrawer.asReadonly();
+  readonly showProfileSwitcher = this._showProfileSwitcher.asReadonly();
 
   // One-shot requests the panels consume (used when a chat citation is clicked).
   readonly requestedRightTab = this._requestedRightTab.asReadonly();
@@ -161,6 +164,20 @@ export class NavigationStateService {
     if (!this._showBookDrawer()) return;
     this._showBookDrawer.set(false);
     this.backStack.close(this.closeBookDrawerFn);
+  }
+
+  toggleProfileSwitcher(): void {
+    if (this._showProfileSwitcher()) {
+      this.closeProfileSwitcher();
+      return;
+    }
+    this._showProfileSwitcher.set(true);
+    this.backStack.open(this.closeProfileSwitcherFn);
+  }
+  closeProfileSwitcher(): void {
+    if (!this._showProfileSwitcher()) return;
+    this._showProfileSwitcher.set(false);
+    this.backStack.close(this.closeProfileSwitcherFn);
   }
 
   /** Shows a commentary on a passage: go to the verse and open that module in the commentary tab. */

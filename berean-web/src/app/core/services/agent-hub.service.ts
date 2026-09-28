@@ -1,7 +1,9 @@
-import { Injectable, NgZone, OnDestroy } from "@angular/core";
+import { Injectable, NgZone, OnDestroy, signal } from "@angular/core";
 import * as signalR from "@microsoft/signalr";
 import { Subject, BehaviorSubject } from "rxjs";
 import { environment } from "../../../environments/environment";
+
+const PROFILE_STORAGE_KEY = "berean_profileId";
 
 /** How a question is answered: Quick skips retrieval, Deep retrieves sources, Compare sets traditions side by side. */
 export type ChatMode = "Quick" | "Deep" | "Compare";
@@ -99,13 +101,24 @@ export class AgentHubService implements OnDestroy {
   readonly ragIndexed$ = new Subject<RagIndexedEvent>();
   readonly ragStatus$ = new Subject<RagStatusEvent>();
 
+  /** True from sendMessage() until the answer completes or errors — see PROFILES_AND_SESSIONS_PLAN.md D4. */
+  readonly isAnswering = signal(false);
+
   constructor(private zone: NgZone) {
     this.buildConnection();
+    this.complete$.subscribe(() => this.isAnswering.set(false));
+    this.error$.subscribe(() => this.isAnswering.set(false));
   }
 
   private buildConnection(): void {
+    // Browsers can't set headers on a WebSocket, so the profile travels as a query param instead
+    // (D3), read once in ChatHub.OnConnectedAsync. The connection lives for the tab's lifetime and
+    // a profile switch reloads the page (D4), so there's no need to rebuild this later.
+    const profileId = this.currentProfileId();
+    const url = profileId ? `${this.HUB_URL}?profile=${encodeURIComponent(profileId)}` : this.HUB_URL;
+
     this.hub = new signalR.HubConnectionBuilder()
-      .withUrl(this.HUB_URL)
+      .withUrl(url)
       .withAutomaticReconnect([0, 2000, 5000, 10000])
       .configureLogging(signalR.LogLevel.Warning)
       .build();
@@ -209,7 +222,16 @@ export class AgentHubService implements OnDestroy {
   }
 
   async sendMessage(text: string, mode: ChatMode = "Quick"): Promise<void> {
+    this.isAnswering.set(true);
     await this.hub.send("SendMessage", text, mode);
+  }
+
+  private currentProfileId(): string | null {
+    try {
+      return localStorage.getItem(PROFILE_STORAGE_KEY);
+    } catch {
+      return null;
+    }
   }
 
   async resetConversation(): Promise<void> {
