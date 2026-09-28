@@ -1,12 +1,32 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" fill="#070e18"/>
-  <text
-    x="256"
-    y="326"
-    text-anchor="middle"
-    font-family="Georgia, 'Times New Roman', serif"
-    font-size="260"
-    font-weight="bold"
-    fill="#c8922a"
-  >B</text>
+  <g fill="none" stroke="#c8922a" stroke-width="17" stroke-linecap="round" stroke-linejoin="round">
+    <!-- open book silhouette -->
+    <path d="M120,330
+             L120,170
+             C120,170 190,170 256,192
+             C322,170 392,170 392,170
+             L392,330
+             C392,330 322,352 256,354
+             C190,352 120,330 120,330
+             Z"/>
+    <!-- spine -->
+    <path d="M256,192 L256,354"/>
+    <!-- text lines: right page (kept short; the lens covers the rest) -->
+    <path d="M278,206 C306,197 336,194 366,196"/>
+    <path d="M278,232 C306,223 336,220 366,222"/>
+    <!-- text lines: left page -->
+    <path d="M234,206 C206,197 176,194 146,196"/>
+    <path d="M234,232 C206,223 176,220 146,222"/>
+    <path d="M234,258 C206,249 176,246 146,248"/>
+    <path d="M234,284 C206,275 176,272 146,274"/>
+  </g>
+  <!-- magnifying glass, positioned over the book's lower-right corner -->
+  <circle cx="338" cy="308" r="62" fill="#070e18" stroke="#c8922a" stroke-width="19"/>
+  <line x1="382" y1="352" x2="417" y2="387" stroke="#c8922a" stroke-width="26" stroke-linecap="round"/>
+  <!-- latin cross inside the lens -->
+  <g fill="#c8922a">
+    <rect x="331" y="270" width="14" height="80" rx="6"/>
+    <rect x="314" y="290" width="48" height="14" rx="6"/>
+  </g>
 </svg>
