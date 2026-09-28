@@ -1,0 +1,24 @@
+{
+  "name": "Berean",
+  "short_name": "Berean",
+  "description": "A local Bible study app with an AI study assistant.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#070e18",
+  "background_color": "#070e18",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

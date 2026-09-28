@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#070e18"/>
+  <text
+    x="256"
+    y="326"
+    text-anchor="middle"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="260"
+    font-weight="bold"
+    fill="#c8922a"
+  >B</text>
+</svg>
