@@ -275,6 +275,41 @@ public sealed class ClaudeCodeChatClientTests : IDisposable
     }
 
     [Fact]
+    public async Task OneShotCall_HasNoSessionIdAndIsNeverResumed_AndDoesNotAffectTheStudysOwnSession()
+    {
+        var c = Client();
+
+        // The study's own session, established normally.
+        await Stream(c, [Sys(), User("q1")], conversation: "study");
+        var studySessionId = Calls().Single().After("--session-id");
+
+        // A one-shot call (as the Phase 5 recap uses) — no ConversationId is even set, since a
+        // one-shot call never reads or writes _sessions.
+        var options = new ChatOptions
+        {
+            AdditionalProperties = new() { [ClaudeCodeChatClient.OneShotProperty] = true },
+        };
+        var text = "";
+        await foreach (var u in c.GetStreamingResponseAsync([Sys("recap prompt"), User("condensed transcript")], options))
+            text += string.Concat(u.Contents.OfType<TextContent>().Select(t => t.Text));
+
+        var calls = Calls();
+        Assert.Equal(2, calls.Count);
+        var oneShotCall = calls[1];
+        Assert.Null(oneShotCall.After("--session-id"));
+        Assert.Null(oneShotCall.After("--resume"));
+        Assert.Contains("--no-session-persistence", oneShotCall.Args);
+        Assert.Equal("condensed transcript", oneShotCall.Prompt);
+        Assert.Equal("Echo: condensed transcript", text);
+
+        // The study's own session is untouched — its next message still resumes the original session.
+        await Stream(c, [Sys(), User("q1"), Bot("Echo: q1"), User("q2")], conversation: "study");
+        var calls2 = Calls();
+        Assert.Equal(3, calls2.Count);
+        Assert.Equal(studySessionId, calls2[2].After("--resume"));
+    }
+
+    [Fact]
     public async Task ARequestWithoutAUserMessage_IsRejected()
     {
         await Assert.ThrowsAsync<ArgumentException>(async () =>

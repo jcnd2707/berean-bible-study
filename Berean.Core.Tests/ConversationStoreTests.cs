@@ -119,6 +119,49 @@ public sealed class ConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task AppendAsync_IncrementsQuestionCount_AndTracksTheHighestContextTokensSeen()
+    {
+        var store = Store();
+        await store.CreateAsync(Info("a"));
+
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q1"))], null, contextTokens: 20000);
+        var afterFirst = (await store.GetAsync("a", "p1"))!;
+        Assert.Equal(1, afterFirst.QuestionCount);
+        Assert.Equal(20000, afterFirst.ContextTokens);
+
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q2"))], null, contextTokens: 15000);
+        var afterSecond = (await store.GetAsync("a", "p1"))!;
+        Assert.Equal(2, afterSecond.QuestionCount);
+        Assert.Equal(20000, afterSecond.ContextTokens); // stays at the peak — 15000 doesn't lower it
+
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q3"))], null, contextTokens: 35000);
+        var afterThird = (await store.GetAsync("a", "p1"))!;
+        Assert.Equal(3, afterThird.QuestionCount);
+        Assert.Equal(35000, afterThird.ContextTokens); // a new peak does raise it
+    }
+
+    [Fact]
+    public async Task ContinuedFromId_AndRecap_RoundTrip_AndContinuedInIdIsQueriedOnRead()
+    {
+        var store = Store();
+        await store.CreateAsync(Info("part1"));
+        await store.SetRecapAsync("part1", "p1", "A recap of part 1.");
+
+        var part1BeforeContinuing = (await store.GetAsync("part1", "p1"))!;
+        Assert.Equal("A recap of part 1.", part1BeforeContinuing.Recap);
+        Assert.Null(part1BeforeContinuing.ContinuedInId); // nothing continues it yet
+
+        await store.CreateAsync(Info("part2", "Grace and the law (part 2)") with { ContinuedFromId = "part1" });
+
+        var part1 = (await store.GetAsync("part1", "p1"))!;
+        Assert.Equal("part2", part1.ContinuedInId);
+
+        var part2 = (await store.GetAsync("part2", "p1"))!;
+        Assert.Equal("part1", part2.ContinuedFromId);
+        Assert.Null(part2.ContinuedInId);
+    }
+
+    [Fact]
     public async Task Adopt_MovesOnlyUnownedConversations()
     {
         var store = Store();

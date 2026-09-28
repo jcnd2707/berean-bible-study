@@ -15,7 +15,12 @@ public record ConversationInfo(
     IReadOnlyList<string>? PerspectiveIds = null,
     string? ProfileId = null, // null = unowned, written before profiles existed (see AdoptUnownedAsync)
     string? LastLocation = null, // JSON {moduleId,book,chapter,verse} — where the study ended, not just began
-    bool Pinned = false);
+    bool Pinned = false,
+    int QuestionCount = 0,
+    int? ContextTokens = null, // the highest per-turn input-token figure reached anywhere in the session
+    string? ContinuedFromId = null, // the previous part of this study, if this session continues one that filled up
+    string? Recap = null, // written on the *old* session when it's continued into a new one
+    string? ContinuedInId = null); // not a column — the id of the session that continues this one, queried on read
 
 /// <summary>One stored message: the text for display, and the full message for replaying it to a model.</summary>
 public record StoredMessage(
@@ -85,6 +90,13 @@ public sealed class ConversationStore
         AddColumnIfMissing(conn, "Conversations", "LastLocation", "TEXT");
         AddColumnIfMissing(conn, "Conversations", "Pinned", "INTEGER NOT NULL DEFAULT 0");
 
+        var hadQuestionCount = ColumnExists(conn, "Conversations", "QuestionCount");
+        AddColumnIfMissing(conn, "Conversations", "QuestionCount", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing(conn, "Conversations", "ContextTokens", "INTEGER");
+        AddColumnIfMissing(conn, "Conversations", "ContinuedFromId", "TEXT");
+        AddColumnIfMissing(conn, "Conversations", "Recap", "TEXT");
+        if (!hadQuestionCount) BackfillQuestionCounts(conn);
+
         using (var idx = conn.CreateCommand())
         {
             idx.CommandText = """
@@ -142,6 +154,18 @@ public sealed class ConversationStore
         alter.ExecuteNonQuery();
     }
 
+    /// <summary>One-time backfill (Phase 5) for conversations saved before QuestionCount existed.</summary>
+    private static void BackfillQuestionCounts(SqliteConnection conn)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE Conversations SET QuestionCount = (
+                SELECT COUNT(*) FROM Messages WHERE Messages.ConversationId = Conversations.Id AND Messages.Role = 'user'
+            )
+            """;
+        cmd.ExecuteNonQuery();
+    }
+
     // ── Conversations ──────────────────────────────────────────────────────
 
     public async Task<bool> ExistsAsync(string id, CancellationToken ct = default)
@@ -158,8 +182,8 @@ public sealed class ConversationStore
         await using var conn = Open();
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO Conversations (Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives, ProfileId)
-            VALUES ($id, $title, $created, $updated, $passage, $model, $session, $perspectives, $profile)
+            INSERT INTO Conversations (Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives, ProfileId, ContinuedFromId)
+            VALUES ($id, $title, $created, $updated, $passage, $model, $session, $perspectives, $profile, $continuedFrom)
             """;
         cmd.Parameters.AddWithValue("$id", c.Id);
         cmd.Parameters.AddWithValue("$title", c.Title);
@@ -170,25 +194,40 @@ public sealed class ConversationStore
         cmd.Parameters.AddWithValue("$session", (object?)c.ClaudeSessionId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$perspectives", SerializePerspectives(c.PerspectiveIds));
         cmd.Parameters.AddWithValue("$profile", (object?)c.ProfileId ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$continuedFrom", (object?)c.ContinuedFromId ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync(ct);
     }
+
+    private const string SelectColumns =
+        "Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives, ProfileId, LastLocation, Pinned, " +
+        "QuestionCount, ContextTokens, ContinuedFromId, Recap";
 
     /// <summary>
     /// A stale or foreign id (wrong profile, or gone) comes back null just like a missing one —
     /// callers (ResumeConversationAsync) already treat that as "start fresh" rather than an error.
     /// </summary>
-    private const string SelectColumns =
-        "Id, Title, CreatedAt, UpdatedAt, Passage, ModelId, ClaudeSessionId, Perspectives, ProfileId, LastLocation, Pinned";
-
     public async Task<ConversationInfo?> GetAsync(string id, string profileId, CancellationToken ct = default)
     {
         await using var conn = Open();
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SELECT {SelectColumns} FROM Conversations WHERE Id = $id AND ProfileId = $profile";
-        cmd.Parameters.AddWithValue("$id", id);
-        cmd.Parameters.AddWithValue("$profile", profileId);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        return await r.ReadAsync(ct) ? Map(r) : null;
+
+        ConversationInfo? info;
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = $"SELECT {SelectColumns} FROM Conversations WHERE Id = $id AND ProfileId = $profile";
+            cmd.Parameters.AddWithValue("$id", id);
+            cmd.Parameters.AddWithValue("$profile", profileId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            info = await r.ReadAsync(ct) ? Map(r) : null;
+        }
+        if (info is null) return null;
+
+        await using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT Id FROM Conversations WHERE ContinuedFromId = $id LIMIT 1";
+            cmd.Parameters.AddWithValue("$id", id);
+            var continuedInId = await cmd.ExecuteScalarAsync(ct) as string;
+            return info with { ContinuedInId = continuedInId };
+        }
     }
 
     /// <summary>
@@ -279,20 +318,38 @@ public sealed class ConversationStore
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>Written on the *old* session when "Continue in a new session" writes its recap (Phase 5).</summary>
+    public async Task SetRecapAsync(string id, string profileId, string recap, CancellationToken ct = default)
+    {
+        await using var conn = Open();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE Conversations SET Recap = $recap WHERE Id = $id AND ProfileId = $profile";
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.Parameters.AddWithValue("$profile", profileId);
+        cmd.Parameters.AddWithValue("$recap", recap);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     // ── Messages ───────────────────────────────────────────────────────────
 
     /// <summary>
     /// Adds a turn's messages, bumps the conversation's time, remembers its Claude Code session,
-    /// and updates its last known reading location (a turn with none keeps whatever was there).
+    /// updates its last known reading location (a turn with none keeps whatever was there), counts
+    /// the questions asked so far, and tracks the highest per-turn context size reached (Phase 5) —
+    /// monotonic, so a session that once held <paramref name="contextTokens"/> tokens stays "full"
+    /// even if a later turn's request happens to be smaller.
     /// </summary>
     public async Task AppendAsync(
         string conversationId, IEnumerable<StoredMessage> messages, string? claudeSessionId,
-        string? lastLocationJson = null, CancellationToken ct = default)
+        string? lastLocationJson = null, int? contextTokens = null, CancellationToken ct = default)
     {
+        var messageList = messages as IReadOnlyCollection<StoredMessage> ?? messages.ToList();
+        var newQuestions = messageList.Count(m => m.Role == "user");
+
         await using var conn = Open();
         await using var tx = (SqliteTransaction)await conn.BeginTransactionAsync(ct);
 
-        foreach (var m in messages)
+        foreach (var m in messageList)
         {
             await using var cmd = conn.CreateCommand();
             cmd.Transaction = tx;
@@ -316,13 +373,17 @@ public sealed class ConversationStore
                 UPDATE Conversations SET
                     UpdatedAt = $now,
                     ClaudeSessionId = COALESCE($session, ClaudeSessionId),
-                    LastLocation = COALESCE($location, LastLocation)
+                    LastLocation = COALESCE($location, LastLocation),
+                    QuestionCount = QuestionCount + $newQuestions,
+                    ContextTokens = MAX(COALESCE(ContextTokens, 0), COALESCE($context, 0))
                 WHERE Id = $id
                 """;
             touch.Parameters.AddWithValue("$id", conversationId);
             touch.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("O"));
             touch.Parameters.AddWithValue("$session", (object?)claudeSessionId ?? DBNull.Value);
             touch.Parameters.AddWithValue("$location", (object?)lastLocationJson ?? DBNull.Value);
+            touch.Parameters.AddWithValue("$newQuestions", newQuestions);
+            touch.Parameters.AddWithValue("$context", (object?)contextTokens ?? DBNull.Value);
             await touch.ExecuteNonQueryAsync(ct);
         }
 
@@ -408,7 +469,11 @@ public sealed class ConversationStore
         r.IsDBNull(7) ? null : DeserializePerspectives(r.GetString(7)),
         r.IsDBNull(8) ? null : r.GetString(8),
         r.IsDBNull(9) ? null : r.GetString(9),
-        !r.IsDBNull(10) && r.GetInt64(10) != 0);
+        !r.IsDBNull(10) && r.GetInt64(10) != 0,
+        QuestionCount: r.IsDBNull(11) ? 0 : (int)r.GetInt64(11),
+        ContextTokens: r.IsDBNull(12) ? null : (int)r.GetInt64(12),
+        ContinuedFromId: r.IsDBNull(13) ? null : r.GetString(13),
+        Recap: r.IsDBNull(14) ? null : r.GetString(14));
 
     private static object SerializePerspectives(IReadOnlyList<string>? ids) =>
         ids is { Count: > 0 } ? JsonSerializer.Serialize(ids) : DBNull.Value;

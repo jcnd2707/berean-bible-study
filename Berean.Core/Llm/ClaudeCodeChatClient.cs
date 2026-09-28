@@ -35,6 +35,15 @@ public sealed class ClaudeCodeChatClient : IChatClient
     private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
     private string? _executable;
 
+    /// <summary>
+    /// Set on <see cref="ChatOptions.AdditionalProperties"/> for a call that must not touch any
+    /// conversation's CLI session — used by the Phase 5 recap call, which runs after a session is
+    /// already full and must not extend or collide with it. A one-shot call passes
+    /// <c>--no-session-persistence</c> instead of <c>--session-id</c>/<c>--resume</c>, so nothing is
+    /// saved to disk and there is no session id to remember or resume later.
+    /// </summary>
+    public const string OneShotProperty = "berean.oneShot";
+
     /// <param name="ExpectedPriorCount">
     /// How many messages the caller should have before the next user message if nothing was
     /// trimmed: the previous user message and the assistant reply were the last two.
@@ -70,12 +79,19 @@ public sealed class ClaudeCodeChatClient : IChatClient
 
         var system = string.Join("\n\n", list.Where(m => m.Role == ChatRole.System).Select(m => m.Text));
         var userText = list[lastUser].Text;
-        var key = options?.ConversationId ?? "default";
 
         if (options?.Tools is { Count: > 0 })
             _log.LogWarning("[ClaudeCode] {Count} tool(s) were offered but Claude Code runs without tools; ignoring them.",
                 options.Tools.Count);
 
+        if (options?.AdditionalProperties?.TryGetValue(OneShotProperty, out var oneShotValue) == true && oneShotValue is true)
+        {
+            await foreach (var update in RunOneShotAsync(system, userText, cancellationToken))
+                yield return update;
+            yield break;
+        }
+
+        var key = options?.ConversationId ?? "default";
         var resume = _sessions.TryGetValue(key, out var state) && state.ExpectedPriorCount == lastUser;
         if (!resume && state is not null)
             _log.LogInformation("[ClaudeCode] History changed ({Expected} expected, {Actual} present) — starting a new session",
@@ -89,7 +105,7 @@ public sealed class ClaudeCodeChatClient : IChatClient
             var sawText = false;
             ResultEvent? result = null;
 
-            await foreach (var ev in RunAsync(system, prompt, sessionId, resume, cancellationToken))
+            await foreach (var ev in RunAsync(system, prompt, sessionId, resume, oneShot: false, cancellationToken))
             {
                 if (ev.Text is not null)
                 {
@@ -135,6 +151,40 @@ public sealed class ClaudeCodeChatClient : IChatClient
         }
     }
 
+    /// <summary>
+    /// A call with no session at all: not resumed, and nothing saved for later. Used for the
+    /// recap call (Phase 5) — <see cref="_sessions"/> is never read or written here, so the
+    /// study's own session is untouched, and there is no session id to collide with it.
+    /// </summary>
+    private async IAsyncEnumerable<ChatResponseUpdate> RunOneShotAsync(
+        string system, string userText, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // Only used for logging — never stored, never resumed.
+        var sessionId = Guid.NewGuid().ToString();
+        ResultEvent? result = null;
+
+        await foreach (var ev in RunAsync(system, userText, sessionId, resume: false, oneShot: true, cancellationToken))
+        {
+            if (ev.Text is not null)
+                yield return new ChatResponseUpdate(ChatRole.Assistant, ev.Text) { ModelId = _model };
+            else if (ev.Result is not null)
+                result = ev.Result;
+        }
+
+        if (result is null)
+            throw new InvalidOperationException("Claude Code ended without a result.");
+        if (result.IsError)
+            throw new InvalidOperationException($"Claude Code failed: {result.Message}");
+
+        yield return new ChatResponseUpdate
+        {
+            Role = ChatRole.Assistant,
+            FinishReason = ChatFinishReason.Stop,
+            ModelId = _model,
+            Contents = [new UsageContent(result.Usage)],
+        };
+    }
+
     /// <summary>The CLI session currently mirroring a conversation, so it can be stored.</summary>
     public string? SessionIdFor(string conversationKey) =>
         _sessions.TryGetValue(conversationKey, out var s) ? s.SessionId : null;
@@ -174,7 +224,7 @@ public sealed class ClaudeCodeChatClient : IChatClient
     private sealed record TextEvent(string Value) : RunEvent;
     private sealed record ResultEvent(bool IsError, string Message, UsageDetails Usage) : RunEvent;
 
-    private IEnumerable<string> BuildArgs(string system, string sessionId, bool resume)
+    private IEnumerable<string> BuildArgs(string system, string sessionId, bool resume, bool oneShot)
     {
         yield return "-p";
         yield return "--output-format"; yield return "stream-json";
@@ -192,12 +242,20 @@ public sealed class ClaudeCodeChatClient : IChatClient
         if (!string.IsNullOrWhiteSpace(_cfg.Effort)) { yield return "--effort"; yield return _cfg.Effort; }
         if (!string.IsNullOrWhiteSpace(system)) { yield return "--system-prompt"; yield return system; }
 
-        yield return resume ? "--resume" : "--session-id";
-        yield return sessionId;
+        if (oneShot)
+        {
+            // No --session-id/--resume at all: nothing is saved to disk and there is nothing to resume.
+            yield return "--no-session-persistence";
+        }
+        else
+        {
+            yield return resume ? "--resume" : "--session-id";
+            yield return sessionId;
+        }
     }
 
     private async IAsyncEnumerable<RunEvent> RunAsync(
-        string system, string prompt, string sessionId, bool resume,
+        string system, string prompt, string sessionId, bool resume, bool oneShot,
         [EnumeratorCancellation] CancellationToken ct)
     {
         var psi = new ProcessStartInfo
@@ -213,7 +271,7 @@ public sealed class ClaudeCodeChatClient : IChatClient
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
-        foreach (var arg in BuildArgs(system, sessionId, resume)) psi.ArgumentList.Add(arg);
+        foreach (var arg in BuildArgs(system, sessionId, resume, oneShot)) psi.ArgumentList.Add(arg);
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _cfg.TimeoutSeconds)));
@@ -222,7 +280,9 @@ public sealed class ClaudeCodeChatClient : IChatClient
         var stderr = new StringBuilder();
         process.ErrorDataReceived += (_, e) => { if (e.Data is not null) lock (stderr) stderr.AppendLine(e.Data); };
 
-        _log.LogInformation("[ClaudeCode] {Mode} session {Id} ({Chars} chars)", resume ? "resuming" : "starting", sessionId, prompt.Length);
+        _log.LogInformation("[ClaudeCode] {Mode} ({Chars} chars)",
+            oneShot ? "one-shot call, no session persisted" : resume ? $"resuming session {sessionId}" : $"starting session {sessionId}",
+            prompt.Length);
         process.Start();
         process.BeginErrorReadLine();
 

@@ -16,6 +16,9 @@ public static class Prompts
     /// <summary>Added to the user turn in Compare mode.</summary>
     public static string CompareAddendum => Load("compare-addendum");
 
+    /// <summary>System prompt for the one-shot recap call that ends a full session (Phase 5).</summary>
+    public static string Recap => Load("recap");
+
     private static readonly Dictionary<string, string> Cache = [];
 
     private static string Load(string name)

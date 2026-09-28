@@ -18,7 +18,9 @@ namespace Berean.Agent.Api.Hubs;
 ///   DeleteConversation(id)
 ///   RenameConversation(id, title)
 ///   SetPinned(id, pinned)
-///   SendMessage(text, mode, location?)   location is {moduleId,book,chapter,verse} or null
+///   SendMessage(text, mode, location?)   location is {moduleId,book,chapter,verse} or null;
+///                                         refused once the session is full (Phase 5)
+///   ContinueConversation()         ends a full session and starts the next part of the same study
 ///   SetLanguage(language)
 ///   GetRagStatus()
 ///   ReindexDocuments()
@@ -40,6 +42,10 @@ namespace Berean.Agent.Api.Hubs;
 ///   ConversationLoaded(id, title, modelId, messages, perspectives, lastLocation, pinned)   reply to ResumeConversation
 ///   ConversationList(list)         pinned first, then most recently used
 ///   ConversationDeleted(id)
+///   SessionLimit(state)            sent after StartConversation/ResumeConversation/MessageComplete —
+///                                   {questionsUsed,maxQuestions,contextTokens,maxContextTokens,state}
+///   ConversationContinued(previousId, previousTitle, recap)   sent alongside ContinueConversation's
+///                                                              own ConversationStarted(newId)
 ///   RagStatus(hasIndex, chunks, details)
 ///   RagIndexing(message) / RagIndexed(success, message)
 ///   Error(message)
@@ -47,12 +53,14 @@ namespace Berean.Agent.Api.Hubs;
 public partial class ChatHub : Hub
 {
     private readonly StudySessionService _sessions;
+    private readonly SessionLimits _limits;
     private readonly IHubContext<ChatHub> _hubContext;
     private readonly ILogger<ChatHub> _log;
 
-    public ChatHub(StudySessionService sessions, IHubContext<ChatHub> hubContext, ILogger<ChatHub> log)
+    public ChatHub(StudySessionService sessions, SessionLimits limits, IHubContext<ChatHub> hubContext, ILogger<ChatHub> log)
     {
         _sessions = sessions;
+        _limits = limits;
         _hubContext = hubContext;
         _log = log;
     }
@@ -107,6 +115,7 @@ public partial class ChatHub : Hub
             var pipeline = await _sessions.StartConversationAsync(Context.ConnectionId, modelId, perspectives);
             await AnnounceSessionAsync(pipeline);
             await Clients.Caller.SendAsync("ConversationStarted", pipeline.ConversationId);
+            await SendLimitStateAsync();
         }
         catch (ArgumentException ex)
         {
@@ -139,6 +148,7 @@ public partial class ChatHub : Hub
             await Clients.Caller.SendAsync("ConversationLoaded",
                 resumed.Info.Id, resumed.Info.Title, resumed.Info.ModelId, resumed.Messages,
                 resumed.Pipeline.Perspectives.Select(p => p.Id).ToList(), resumed.Info.LastLocation, resumed.Info.Pinned);
+            await SendLimitStateAsync();
         }
         catch (Exception ex)
         {
@@ -150,7 +160,7 @@ public partial class ChatHub : Hub
     public async Task ListConversations(string? query = null)
     {
         var list = await _sessions.ListConversationsAsync(Context.ConnectionId, query);
-        await Clients.Caller.SendAsync("ConversationList", list.Select(ConversationDto.From).ToList());
+        await Clients.Caller.SendAsync("ConversationList", list.Select(c => ConversationDto.From(c, _limits)).ToList());
     }
 
     public async Task DeleteConversation(string conversationId)
@@ -195,6 +205,15 @@ public partial class ChatHub : Hub
             return;
         }
 
+        // The enforcement (D7): a session at its limit answers no further questions. The client
+        // also disables its input on "full", but this is what actually stops it.
+        var limitState = await _sessions.GetLimitStateAsync(Context.ConnectionId);
+        if (limitState.State == "full")
+        {
+            await Clients.Caller.SendAsync("SessionLimit", limitState);
+            return;
+        }
+
         // Tracks where the study *ends*, not just where it began (Passage, set from the first
         // message only) — read back by SaveTurnAsync once this turn completes.
         if (location is not null)
@@ -234,6 +253,7 @@ public partial class ChatHub : Hub
             }
 
             await Clients.Caller.SendAsync("MessageComplete", reply.Length > 0 ? reply.ToString() : "(no response)");
+            await SendLimitStateAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception ex)
@@ -241,6 +261,33 @@ public partial class ChatHub : Hub
             _log.LogError(ex, "[Hub] SendMessage failed");
             await Clients.Caller.SendAsync("Error", $"Error: {ex.Message}");
         }
+    }
+
+    // ── ContinueConversation ───────────────────────────────────────────────
+
+    /// <summary>Ends a full session and starts the next part of the same study, recap carried over (Phase 5).</summary>
+    public async Task ContinueConversation()
+    {
+        try
+        {
+            var result = await _sessions.ContinueConversationAsync(Context.ConnectionId);
+            var pipeline = _sessions.GetPipeline(Context.ConnectionId)!;
+            await AnnounceSessionAsync(pipeline);
+            await Clients.Caller.SendAsync("ConversationStarted", result.NewConversationId);
+            await Clients.Caller.SendAsync("ConversationContinued", result.OldConversationId, result.OldTitle, result.Recap);
+            await SendLimitStateAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "[Hub] ContinueConversation failed");
+            await Clients.Caller.SendAsync("Error", $"Could not continue the session: {ex.Message}");
+        }
+    }
+
+    private async Task SendLimitStateAsync()
+    {
+        var state = await _sessions.GetLimitStateAsync(Context.ConnectionId);
+        await Clients.Caller.SendAsync("SessionLimit", state);
     }
 
     // ── SetLanguage ────────────────────────────────────────────────────────
@@ -366,9 +413,14 @@ public record SourceDto(
 }
 
 /// <summary>A saved conversation, as the conversation list shows it.</summary>
-public record ConversationDto(string Id, string Title, string UpdatedAt, string? Passage, string? ModelId, string? LastLocation, bool Pinned)
+public record ConversationDto(
+    string Id, string Title, string UpdatedAt, string? Passage, string? ModelId, string? LastLocation, bool Pinned,
+    bool Full, string? Recap)
 {
-    public static ConversationDto From(ConversationInfo c) => new(c.Id, c.Title, c.UpdatedAt, c.Passage, c.ModelId, c.LastLocation, c.Pinned);
+    public static ConversationDto From(ConversationInfo c, SessionLimits limits) => new(
+        c.Id, c.Title, c.UpdatedAt, c.Passage, c.ModelId, c.LastLocation, c.Pinned,
+        limits.Evaluate(c.QuestionCount, c.ContextTokens ?? 0).State == "full",
+        c.Recap);
 }
 
 /// <summary>Where the reader was when a message was sent — the client's BibleLocation, one to one.</summary>

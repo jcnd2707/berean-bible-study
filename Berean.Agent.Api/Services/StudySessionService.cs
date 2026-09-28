@@ -9,6 +9,9 @@ namespace Berean.Agent.Api.Services;
 /// <summary>A reopened conversation: its record, the live pipeline continuing it, and what to show.</summary>
 public record ResumedConversation(ConversationInfo Info, StudyPipeline Pipeline, List<DisplayMessage> Messages);
 
+/// <summary>The result of ending a full session and starting the next part of the same study (Phase 5).</summary>
+public record ContinuedSession(string NewConversationId, string OldConversationId, string OldTitle, string Recap);
+
 /// <summary>
 /// One <see cref="StudyPipeline"/> (the live conversation) per SignalR connection, all on one
 /// shared <see cref="BibleKnowledge"/>: the index is loaded into memory once, not per connection.
@@ -36,15 +39,17 @@ public partial class StudySessionService
     private readonly object _knowledgeGate = new();
     private Task<BibleKnowledge>? _knowledge;
     private readonly BereanResourceApiClient? _resourceApi;
+    private readonly SessionLimits _limits;
 
     public StudySessionService(
         ILoggerFactory logFactory, IConfiguration config, ModelRegistryService models,
-        IHostApplicationLifetime lifetime)
+        SessionLimits limits, IHostApplicationLifetime lifetime)
     {
         _logFactory = logFactory;
         _log = logFactory.CreateLogger<StudySessionService>();
         _models = models;
         _llm = models.Llm;
+        _limits = limits;
         _ollamaEndpoint = config["Ollama:Endpoint"] ?? "http://localhost:11434";
         _embeddingModel = config["Ollama:EmbeddingModel"] ?? "mxbai-embed-large";
         _appStopping = lifetime.ApplicationStopping;
@@ -211,6 +216,81 @@ public partial class StudySessionService
     public string? CurrentConversationId(string connectionId) =>
         _sessions.TryGetValue(connectionId, out var p) ? p.ConversationId : null;
 
+    // ── Session length limit (Phase 5) ────────────────────────────────────────
+
+    /// <summary>
+    /// Where the connection's active conversation stands against the limit — "ok" for a
+    /// not-yet-saved brand new conversation (nothing asked yet), since it only exists in chat.db
+    /// once its first question is answered.
+    /// </summary>
+    public async Task<LimitState> GetLimitStateAsync(string connectionId)
+    {
+        var pipeline = GetPipeline(connectionId);
+        if (pipeline is null) return _limits.Evaluate(0, 0);
+
+        var info = await _store.GetAsync(pipeline.ConversationId, GetProfile(connectionId));
+        return _limits.Evaluate(info?.QuestionCount ?? 0, info?.ContextTokens ?? 0);
+    }
+
+    /// <summary>
+    /// Ends a full session and starts the next part of the same study: writes a recap on the old
+    /// session (falling back to a plain condensed transcript — no model call — if the recap call
+    /// fails or comes back empty), then starts a fresh conversation with the same model and
+    /// perspectives, linked back via ContinuedFromId, with the recap carried into its first turn.
+    /// The new conversation is created in chat.db immediately (not only after its first answer, the
+    /// way a plain new conversation is) so its title and link are never in question.
+    /// </summary>
+    public async Task<ContinuedSession> ContinueConversationAsync(string connectionId)
+    {
+        var profileId = GetProfile(connectionId);
+        var oldPipeline = GetPipeline(connectionId) ?? throw new InvalidOperationException("No active session to continue.");
+        var oldId = oldPipeline.ConversationId;
+        var oldInfo = await _store.GetAsync(oldId, profileId)
+            ?? throw new InvalidOperationException("The session to continue has no saved turns yet.");
+
+        string recap;
+        try
+        {
+            recap = await oldPipeline.WriteRecapAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "[Session] Recap call failed for {Id} — falling back to a condensed transcript", oldId);
+            recap = "";
+        }
+        if (string.IsNullOrWhiteSpace(recap)) recap = oldPipeline.CondensedTranscript();
+        if (string.IsNullOrWhiteSpace(recap)) recap = "(Nothing was asked in the earlier part of this study.)";
+
+        await _store.SetRecapAsync(oldId, profileId, recap);
+
+        var newPipeline = await BuildPipelineAsync(connectionId, oldInfo.ModelId);
+        var newId = Guid.NewGuid().ToString("N");
+        newPipeline.ConversationId = newId;
+        newPipeline.Perspectives = oldPipeline.Perspectives;
+        newPipeline.CarryOver = recap;
+
+        var now = DateTime.UtcNow.ToString("O");
+        await _store.CreateAsync(new ConversationInfo(
+            newId, ContinuedTitle(oldInfo.Title), now, now, oldInfo.Passage, oldInfo.ModelId, null,
+            newPipeline.Perspectives.Select(p => p.Id).ToList(), profileId, ContinuedFromId: oldId));
+
+        Persist(newPipeline, oldInfo.ModelId, profileId);
+        _sessions[connectionId] = newPipeline;
+
+        _log.LogInformation("[Session] {ConnId} continued '{Old}' as '{New}'", connectionId, oldId, newId);
+        return new ContinuedSession(newId, oldId, oldInfo.Title, recap);
+    }
+
+    /// <summary>"Grace and the law" → "Grace and the law (part 2)" → "… (part 3)", and so on.</summary>
+    internal static string ContinuedTitle(string oldTitle)
+    {
+        var m = PartSuffix().Match(oldTitle);
+        return m.Success ? $"{m.Groups[1].Value} (part {int.Parse(m.Groups[2].Value) + 1})" : $"{oldTitle} (part 2)";
+    }
+
+    [GeneratedRegex(@"^(.*) \(part (\d+)\)$")]
+    private static partial Regex PartSuffix();
+
     private async Task<StudyPipeline> BuildPipelineAsync(string connectionId, string? modelId)
     {
         var knowledge = await GetKnowledgeAsync();
@@ -253,7 +333,7 @@ public partial class StudySessionService
                 i == lastAnswer ? sourcesJson : null,
                 now));
 
-            await _store.AppendAsync(id, stored, pipeline.ClaudeCode?.SessionIdFor(id), pipeline.LastLocationJson);
+            await _store.AppendAsync(id, stored, pipeline.ClaudeCode?.SessionIdFor(id), pipeline.LastLocationJson, turn.ContextTokens);
         }
         catch (Exception ex)
         {

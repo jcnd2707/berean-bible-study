@@ -27,6 +27,10 @@ namespace Berean.Agent.Api
             llm.OllamaEndpoint = builder.Configuration["Ollama:Endpoint"] ?? llm.OllamaEndpoint;
             builder.Services.AddSingleton(llm);
 
+            // The session length limit (Phase 5).
+            var sessionLimits = builder.Configuration.GetSection(SessionLimits.SectionName).Get<SessionLimits>() ?? new SessionLimits();
+            builder.Services.AddSingleton(sessionLimits);
+
             builder.Services.AddSingleton<ModelRegistryService>();
             // StudySessionService is Singleton — it holds all active conversations and the shared library
             builder.Services.AddSingleton<StudySessionService>();
@@ -45,6 +49,17 @@ namespace Berean.Agent.Api
                 .SetMinimumLevel(LogLevel.Information));
 
             var app = builder.Build();
+
+            // HistoryTurns must be at least MaxQuestions, or a session could be silently trimmed
+            // before it ever reaches its own question limit — raised here, never the other way
+            // round (D7: "no silent forgetting inside a session").
+            if (llm.HistoryTurns < sessionLimits.MaxQuestions)
+            {
+                app.Logger.LogWarning(
+                    "Llm:HistoryTurns ({Turns}) is below Sessions:MaxQuestions ({Max}) — raising it so no question inside a session is silently forgotten.",
+                    llm.HistoryTurns, sessionLimits.MaxQuestions);
+                llm.HistoryTurns = sessionLimits.MaxQuestions;
+            }
 
             app.UseCors();
 
