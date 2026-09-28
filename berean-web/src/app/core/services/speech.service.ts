@@ -1,4 +1,4 @@
-import { Injectable } from "@angular/core";
+import { Injectable, signal } from "@angular/core";
 
 export interface SpeakOptions {
   lang: string;
@@ -35,6 +35,11 @@ export class SpeechService {
   // Remembered per language for the session, not persisted — a fresh page load re-picks.
   private readonly chosenVoice = new Map<string, SpeechSynthesisVoice>();
   private overridesPromise: Promise<Record<string, Record<string, string>>> | null = null;
+
+  // The exact text currently playing, if any — doubles as the identity a caller toggles against:
+  // asking to speak the same text again while it's still playing means "stop", not "restart".
+  private readonly _speakingText = signal<string | null>(null);
+  readonly speakingText = this._speakingText.asReadonly();
 
   private get synth(): SpeechSynthesis | null {
     return typeof speechSynthesis === "undefined" ? null : speechSynthesis;
@@ -120,9 +125,22 @@ export class SpeechService {
     return overrides[lang]?.[key] ?? null;
   }
 
+  /** Whether `text` is the thing currently playing — for a button to show itself as "playing". */
+  isSpeaking(text: string): boolean {
+    return this._speakingText() === text;
+  }
+
+  /** Stops whatever is playing, with no restart. */
+  stop(): void {
+    this.synth?.cancel();
+    this._speakingText.set(null);
+  }
+
   /**
-   * Cancels anything already playing, then speaks `text` in `lang`. Every call here is expected
-   * to originate from a click or tap — iOS only allows speech synthesis to start from a user
+   * Speaks `text` in `lang` — unless `text` is already playing, in which case this call is a
+   * second press of the same button, so it stops instead of restarting from the beginning.
+   * Otherwise cancels anything else already playing first. Every call here is expected to
+   * originate from a click or tap — iOS only allows speech synthesis to start from a user
    * gesture, and voices are normally already cached by the time this runs, so the `await` below
    * stays inside that gesture's activation window in practice.
    */
@@ -130,6 +148,11 @@ export class SpeechService {
     const synth = this.synth;
     if (!synth) {
       return { ok: false, message: "Speech isn't supported on this device." };
+    }
+
+    if (this._speakingText() === text) {
+      this.stop();
+      return { ok: true };
     }
 
     synth.cancel();
@@ -146,6 +169,13 @@ export class SpeechService {
     utterance.voice = voice;
     utterance.lang = voice.lang;
     utterance.rate = opts.rate ?? 1;
+    const clear = () => {
+      if (this._speakingText() === text) this._speakingText.set(null);
+    };
+    utterance.onend = clear;
+    utterance.onerror = clear;
+
+    this._speakingText.set(text);
     synth.speak(utterance);
     return { ok: true };
   }
