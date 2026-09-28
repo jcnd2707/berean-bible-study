@@ -66,13 +66,22 @@
           autofocus
         />
       } @else {
-        <span class="sl-name">{{ s.title }}</span>
+        <span class="sl-name">
+          @if (s.full) {
+            <span class="sl-full-mark" title="This session is complete">✓</span>
+          }
+          {{ s.title }}
+        </span>
       }
       <span class="sl-date">{{ formatDate(s.updatedAt) }}</span>
     </div>
     <p class="sl-meta">
-      @if (s.passage) { {{ s.passage }} }
-      @if (s.modelId) { · {{ s.modelId }} }
+      @if (s.recap) {
+        {{ snippet(s.recap) }}
+      } @else {
+        @if (s.passage) { {{ s.passage }} }
+        @if (s.modelId) { · {{ s.modelId }} }
+      }
     </p>
 
     <div class="sl-actions">

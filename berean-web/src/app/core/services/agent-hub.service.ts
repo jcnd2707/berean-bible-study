@@ -41,6 +41,26 @@ export interface ConversationSummary {
   /** Where the study ended (JSON — see BibleLocation), or null if no location was ever recorded. */
   lastLocation: string | null;
   pinned: boolean;
+  /** Hit its question or context limit (Phase 5) — read-only until continued. */
+  full: boolean;
+  /** Written once the session is continued; shown as the row's preview when present. */
+  recap: string | null;
+}
+
+/** Where the active session stands against Sessions:MaxQuestions / MaxContextTokens (Phase 5). */
+export interface SessionLimitState {
+  questionsUsed: number;
+  maxQuestions: number;
+  contextTokens: number;
+  maxContextTokens: number;
+  state: "ok" | "nearing" | "full";
+}
+
+/** Sent alongside ContinueConversation's own ConversationStarted — the session it replaces. */
+export interface ConversationContinuedEvent {
+  previousId: string;
+  previousTitle: string;
+  recap: string;
 }
 
 /** A message of a reopened conversation. */
@@ -105,6 +125,8 @@ export class AgentHubService implements OnDestroy {
   readonly ragIndexing$ = new Subject<RagIndexingEvent>();
   readonly ragIndexed$ = new Subject<RagIndexedEvent>();
   readonly ragStatus$ = new Subject<RagStatusEvent>();
+  readonly sessionLimit$ = new Subject<SessionLimitState>();
+  readonly conversationContinued$ = new Subject<ConversationContinuedEvent>();
 
   /** True from sendMessage() until the answer completes or errors — see PROFILES_AND_SESSIONS_PLAN.md D4. */
   readonly isAnswering = signal(false);
@@ -179,6 +201,12 @@ export class AgentHubService implements OnDestroy {
     this.hub.on("RagStatus", (hasIndex: boolean, chunkCount: number, details: string) =>
       this.zone.run(() => this.ragStatus$.next({ hasIndex, chunkCount, details })),
     );
+    this.hub.on("SessionLimit", (state: SessionLimitState) =>
+      this.zone.run(() => this.sessionLimit$.next(state)),
+    );
+    this.hub.on("ConversationContinued", (previousId: string, previousTitle: string, recap: string) =>
+      this.zone.run(() => this.conversationContinued$.next({ previousId, previousTitle, recap })),
+    );
 
     this.hub.onreconnecting(() =>
       this.zone.run(() => this.state$.next("reconnecting")),
@@ -237,6 +265,11 @@ export class AgentHubService implements OnDestroy {
   async sendMessage(text: string, mode: ChatMode = "Quick", location: BibleLocation | null = null): Promise<void> {
     this.isAnswering.set(true);
     await this.hub.send("SendMessage", text, mode, location);
+  }
+
+  /** Ends a full session and starts the next part of the same study, recap carried over (Phase 5). */
+  async continueConversation(): Promise<void> {
+    await this.hub.send("ContinueConversation");
   }
 
   private currentProfileId(): string | null {

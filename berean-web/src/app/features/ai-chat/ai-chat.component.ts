@@ -23,6 +23,7 @@ import type {
   ChatSource,
   RagIndexingEvent,
   RagIndexedEvent,
+  SessionLimitState,
 } from "../../core/services/agent-hub.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { ModelService } from "../../core/services/model.service";
@@ -113,6 +114,25 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   readonly currentConversationId = signal<string | null>(null);
 
+  // ── Session length limit (Phase 5) ──
+  readonly limitState = signal<SessionLimitState | null>(null);
+  readonly continuedFrom = signal<{ title: string; recap: string } | null>(null);
+  readonly isFull = computed(() => this.limitState()?.state === "full");
+  readonly isNearing = computed(() => this.limitState()?.state === "nearing");
+  /** When nearing, which limit is the close one — drives which warning sentence shows. */
+  readonly questionsAreTheCloseLimit = computed(() => {
+    const s = this.limitState();
+    if (!s) return true;
+    const questionsRatio = s.maxQuestions > 0 ? s.questionsUsed / s.maxQuestions : 0;
+    const contextRatio = s.maxContextTokens > 0 ? s.contextTokens / s.maxContextTokens : 0;
+    return questionsRatio >= contextRatio;
+  });
+  readonly showLimitCounter = computed(() => {
+    const s = this.limitState();
+    if (!s) return false;
+    return s.questionsUsed / s.maxQuestions >= 0.5 || (s.maxContextTokens > 0 && s.contextTokens / s.maxContextTokens >= 0.5);
+  });
+
   readonly quickAsks = computed(() => {
     const selected = this.perspectiveService.selectedId();
     const label = this.perspectiveService.perspectives().find((p) => p.id === selected)?.label;
@@ -131,7 +151,8 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.agentReady() &&
       this.hubState() === "connected" &&
       this.inputText().trim().length > 0 &&
-      !this.isStreaming(),
+      !this.isStreaming() &&
+      !this.isFull(),
   );
 
   readonly isStreaming = computed(() =>
@@ -180,7 +201,14 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.messages.set([]);
         this.error.set(null);
         this.nav.clearContinuingBanner();
+        this.continuedFrom.set(null); // set again right after by conversationContinued$, if this was a continue
       }),
+
+      this.hub.conversationContinued$.subscribe((ev) => {
+        this.continuedFrom.set({ title: ev.previousTitle, recap: ev.recap });
+      }),
+
+      this.hub.sessionLimit$.subscribe((state) => this.limitState.set(state)),
 
       this.hub.conversationLoaded$.subscribe((ev) => {
         this.currentConversationId.set(ev.id);
@@ -341,7 +369,7 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   quickAsk(prompt: string): void {
-    if (!this.agentReady() || this.isStreaming()) return;
+    if (!this.agentReady() || this.isStreaming() || this.isFull()) return;
     this.send(prompt);
   }
 
@@ -362,6 +390,17 @@ export class AiChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   toggleSessions(): void {
     this.nav.toggleSessions();
+  }
+
+  /** "Continue in a new session" on a full session's card (Phase 5): ends it and carries a recap into the next part. */
+  async continueSession(): Promise<void> {
+    this.agentReady.set(false);
+    this.error.set(null);
+    try {
+      await this.hub.continueConversation();
+    } catch {
+      this.error.set("Could not continue the session.");
+    }
   }
 
   formatBannerDate(iso: string): string {

@@ -117,6 +117,10 @@ export class SessionsListComponent implements OnInit, OnDestroy {
     return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
   }
 
+  snippet(text: string): string {
+    return text.length > 120 ? text.slice(0, 120).trimEnd() + "…" : text;
+  }
+
   private parseLocation(json: string | null): BibleLocation | null {
     if (!json) return null;
     try {
