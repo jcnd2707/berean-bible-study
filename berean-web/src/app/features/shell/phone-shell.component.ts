@@ -108,7 +108,7 @@ type PhoneView = "read" | "study" | "ask" | "more";
            drag the handle to resize (peek/half/full), snapping on release. -->
       @if (showDictSheet()) {
         <div class="sheet-backdrop" (click)="closeDictSheet()"></div>
-        <div class="dict-sheet" [style.height.vh]="sheetHeightFrac() * 100">
+        <div class="dict-sheet" [style.height]="sheetHeightFrac() * 100 + 'dvh'">
           <div
             class="sheet-handle-row"
             (pointerdown)="onSheetHandlePointerDown($event)"
@@ -187,6 +187,7 @@ type PhoneView = "read" | "study" | "ask" | "more";
         gap: var(--gap);
         min-height: 56px;
         padding: 6px 12px;
+        padding-top: calc(6px + env(safe-area-inset-top));
         background: #0d1a26;
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         flex-shrink: 0;
@@ -307,7 +308,9 @@ type PhoneView = "read" | "study" | "ask" | "more";
         right: 0;
         bottom: 0;
         min-height: 15vh;
+        min-height: 15dvh;
         max-height: 95vh;
+        max-height: 95dvh;
         background: #f5f2eb;
         border-radius: 14px 14px 0 0;
         z-index: 31;
@@ -357,6 +360,7 @@ type PhoneView = "read" | "study" | "ask" | "more";
         align-items: center;
         justify-content: space-between;
         padding: 10px 16px;
+        padding-top: calc(10px + env(safe-area-inset-top));
         min-height: 56px;
         font-size: var(--fs-md);
         font-weight: 600;
@@ -472,6 +476,11 @@ export class PhoneShellComponent {
     if (!this.showDictSheet()) return;
     this.showDictSheet.set(false);
     this.backStack.close(this.closeDictSheetFn);
+    // _wordLookupOpensSheet reads both this signal and the word selection,
+    // so it re-runs the instant showDictSheet flips to false — without
+    // clearing the selection too, the still-truthy selection would make it
+    // reopen the sheet immediately, making it look impossible to close.
+    this.wordSelection.clear();
   }
 
   onSheetHandlePointerDown(e: PointerEvent): void {
