@@ -5,7 +5,6 @@ import {
   AfterViewInit,
   OnDestroy,
   signal,
-  inject,
 } from "@angular/core";
 import { TitleBarComponent } from "./title-bar.component";
 import { ToolbarComponent } from "./toolbar.component";

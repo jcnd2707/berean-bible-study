@@ -80,7 +80,6 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
   readonly tabs = signal<TabModule[]>([]);
   readonly passage = signal<ChapterResponse | null>(null);
   readonly activeVerse = signal<number | null>(null);
-  readonly showSearch = signal(false);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -329,7 +328,6 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
     const verseNum = this.verseNumberAt(event);
     const verseData = this.passage()?.verses.find((v) => v.verse === verseNum);
     const strongs = this.findStrongs(clean, verseData?.strongsWords ?? []);
-    console.debug('[strongs]', { clean, verseNum, strongsWords: verseData?.strongsWords, strongs });
     this.wordSelection.select(clean, strongs);
   }
 
@@ -371,13 +369,6 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
     while (start > 0 && isWordChar(text[start - 1])) start--;
     while (end < text.length && isWordChar(text[end])) end++;
     return text.slice(start, end);
-  }
-
-  toggleSearch(): void {
-    this.showSearch.update((v) => !v);
-  }
-  closeSearch(): void {
-    this.showSearch.set(false);
   }
 
   trackByVerse(_: number, v: Verse): number {

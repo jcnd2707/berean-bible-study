@@ -1,7 +1,43 @@
 # Mobile & Tablet Plan (Android)
 
-Status: **plan only — no code changed yet.**
+Status: **implemented** on `feature/mobile-responsive`, verified on the target
+phone (411×789) and tablet (533×752) — see [Implementation status](#implementation-status)
+below for exactly what shipped, what was deliberately cut, and why.
 Scope: `berean-web` (the Angular client). The APIs need no code changes. HTTPS comes from Tailscale in front of them (Phase 4).
+
+## Implementation status
+
+All six phases (§6) landed. Everything in the plan below was built as
+described **except**:
+
+- **The dictionary sheet's peek/half/full gesture** ships as a real drag
+  (§3), but the "peek" state is just the smallest snap point, not a
+  distinct collapsed preview.
+- **"Look up word" is not a button** in the verse action bar (§3's phone
+  mockup). The long-press lookup (§4.3) already covers word lookup, and a
+  button with no word pre-chosen has no well-defined target.
+- **Citation-chip and Strong's-toggle tooltips** (§4.3's tooltip-to-text
+  list) were not converted to visible text — tapping a citation already
+  opens the source (making the tooltip's extra detail redundant), and the
+  Strong's toggle already shows its own on/off state. Only the disabled
+  model/perspective selects (§4.3's own worked example) were converted.
+- **Phone-landscape top-bar hide-on-scroll** (§3) is not implemented; the
+  bottom-nav-becomes-a-side-rail part is. Hiding the top bar would need
+  reaching into whichever child view's own scroll container is active.
+- **The Android back button closes one thing at a time**, not a full
+  nested history — see `back-stack.service.ts`'s doc comment. Opening the
+  dictionary sheet while already on a non-Read tab means back closes the
+  sheet, but a second press won't then return to Read.
+- **Tailscale HTTPS itself (Phase 4) was intentionally left undone** — the
+  app is ready for it (HTTPS-aware API URLs, PWA manifest), but the
+  `tailscale serve` setup and path-stripping verification is the user's own
+  machine configuration, done separately.
+- A few structural simplifications: the tablet drag handle's snap points
+  are continuous rather than fixed 35/50/70% stops, and `AiChatComponent`'s
+  conversation state lives in the component instance rather than a shared
+  service (only matters if a browser window is resized across the
+  1200px desktop/tablet boundary mid-chat — not a concern for the actual
+  target devices, which never cross that width just by rotating).
 
 ## Decisions (answered 2026-09-27)
 
@@ -258,5 +294,5 @@ Plan: put **one HTTPS address** in front of all three services with `tailscale s
 ## 8. Still open
 
 1. ~~Exact viewport sizes~~ **Resolved 2026-09-27**: phone 411×789, tablet 533×752 (§1). This also forced a real fix, not just a number swap — the phone/tablet cut now keys off the shorter viewport side, not raw width (§2).
-2. **Tailscale setup:** is `tailscale serve` already in use on the PC for anything else, and is MagicDNS/HTTPS enabled for the tailnet? This is needed before Phase 4, not before.
-3. **Tablet landscape study-panel width** (§3): the default ~40% share is only ~300px at the real 752px landscape width, tight for a 5-tab bar. Worth deciding in Phase 2 whether to give it a larger fixed minimum or collapse tabs to icons at that width, rather than after the fact.
+2. **Tailscale setup:** deliberately deferred — the user is doing `tailscale serve`/MagicDNS setup separately, outside this plan. The app-side half of Phase 4 (HTTPS-aware API URLs, PWA manifest) is done; only this half remains.
+3. ~~Tablet landscape study-panel width~~ **Addressed**: `.study-pane` has a 280px `min-width` in landscape (`tablet-shell.component.ts`), taken from the reader rather than letting the panel shrink to ~300px. The icon-only-tabs fallback wasn't built — untested whether 280px is comfortable enough with all 5 tabs, or just adequate.

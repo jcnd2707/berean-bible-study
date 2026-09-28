@@ -115,6 +115,18 @@ The vector index (`bible.rag.db`, next to it `chat.db` for saved conversations) 
 
 Indexing missing modules is **off by default** (`AutoIndexMissingModules: false`) because embedding runs at only a few chunks a second on CPU and a full commentary is hours of work. Verse questions don't need it: they read every commentary directly from the API. Semantic search over a commentary needs it indexed. Turn the setting on, or send `ReindexDocuments` from the hub, to build what's missing; nothing already indexed is touched, and an interrupted module is redone from scratch.
 
+## Mobile & tablet
+
+`berean-web` is responsive: a tablet gets a two-pane shell (reader + tabbed
+study panel, stacked in portrait and side by side in landscape), a phone
+gets a bottom-nav single-view shell, and touch interactions (word lookup,
+resizable panes, the Android back button) are handled throughout. Desktop
+is unchanged. See [MOBILE_PLAN.md](MOBILE_PLAN.md) for the design and what
+was deliberately left out. Remote access from a phone/tablet over HTTPS
+(required to install it as an app) needs `tailscale serve` or an
+equivalent reverse proxy in front of the three services — see the plan's
+Phase 4 for the routing this expects.
+
 ## Security model
 
 Berean has **no authentication or authorization** anywhere: any request that reaches an API is served. There's no multi-user support — notes, saved conversations and RAG state are shared by whoever can reach the app. Run it on `localhost` or on a trusted private network only, behind your own reverse proxy and auth if you need to expose it further. CORS is restricted to the origins in `Cors:AllowedOrigins`, but that only stops browsers from other sites from calling in on a victim's behalf — it isn't a substitute for real access control.
