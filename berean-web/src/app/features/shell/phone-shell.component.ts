@@ -476,6 +476,11 @@ export class PhoneShellComponent {
     if (!this.showDictSheet()) return;
     this.showDictSheet.set(false);
     this.backStack.close(this.closeDictSheetFn);
+    // _wordLookupOpensSheet reads both this signal and the word selection,
+    // so it re-runs the instant showDictSheet flips to false — without
+    // clearing the selection too, the still-truthy selection would make it
+    // reopen the sheet immediately, making it look impossible to close.
+    this.wordSelection.clear();
   }
 
   onSheetHandlePointerDown(e: PointerEvent): void {
