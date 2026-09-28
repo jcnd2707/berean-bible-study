@@ -119,13 +119,17 @@ Indexing missing modules is **off by default** (`AutoIndexMissingModules: false`
 
 `berean-web` is responsive: a tablet gets a two-pane shell (reader + tabbed
 study panel, stacked in portrait and side by side in landscape), a phone
-gets a bottom-nav single-view shell, and touch interactions (word lookup,
-resizable panes, the Android back button) are handled throughout. Desktop
-is unchanged. See [MOBILE_PLAN.md](MOBILE_PLAN.md) for the design and what
-was deliberately left out. Remote access from a phone/tablet over HTTPS
-(required to install it as an app) needs `tailscale serve` or an
-equivalent reverse proxy in front of the three services — see the plan's
-Phase 4 for the routing this expects.
+gets a bottom-nav single-view shell, and touch interactions (long-press
+word lookup, resizable/draggable panes, the Android back button) are
+handled throughout. Desktop is unchanged. The Android back button and
+Escape close one overlay/sheet at a time rather than a full nested
+history (see `back-stack.service.ts`).
+
+Remote access from a phone/tablet over HTTPS — needed to install it as an
+app — requires `tailscale serve` or an equivalent reverse proxy in front
+of the three services, routing `/resource` and `/agent` to the two APIs
+and everything else to the web app; `environments/*.ts` already switches
+to origin-relative API URLs whenever the page is loaded over `https:`.
 
 ## Security model
 
