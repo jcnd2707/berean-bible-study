@@ -10,7 +10,7 @@ import { LayoutService } from "../../core/services/layout.service";
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="toolbar">
+    <div class="toolbar" [class.toolbar--topmost]="layout.layout() === 'tablet'">
       <!-- Desktop shows BookSidebar inline; tablet/phone open it as a drawer instead. -->
       @if (layout.layout() !== "desktop") {
         <button
@@ -132,6 +132,11 @@ import { LayoutService } from "../../core/services/layout.service";
         gap: var(--gap);
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         flex-shrink: 0;
+      }
+      /* On tablet this is the topmost element (desktop has the title bar
+         above it), so it needs the notch/status-bar inset itself. */
+      .toolbar--topmost {
+        padding-top: calc(6px + env(safe-area-inset-top));
       }
       .tb-btn {
         background: rgba(255, 255, 255, 0.05);
