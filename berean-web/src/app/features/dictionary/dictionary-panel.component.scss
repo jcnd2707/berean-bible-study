@@ -141,6 +141,40 @@
 .dict-phonetic {
   font-size: var(--fs-sm);
   color: #a09890;
+
+  .stressed {
+    font-weight: 700;
+    color: #5c5650;
+  }
+
+  .syl-sep {
+    opacity: 0.6;
+  }
+}
+
+.speech-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--fs-base);
+  line-height: 1;
+  padding: 4px;
+  min-width: var(--tap-min, 32px);
+  min-height: var(--tap-min, 32px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  &:hover {
+    background: rgba(200, 146, 42, 0.12);
+  }
+}
+
+.speech-msg {
+  font-size: var(--fs-xs);
+  color: #a09890;
+  font-style: italic;
+  margin: 0;
 }
 
 .dict-pos {
