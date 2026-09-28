@@ -124,6 +124,8 @@ A full-screen "Who's studying?" picker gates the app until a profile is chosen (
 
 A saved conversation is a **study session** in the UI: rename, pin, search (by title or your own questions in it), and reopening one returns the reader to where it last ended (not just where it began) with a dismissible "Continuing…" banner. Find them from the toolbar's "Sessions" button, the phone shell's More menu, or the "History" button in the Ask panel header.
 
+The reader also remembers your last book/chapter/verse per profile (a `localStorage` key alongside the saved-conversation one) and restores it on your next visit, before you've picked a book — per device for now, not synced across them.
+
 A session becomes **read-only** once it reaches `Sessions:MaxQuestions` or `Sessions:MaxContextTokens` (see [Configuration](#configuration)) — enforced server-side, not just by disabling the input. "Continue in a new session" writes a short recap (a separate, one-shot model call that never touches the full session's own history or, for Claude Code, its CLI session) and starts the next part with that recap folded into its first question; "Start fresh" begins an unrelated new session instead. A counter appears once either limit passes about half, and a notice once it's close.
 
 ## Mobile & tablet
@@ -135,6 +137,13 @@ word lookup, resizable/draggable panes, the Android back button) are
 handled throughout. Desktop is unchanged. The Android back button and
 Escape close one overlay/sheet at a time rather than a full nested
 history (see `back-stack.service.ts`).
+
+A long press (touch) or right-click (desktop) on a word in the reader opens a small "Look up" /
+"Hear it" menu — the same two choices either way. **Hear it** speaks the word as written, in the
+Bible module's own language, via the browser's Web Speech API (`speech.service.ts`), with a JSON
+overrides file (`public/speech/pronunciation-overrides.json`) for names it gets wrong. The Strong's
+entry in the dictionary panel has its own 🔊/🐢 buttons that read the pronunciation spelling
+(`ag-ah'-pay`) with an English voice, never the Greek/Hebrew letters themselves.
 
 Remote access from a phone/tablet over HTTPS — needed to install it as an
 app — requires `tailscale serve` or an equivalent reverse proxy in front
@@ -180,9 +189,11 @@ The Claude Code client is tested against a fake `claude` executable (built with 
 
 The hub URL carries `?profile=<id>` (browsers can't set headers on a WebSocket), checked once in `OnConnectedAsync` against `BereanResource.Api`; a missing or unknown profile gets `Error` and the connection is closed.
 
-Client → server: `StartConversation(modelId?, perspectives?)` (locked for the conversation's lifetime), `ResumeConversation(id)`, `ListConversations(query?)` (pinned first, then most recent; query matches the title or the profile's own questions), `DeleteConversation(id)`, `RenameConversation(id, title)`, `SetPinned(id, pinned)`, `SendMessage(text, mode, location?)` (`location` is `{moduleId,book,chapter,verse}` or null; refused once the session is full), `ContinueConversation()` (ends a full session and starts the next part, recap carried over), `SetLanguage`, `GetRagStatus`, `ReindexDocuments`.
+Client → server: `StartConversation(modelId?, perspectives?)` (locked for the conversation's lifetime), `ResumeConversation(id)`, `ListConversations(query?)` (pinned first, then most recent; query matches the title or the profile's own questions), `DeleteConversation(id)`, `RenameConversation(id, title)`, `SetPinned(id, pinned)`, `SendMessage(text, mode, location?)` (`location` is `{moduleId,book,chapter,verse}` or null; refused once the session is full, or if an answer is already running on this connection), `CancelMessage()` (stops the answer currently streaming on this connection, if any), `ContinueConversation()` (ends a full session and starts the next part, recap carried over), `SetLanguage`, `GetRagStatus`, `ReindexDocuments`.
 
-Server → client, for one answer in order: `TokenReceived("")`, `Sources(list)`, `ToolActivity(name, text)`, `TokenReceived(chunk)`…, `MessageComplete(text)`. Also `SessionStarted`, `ConversationStarted`, `ConversationLoaded` (now includes `lastLocation`, `pinned`), `ConversationList`, `ConversationDeleted`, `SessionLimit(state)` (sent after `StartConversation`/`ResumeConversation`/`MessageComplete`/`ContinueConversation`: `{questionsUsed,maxQuestions,contextTokens,maxContextTokens,state}`, `state` one of `ok`/`nearing`/`full`), `ConversationContinued(previousId, previousTitle, recap)`, `RagStatus`, `RagIndexing`, `RagIndexed`, `Error`.
+Server → client, for one answer in order: `TokenReceived("")`, `Sources(list)`, `ToolActivity(name, text)`, `TokenReceived(chunk)`…, `MessageComplete(text)` or `MessageStopped()` (the answer was cancelled — never sent if the connection itself dropped). Also `SessionStarted`, `ConversationStarted`, `ConversationLoaded` (now includes `lastLocation`, `pinned`), `ConversationList`, `ConversationDeleted`, `SessionLimit(state)` (sent after `StartConversation`/`ResumeConversation`/`MessageComplete`/`ContinueConversation`: `{questionsUsed,maxQuestions,contextTokens,maxContextTokens,state}`, `state` one of `ok`/`nearing`/`full`), `ConversationContinued(previousId, previousTitle, recap)`, `RagStatus`, `RagIndexing`, `RagIndexed`, `Error`.
+
+`MaximumParallelInvocationsPerClient` is 2, not the SignalR default of 1, so `CancelMessage` isn't queued behind the `SendMessage` it's meant to stop. That also lets a conversation-switching call (`StartConversation`, `ResumeConversation`, `ContinueConversation`, or `DeleteConversation` of the active conversation) run while an answer is streaming, so each of those cancels the running answer and waits for it to finish sending before proceeding — otherwise its trailing `TokenReceived`/`MessageStopped` could arrive interleaved with the new conversation's `ConversationStarted`/`ConversationLoaded`, since neither carries an id the client could use to tell them apart. See `ActiveAnswers` in `Berean.Agent.Api/Services`.
 
 REST: `Berean.Agent.Api`: `GET /health`, `GET /api/models`, `GET /api/conversations/unowned`, `POST /api/profiles/{id}/adopt-unowned-conversations`. `BereanResource.Api`: `/api/bible` (including `/{module}/strongs/{number}/occurrences`), `/api/books`, `/api/commentary`, `/api/crossreferences`, `/api/dictionary` (including `/transliteration`), `/api/resources` (including `/profiles/unclassified`), `/api/profiles` (`GET`/`POST`, `GET/PUT /{id}`, `GET /unowned`, `POST /{id}/adopt-unowned`), `/api/notes` (including `POST /{reference}/append`) — every notes endpoint requires an `X-Berean-Profile: <id>` header naming an existing profile, and returns `400` without one; the other endpoints ignore it. Swagger UI in Development.
 
