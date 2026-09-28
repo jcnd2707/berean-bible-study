@@ -90,7 +90,14 @@
 
     <!-- Verses -->
     @if (passage() && !loading() && !error()) {
-      <div class="verse-list" (dblclick)="onVerseDoubleClick($event)">
+      <div
+        class="verse-list"
+        (dblclick)="onVerseDoubleClick($event)"
+        (pointerdown)="onVerseListPointerDown($event)"
+        (pointermove)="onVerseListPointerMove($event)"
+        (pointerup)="onVerseListPointerUp($event)"
+        (pointercancel)="onVerseListPointerUp($event)"
+      >
         @for (v of passage()!.verses; track v.verse) {
           <div
             class="v-row"
@@ -126,7 +133,20 @@
         <span class="strip-ref">
           {{ navState.book() }} {{ navState.chapter() }}:{{ activeVerse() }}
         </span>
-        <span class="strip-hint">Selected · context sent to AI chat</span>
+        @if (layout.layout() === "desktop") {
+          <span class="strip-hint">Selected · context sent to AI chat</span>
+        } @else {
+          <!-- Verse action bar (MOBILE_PLAN.md §3): one-tap jumps replace
+               desktop's always-visible panels. "Look up word" isn't here —
+               the long-press lookup (§4.3) already covers that, and a
+               button with no word yet chosen has no well-defined target. -->
+          <div class="verse-actions">
+            <button class="va-btn" (click)="navState.requestRightTab('ask')">Ask AI</button>
+            <button class="va-btn" (click)="navState.requestRightTab('commentary')">Commentary</button>
+            <button class="va-btn" (click)="navState.requestRightTab('notes')">Notes</button>
+            <button class="va-btn" (click)="navState.requestRightTab('xrefs')">Cross-refs</button>
+          </div>
+        }
         <button class="strip-clear" (click)="navState.clearVerse()">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path
@@ -139,5 +159,19 @@
         </button>
       </div>
     }
+  }
+
+  <!-- Touch word lookup: shown when a coarse pointer selects a word (§4.3) -->
+  @if (touchLookup(); as lookup) {
+    <button
+      type="button"
+      class="touch-lookup-chip"
+      [style.left.px]="lookup.x"
+      [style.top.px]="lookup.y"
+      (pointerdown)="$event.preventDefault()"
+      (click)="confirmTouchLookup()"
+    >
+      Look up "{{ lookup.word }}"
+    </button>
   }
 </div>

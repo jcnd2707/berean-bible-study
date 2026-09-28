@@ -30,7 +30,7 @@
 
 .t-tab {
   padding: 7px 9px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.4px;
   color: #a09890;
@@ -67,7 +67,7 @@
 }
 
 .pass-sub {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #a09890;
   font-style: italic;
   margin-bottom: 10px;
@@ -121,7 +121,7 @@
   border: 1px solid #fca5a5;
   border-radius: 8px;
   p {
-    font-size: 12px;
+    font-size: var(--fs-base);
     color: #7f1d1d;
   }
 }
@@ -133,6 +133,19 @@
   padding: 8px 20px 32px;
   scrollbar-width: thin;
   scrollbar-color: #ddd8ce transparent;
+}
+
+// A coarse pointer's long-press is handled entirely by our own JS lookup
+// above (Pointer Events + caretRangeFromPoint), not native selection —
+// letting native selection start as well brings up Android/iOS's own
+// copy/share toolbar, which renders above our UI and covers the lookup
+// chip. Scrolling is untouched: touch-action stays at its default.
+@media (pointer: coarse) {
+  .verse-list {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
 }
 
 .v-row {
@@ -155,7 +168,7 @@
 }
 
 .vn {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   color: #c8922a;
   min-width: 16px;
@@ -185,15 +198,46 @@
 
 .strip-ref {
   font-family: system-ui, sans-serif;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: #c8922a;
 }
 
 .strip-hint {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #a09890;
   flex: 1;
+}
+
+.verse-actions {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.va-btn {
+  flex-shrink: 0;
+  min-height: var(--tap-min);
+  padding: var(--pad-btn);
+  border-radius: 9px;
+  background: rgba(200, 146, 42, 0.12);
+  border: 0.5px solid rgba(200, 146, 42, 0.35);
+  color: #7a5a1a;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(200, 146, 42, 0.2);
+  }
 }
 
 .strip-clear {
@@ -299,7 +343,7 @@
   margin-left: auto;
   padding: 1px 8px;
   font: inherit;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #a09890;
   background: transparent;
   border: 0.5px solid #ddd8ce;
@@ -349,4 +393,22 @@
   font-size: 0.68em;
   color: #c8922a;
   letter-spacing: 0.2px;
+}
+
+// ── Touch word lookup (MOBILE_PLAN.md §4.3) ─────────────────────────────────
+.touch-lookup-chip {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  z-index: 50;
+  padding: var(--pad-btn);
+  min-height: var(--tap-min);
+  background: #1c1917;
+  color: #faf8f3;
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
 }

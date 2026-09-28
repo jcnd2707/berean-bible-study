@@ -1,7 +1,8 @@
-import { Injectable, signal, computed } from "@angular/core";
+import { Injectable, inject, signal, computed } from "@angular/core";
 import { BibleLocation, Verse, CommentaryEntry, BookEntry } from "../models";
+import { BackStackService } from "./back-stack.service";
 
-export type RightTab = "commentary" | "notes" | "xrefs";
+export type RightTab = "commentary" | "notes" | "xrefs" | "dictionary" | "ask";
 
 /** Asks the book reader to open a book at a chapter (1-based position in the book's chapter list). */
 export interface BookRequest {
@@ -18,6 +19,16 @@ export interface WordContext {
 
 @Injectable({ providedIn: "root" })
 export class NavigationStateService {
+  private readonly backStack = inject(BackStackService);
+
+  // Stable closer references so BackStackService can find/replace the right
+  // one — a fresh arrow function on every call wouldn't be recognizable.
+  private readonly closeSearchFn = () => this.closeSearch();
+  private readonly closeCompareFn = () => this.closeCompare();
+  private readonly closeNotesListFn = () => this.closeNotesList();
+  private readonly closeBooksFn = () => this.closeBooks();
+  private readonly closeBookDrawerFn = () => this.closeBookDrawer();
+
   private readonly _location = signal<BibleLocation | null>(null);
   private readonly _maxChapter = signal<number>(1);
   private readonly _hasStrongs = signal<boolean>(false);
@@ -31,6 +42,8 @@ export class NavigationStateService {
   private readonly _notedReferences = signal<Set<string>>(new Set());
   private readonly _showNotesList = signal<boolean>(false);
   private readonly _showBooks = signal<boolean>(false);
+  // Tablet/phone book+chapter navigation drawer (desktop shows BookSidebar inline instead).
+  private readonly _showBookDrawer = signal<boolean>(false);
   private readonly _requestedRightTab = signal<RightTab | null>(null);
   private readonly _requestedCommentaryModule = signal<string | null>(null);
   private readonly _requestedBook = signal<BookRequest | null>(null);
@@ -48,6 +61,7 @@ export class NavigationStateService {
   readonly notedReferences = this._notedReferences.asReadonly();
   readonly showNotesList = this._showNotesList.asReadonly();
   readonly showBooks = this._showBooks.asReadonly();
+  readonly showBookDrawer = this._showBookDrawer.asReadonly();
 
   // One-shot requests the panels consume (used when a chat citation is clicked).
   readonly requestedRightTab = this._requestedRightTab.asReadonly();
@@ -77,34 +91,76 @@ export class NavigationStateService {
   });
 
   toggleSearch(): void {
-    this._showSearch.update((v) => !v);
-    this._showCompare.set(false);
+    if (this._showSearch()) {
+      this.closeSearch();
+      return;
+    }
+    this._showCompare.set(false); // mutual exclusion only — doesn't touch the back stack, open() below replaces it in place
+    this._showSearch.set(true);
+    this.backStack.open(this.closeSearchFn);
   }
   closeSearch(): void {
+    if (!this._showSearch()) return;
     this._showSearch.set(false);
+    this.backStack.close(this.closeSearchFn);
   }
   toggleCompare(): void {
-    this._showCompare.update((v) => !v);
+    if (this._showCompare()) {
+      this.closeCompare();
+      return;
+    }
     this._showSearch.set(false);
+    this._showCompare.set(true);
+    this.backStack.open(this.closeCompareFn);
   }
   closeCompare(): void {
+    if (!this._showCompare()) return;
     this._showCompare.set(false);
+    this.backStack.close(this.closeCompareFn);
   }
   toggleNotesList(): void {
-    this._showNotesList.update((v) => !v);
+    if (this._showNotesList()) {
+      this.closeNotesList();
+      return;
+    }
     this._showBooks.set(false);
+    this._showNotesList.set(true);
+    this.backStack.open(this.closeNotesListFn);
   }
   closeNotesList(): void {
+    if (!this._showNotesList()) return;
     this._showNotesList.set(false);
+    this.backStack.close(this.closeNotesListFn);
   }
   toggleBooks(): void {
-    this._showBooks.update((v) => !v);
+    if (this._showBooks()) {
+      this.closeBooks();
+      return;
+    }
     this._showNotesList.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);
+    this._showBooks.set(true);
+    this.backStack.open(this.closeBooksFn);
   }
   closeBooks(): void {
+    if (!this._showBooks()) return;
     this._showBooks.set(false);
+    this.backStack.close(this.closeBooksFn);
+  }
+
+  toggleBookDrawer(): void {
+    if (this._showBookDrawer()) {
+      this.closeBookDrawer();
+      return;
+    }
+    this._showBookDrawer.set(true);
+    this.backStack.open(this.closeBookDrawerFn);
+  }
+  closeBookDrawer(): void {
+    if (!this._showBookDrawer()) return;
+    this._showBookDrawer.set(false);
+    this.backStack.close(this.closeBookDrawerFn);
   }
 
   /** Shows a commentary on a passage: go to the verse and open that module in the commentary tab. */
@@ -117,7 +173,7 @@ export class NavigationStateService {
     const abbr = this.bookAbbrFromNumber(bookNumber);
     if (!abbr) return;
     const translation = this._location()?.moduleId ?? "KJV";
-    this._showBooks.set(false);
+    this.closeBooks();
     this._location.set({ moduleId: translation, book: abbr, chapter, verse });
     this._requestedCommentaryModule.set(moduleId);
     this._requestedRightTab.set("commentary");
@@ -129,9 +185,14 @@ export class NavigationStateService {
     this._showSearch.set(false);
     this._showCompare.set(false);
     this._showBooks.set(true);
+    this.backStack.open(this.closeBooksFn);
     this._requestedBook.set({ moduleId, chapterIndex });
   }
 
+  /** One-tap jump from the verse action bar (MOBILE_PLAN.md §3) to a study-panel tab. */
+  requestRightTab(tab: RightTab): void {
+    this._requestedRightTab.set(tab);
+  }
   clearRequestedRightTab(): void {
     this._requestedRightTab.set(null);
   }

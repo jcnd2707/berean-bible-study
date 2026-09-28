@@ -13,7 +13,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  p { font-size: 11px; color: #A09890; font-style: italic; text-align: center; margin: 0; }
+  p { font-size: var(--fs-sm); color: #A09890; font-style: italic; text-align: center; margin: 0; }
 }
 
 .loading-dots {
@@ -42,13 +42,13 @@
 
 .from-ref {
   font-family: Georgia, serif;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: bold;
   color: #1C1917;
 }
 
 .xref-count {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #A09890;
 }
 
@@ -83,12 +83,12 @@
 
 .xref-ref {
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: #2C2825;
 }
 
 .votes-badge {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   padding: 1px 6px;
   border-radius: 8px;
   background: rgba(200,146,42,0.12);

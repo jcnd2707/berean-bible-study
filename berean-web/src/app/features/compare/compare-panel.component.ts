@@ -10,6 +10,7 @@ import { BibleService } from '../../core/services/bible.service';
 import { NavigationStateService } from '../../core/services/navigation-state.service';
 import { BibleModule, ChapterResponse, Verse } from '../../core/models';
 import { ResourcesService } from '../../core/services/resources.service';
+import { LayoutService } from '../../core/services/layout.service';
 
 interface CompareColumn {
   moduleId: string;
@@ -18,6 +19,17 @@ interface CompareColumn {
   passage: ChapterResponse | null;
   loading: boolean;
   error: string | null;
+}
+
+interface InterleavedEntry {
+  moduleId: string;
+  label: string;
+  text: string | null;
+}
+
+interface InterleavedRow {
+  verse: number;
+  entries: InterleavedEntry[];
 }
 
 @Component({
@@ -31,6 +43,7 @@ export class ComparePanelComponent implements OnInit, AfterViewInit {
   private readonly bibleService     = inject(BibleService);
   private readonly resourcesService = inject(ResourcesService);
   readonly nav                       = inject(NavigationStateService);
+  readonly layout                    = inject(LayoutService);
 
   @ViewChildren('colBody') colBodies!: QueryList<ElementRef<HTMLElement>>;
 
@@ -42,6 +55,42 @@ export class ComparePanelComponent implements OnInit, AfterViewInit {
   private isSyncing       = false;
 
   readonly activeVerse = computed(() => this.nav.verse());
+
+  /**
+   * MOBILE_PLAN.md §5: up to 4 side-by-side columns are unreadable below
+   * desktop widths (~100px/column on a phone). Phone always interleaves;
+   * tablet interleaves in portrait (no room for even 2 columns) and in
+   * landscape once there are 3+ translations (2 still fit side by side).
+   */
+  readonly interleaved = computed(() => {
+    const l = this.layout.layout();
+    if (l === 'phone') return true;
+    if (l === 'tablet') {
+      if (this.layout.orientation() === 'portrait') return true;
+      return this.columns().length >= 3;
+    }
+    return false;
+  });
+
+  readonly interleavedRows = computed<InterleavedRow[]>(() => {
+    const cols = this.columns();
+    const verseNums = new Set<number>();
+    for (const c of cols) {
+      for (const v of c.passage?.verses ?? []) verseNums.add(v.verse);
+    }
+    return Array.from(verseNums)
+      .sort((a, b) => a - b)
+      .map((verse) => ({
+        verse,
+        entries: cols.map((c) => ({
+          moduleId: c.moduleId,
+          label: c.label,
+          text: c.passage?.verses.find((v) => v.verse === verse)?.text ?? null,
+        })),
+      }));
+  });
+
+  readonly anyLoading = computed(() => this.columns().some((c) => c.loading));
 
   // Reload columns when location (book/chapter) changes
   private readonly _locationEffect = effect(() => {
@@ -106,10 +155,14 @@ export class ComparePanelComponent implements OnInit, AfterViewInit {
   }
 
   onVerseClick(verse: Verse): void {
-    const already = this.nav.verse() === verse.verse;
+    this.onVerseClickByNum(verse.verse);
+  }
+
+  onVerseClickByNum(verseNum: number): void {
+    const already = this.nav.verse() === verseNum;
     const loc = this.nav.location();
     if (!loc) return;
-    this.nav.navigate({ ...loc, verse: already ? null : verse.verse });
+    this.nav.navigate({ ...loc, verse: already ? null : verseNum });
   }
 
   isActiveVerse(verse: Verse): boolean {

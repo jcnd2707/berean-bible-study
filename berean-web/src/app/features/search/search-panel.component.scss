@@ -24,7 +24,14 @@
   gap: 10px;
 }
 
+.search-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .search-input-wrap {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -37,6 +44,21 @@
   &:focus-within { border-color: #C8922A; }
 }
 
+.panel-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: none;
+  background: transparent;
+  color: #A09890;
+  cursor: pointer;
+  border-radius: 6px;
+  &:hover { background: rgba(160,152,144,0.12); color: #5C5650; }
+}
+
 .search-icon {
   color: #A09890;
   flex-shrink: 0;
@@ -47,7 +69,7 @@
   border: none;
   outline: none;
   background: transparent;
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-family: Georgia, serif;
   color: #1C1917;
   padding: 9px 0;
@@ -85,7 +107,7 @@
 }
 
 .filter-label {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -98,7 +120,7 @@
 }
 
 .pill {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   padding: 2px 8px;
   border-radius: 10px;
   border: 0.5px solid #DDD8CE;
@@ -118,7 +140,7 @@
 }
 
 .scope-select {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: #3C3835;
   background: #fff;
   border: 0.5px solid #DDD8CE;
@@ -132,7 +154,7 @@
 }
 
 .clear-filter-btn {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #C8922A;
   background: transparent;
   border: none;
@@ -178,7 +200,7 @@
 }
 
 .error-msg, .empty-msg, .hint-msg {
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: #A09890;
   font-style: italic;
   text-align: center;
@@ -195,13 +217,13 @@
 }
 
 .result-count {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: #5C5650;
 }
 
 .scope-badge {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   padding: 1px 7px;
   border-radius: 8px;
   background: rgba(200,146,42,0.12);
@@ -220,7 +242,7 @@
 
 .book-heading {
   font-family: Georgia, serif;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: bold;
   font-style: italic;
   color: #A09890;
@@ -246,7 +268,7 @@
 }
 
 .result-ref {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   color: #C8922A;
   min-width: 80px;
@@ -257,7 +279,7 @@
 
 .result-text {
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   line-height: 1.65;
   color: #3C3835;
 

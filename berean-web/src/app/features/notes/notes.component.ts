@@ -1,6 +1,7 @@
 import {
   Component,
   OnInit,
+  OnDestroy,
   inject,
   signal,
   computed,
@@ -26,7 +27,7 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
   templateUrl: "./notes.component.html",
   styleUrl: "./notes.component.scss",
 })
-export class NotesComponent implements OnInit {
+export class NotesComponent implements OnInit, OnDestroy {
   private readonly notesService = inject(NotesService);
   readonly nav = inject(NavigationStateService);
 
@@ -95,6 +96,21 @@ export class NotesComponent implements OnInit {
   onTextInput(value: string): void {
     this.noteText.set(value);
     this.save$.next(value);
+  }
+
+  /**
+   * The panel this lives in now keeps it mounted rather than destroying it
+   * on a tab/view switch (MOBILE_PLAN.md §1), so the 1s debounce above
+   * normally has time to fire on its own. This is a backstop for the paths
+   * that still can destroy it — e.g. closing the app — so a keystroke made
+   * in the last second before that isn't silently dropped.
+   */
+  ngOnDestroy(): void {
+    const ref = this.reference();
+    const text = this.noteText();
+    if (ref && this.isDirty() && text.trim()) {
+      this.notesService.upsert(ref, text).subscribe();
+    }
   }
 
   deleteNote(): void {

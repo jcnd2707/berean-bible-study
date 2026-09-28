@@ -1,6 +1,7 @@
 import {
   Component,
   OnInit,
+  OnDestroy,
   inject,
   signal,
   computed,
@@ -27,6 +28,7 @@ import {
   StrongsWord,
 } from "../../core/models";
 import { PreferencesService } from "../../core/services/preferences.service";
+import { LayoutService } from "../../core/services/layout.service";
 import { SearchPanelComponent } from "../search/search-panel.component";
 import { ComparePanelComponent } from "../compare/compare-panel.component";
 import { NotesListComponent } from "../notes/notes-list.component";
@@ -52,12 +54,13 @@ interface TabModule {
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",
 })
-export class BibleReaderComponent implements OnInit {
+export class BibleReaderComponent implements OnInit, OnDestroy {
   private readonly bibleService = inject(BibleService);
   private readonly resourcesService = inject(ResourcesService);
   readonly navState = inject(NavigationStateService);
   private readonly wordSelection = inject(WordSelectionService);
   readonly prefs = inject(PreferencesService);
+  readonly layout = inject(LayoutService);
 
   @HostBinding("style.--reader-font-size")
   get hostFontSize(): string {
@@ -77,7 +80,6 @@ export class BibleReaderComponent implements OnInit {
   readonly tabs = signal<TabModule[]>([]);
   readonly passage = signal<ChapterResponse | null>(null);
   readonly activeVerse = signal<number | null>(null);
-  readonly showSearch = signal(false);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
 
@@ -104,6 +106,104 @@ export class BibleReaderComponent implements OnInit {
   private readonly module$ = toObservable(this.navState.location).pipe(
     distinctUntilChanged((a, b) => a?.moduleId === b?.moduleId),
   );
+
+  /**
+   * Touch word lookup (MOBILE_PLAN.md §4.3): a coarse pointer can't
+   * double-click, and a long-press starts Android's own text-selection UI
+   * instead — which brings up the native copy/share toolbar, and that
+   * toolbar renders on top of any custom UI, covering it. Rather than try
+   * to coexist with it, `.verse-list` disables native text selection
+   * entirely under `(pointer: coarse)` (see the .scss), and this detects
+   * the long-press itself via Pointer Events, finding the word under the
+   * finger the same way `onVerseDoubleClick` does on desktop
+   * (caretRangeFromPoint) but expanded manually since a caret has no
+   * selection to read text from. Desktop keeps `onVerseDoubleClick`
+   * unchanged; this only runs for a touch pointer.
+   */
+  readonly touchLookup = signal<{
+    word: string;
+    strongs: string | null;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  private touchStart: { x: number; y: number } | null = null;
+  private longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  private longPressFired = false;
+  private readonly LONG_PRESS_MS = 500;
+  private readonly MOVE_TOLERANCE = 10;
+
+  onVerseListPointerDown(e: PointerEvent): void {
+    this.touchLookup.set(null);
+    if (!this.layout.coarsePointer() || e.pointerType !== "touch") return;
+    this.touchStart = { x: e.clientX, y: e.clientY };
+    this.longPressFired = false;
+    const x = e.clientX;
+    const y = e.clientY;
+    this.longPressTimer = setTimeout(
+      () => this.fireLongPress(x, y),
+      this.LONG_PRESS_MS,
+    );
+  }
+
+  onVerseListPointerMove(e: PointerEvent): void {
+    if (!this.touchStart) return;
+    const dx = e.clientX - this.touchStart.x;
+    const dy = e.clientY - this.touchStart.y;
+    if (Math.hypot(dx, dy) > this.MOVE_TOLERANCE) {
+      this.cancelLongPressTimer();
+    }
+  }
+
+  /**
+   * Chapter swipe (MOBILE_PLAN.md §4.3, phase 5, optional): a horizontal
+   * drag that ends before the long-press timer fires goes to the
+   * previous/next chapter instead, ignored when vertical movement
+   * dominates so it doesn't fight a normal scroll.
+   */
+  onVerseListPointerUp(e: PointerEvent): void {
+    this.cancelLongPressTimer();
+    const start = this.touchStart;
+    this.touchStart = null;
+    if (!start || this.longPressFired) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx < 0) {
+      this.navState.nextChapter();
+    } else {
+      this.navState.prevChapter();
+    }
+  }
+
+  private cancelLongPressTimer(): void {
+    if (this.longPressTimer !== null) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = null;
+    }
+  }
+
+  private fireLongPress(x: number, y: number): void {
+    this.longPressFired = true;
+    const raw = this.wordAtPoint(x, y);
+    const clean = raw.replace(/[^a-zA-Z'-]/g, "").toLowerCase();
+    if (!clean) return;
+    const row = document.elementFromPoint(x, y)?.closest(".v-row");
+    const vn = row?.querySelector(".vn")?.textContent?.trim();
+    const verseNum = vn ? parseInt(vn, 10) : null;
+    const verseData = verseNum
+      ? this.passage()?.verses.find((v) => v.verse === verseNum)
+      : undefined;
+    const strongs = this.findStrongs(clean, verseData?.strongsWords ?? []);
+    this.touchLookup.set({ word: clean, strongs, x, y });
+  }
+
+  confirmTouchLookup(): void {
+    const lookup = this.touchLookup();
+    if (!lookup) return;
+    this.wordSelection.select(lookup.word, lookup.strongs);
+    this.touchLookup.set(null);
+  }
 
   ngOnInit(): void {
     // Load all bible modules + their details in parallel for proper tab labels
@@ -180,6 +280,10 @@ export class BibleReaderComponent implements OnInit {
       });
   }
 
+  ngOnDestroy(): void {
+    this.cancelLongPressTimer();
+  }
+
   onModuleTabClick(tab: TabModule): void {
     const loc = this.navState.location();
     if (!loc) return;
@@ -216,7 +320,7 @@ export class BibleReaderComponent implements OnInit {
 
   onVerseDoubleClick(event: MouseEvent): void {
     const selected = window.getSelection()?.toString().trim() ?? "";
-    const word = selected || this.wordAtPoint(event);
+    const word = selected || this.wordAtPoint(event.clientX, event.clientY);
     if (!word) return;
     const clean = word.replace(/[^a-zA-Z'-]/g, "").toLowerCase();
     if (!clean) return;
@@ -224,7 +328,6 @@ export class BibleReaderComponent implements OnInit {
     const verseNum = this.verseNumberAt(event);
     const verseData = this.passage()?.verses.find((v) => v.verse === verseNum);
     const strongs = this.findStrongs(clean, verseData?.strongsWords ?? []);
-    console.debug('[strongs]', { clean, verseNum, strongsWords: verseData?.strongsWords, strongs });
     this.wordSelection.select(clean, strongs);
   }
 
@@ -247,19 +350,25 @@ export class BibleReaderComponent implements OnInit {
     return vn ? parseInt(vn, 10) : 1;
   }
 
-  private wordAtPoint(event: MouseEvent): string {
-    if (document.caretRangeFromPoint) {
-      const range = document.caretRangeFromPoint(event.clientX, event.clientY);
-      return range?.toString().trim() ?? "";
-    }
-    return "";
-  }
-
-  toggleSearch(): void {
-    this.showSearch.update((v) => !v);
-  }
-  closeSearch(): void {
-    this.showSearch.set(false);
+  /**
+   * The whole word at a viewport point, found by expanding outward from the
+   * caret position `caretRangeFromPoint` gives — that range is collapsed
+   * (zero-width), so `.toString()` on it alone is always empty; there's no
+   * selection to read text from when nothing was selected to begin with
+   * (the long-press lookup above disables selection entirely).
+   */
+  private wordAtPoint(x: number, y: number): string {
+    if (!document.caretRangeFromPoint) return "";
+    const range = document.caretRangeFromPoint(x, y);
+    const node = range?.startContainer;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return "";
+    const text = node.textContent ?? "";
+    const isWordChar = (c: string) => /[A-Za-z']/.test(c);
+    let start = range!.startOffset;
+    let end = start;
+    while (start > 0 && isWordChar(text[start - 1])) start--;
+    while (end < text.length && isWordChar(text[end])) end++;
+    return text.slice(start, end);
   }
 
   trackByVerse(_: number, v: Verse): number {

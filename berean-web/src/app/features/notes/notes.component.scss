@@ -27,7 +27,7 @@
 
 .notes-ref {
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   font-weight: bold;
   color: #1c1917;
 }
@@ -39,7 +39,7 @@
 }
 
 .status {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-style: italic;
 
   &--saving {
@@ -98,7 +98,7 @@
   align-items: center;
   justify-content: center;
   p {
-    font-size: 11px;
+    font-size: var(--fs-sm);
     color: #a09890;
     font-style: italic;
     text-align: center;
@@ -145,7 +145,7 @@
   border-radius: 6px;
   padding: 10px 12px;
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   line-height: 1.72;
   color: #2c2825;
   background: #fff;
@@ -162,7 +162,7 @@
 }
 
 .note-hint {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #c0b8b0;
   font-style: italic;
   margin: 0;
@@ -170,7 +170,7 @@
 }
 
 .error-msg {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: #a32d2d;
   margin: 0;
   flex-shrink: 0;
