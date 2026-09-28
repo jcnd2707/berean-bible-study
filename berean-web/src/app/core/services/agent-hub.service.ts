@@ -132,11 +132,18 @@ export class AgentHubService implements OnDestroy {
   readonly isAnswering = signal(false);
 
   constructor(private zone: NgZone) {
-    this.buildConnection();
     this.complete$.subscribe(() => this.isAnswering.set(false));
     this.error$.subscribe(() => this.isAnswering.set(false));
   }
 
+  /**
+   * Deliberately NOT called from the constructor: this service is also reached eagerly through
+   * ProfileService (injected by AppComponent at bootstrap, before any profile is ever chosen), so
+   * building the connection URL in the constructor would capture localStorage's profile id before
+   * it's ever set — the hub would then always connect with no profile and get "Choose a profile
+   * first." Building lazily, on first connect() (called only once the shell — gated on a profile
+   * already being chosen — renders), guarantees the id is there by the time this runs.
+   */
   private buildConnection(): void {
     // Browsers can't set headers on a WebSocket, so the profile travels as a query param instead
     // (D3), read once in ChatHub.OnConnectedAsync. The connection lives for the tab's lifetime and
@@ -220,6 +227,7 @@ export class AgentHubService implements OnDestroy {
   }
 
   async connect(): Promise<void> {
+    if (!this.hub) this.buildConnection();
     if (this.hub.state !== signalR.HubConnectionState.Disconnected) return;
     this.state$.next("connecting");
     try {
@@ -285,15 +293,15 @@ export class AgentHubService implements OnDestroy {
   }
 
   async reconnect(): Promise<void> {
-    if (this.hub.state !== signalR.HubConnectionState.Disconnected) return;
+    if (this.hub && this.hub.state !== signalR.HubConnectionState.Disconnected) return;
     await this.connect();
   }
 
   async disconnect(): Promise<void> {
-    await this.hub.stop();
+    await this.hub?.stop();
   }
 
   ngOnDestroy(): void {
-    this.hub.stop();
+    this.hub?.stop();
   }
 }
