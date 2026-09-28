@@ -256,6 +256,31 @@
   }
 }
 
+.strip-copy-btn {
+  flex-shrink: 0;
+  min-height: var(--tap-min);
+  padding: var(--pad-btn);
+  border-radius: 9px;
+  background: rgba(200, 146, 42, 0.12);
+  border: 0.5px solid rgba(200, 146, 42, 0.35);
+  color: #7a5a1a;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  &:hover {
+    background: rgba(200, 146, 42, 0.2);
+  }
+}
+
+.strip-copied {
+  font-size: var(--fs-xs);
+  color: #7a5a1a;
+  font-style: italic;
+  white-space: nowrap;
+}
+
 // Search overlay
 .search-overlay {
   flex: 1;
@@ -327,6 +352,9 @@
     &:hover {
       background: rgba(200, 146, 42, 0.1);
     }
+  }
+  .strip-copied {
+    color: #c8922a;
   }
 
   .error-card {

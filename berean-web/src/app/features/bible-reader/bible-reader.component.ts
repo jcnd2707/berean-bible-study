@@ -23,6 +23,7 @@ import { NavigationStateService } from "../../core/services/navigation-state.ser
 import { WordSelectionService } from "../../core/services/word-selection.service";
 import { BackStackService } from "../../core/services/back-stack.service";
 import { SpeechService } from "../../core/services/speech.service";
+import { ClipboardService } from "../../core/services/clipboard";
 import {
   BibleModuleDetails,
   ChapterResponse,
@@ -37,6 +38,7 @@ import { NotesListComponent } from "../notes/notes-list.component";
 import { BookReaderComponent } from "../books/book-reader.component";
 import { SessionsListComponent } from "../sessions/sessions-list.component";
 import { wordForSpeech, overrideKey } from "./speech-word";
+import { formatVerseCitation } from "./verse-citation";
 
 interface TabModule {
   moduleId: string;
@@ -76,6 +78,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
   private readonly wordSelection = inject(WordSelectionService);
   private readonly backStack = inject(BackStackService);
   private readonly speech = inject(SpeechService);
+  private readonly clipboard = inject(ClipboardService);
   readonly prefs = inject(PreferencesService);
   readonly layout = inject(LayoutService);
 
@@ -356,6 +359,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.cancelLongPressTimer();
+    if (this.copyMessageTimer !== null) clearTimeout(this.copyMessageTimer);
   }
 
   onModuleTabClick(tab: TabModule): void {
@@ -390,6 +394,31 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
     const loc = this.navState.location();
     if (!loc) return;
     this.navState.navigate({ ...loc, verse: newVerse });
+  }
+
+  readonly copyMessage = signal<string | null>(null);
+  private copyMessageTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async copyVerse(): Promise<void> {
+    const verseNum = this.activeVerse();
+    const loc = this.navState.location();
+    const p = this.passage();
+    if (verseNum === null || !loc || !p) return;
+    const verseData = p.verses.find((v) => v.verse === verseNum);
+    if (!verseData) return;
+
+    const citation = formatVerseCitation({
+      html: verseData.text,
+      bookName: p.bookName,
+      chapter: loc.chapter,
+      verse: verseNum,
+      translation: this.activeTab()?.label ?? loc.moduleId,
+    });
+    const ok = await this.clipboard.copy(citation);
+
+    if (this.copyMessageTimer !== null) clearTimeout(this.copyMessageTimer);
+    this.copyMessage.set(ok ? `Copied ${loc.book} ${loc.chapter}:${verseNum}` : "Couldn't copy");
+    this.copyMessageTimer = setTimeout(() => this.copyMessage.set(null), 2000);
   }
 
   onVerseDoubleClick(event: MouseEvent): void {
