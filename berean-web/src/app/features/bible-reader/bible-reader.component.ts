@@ -180,6 +180,39 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
     window.getSelection()?.removeAllRanges();
   }
 
+  /**
+   * Chapter swipe (MOBILE_PLAN.md §4.3, phase 5, optional): a horizontal
+   * swipe on the verse list goes to the previous/next chapter. Ignored
+   * while text is selected (the touch word lookup above takes priority) or
+   * when the vertical movement dominates, so it doesn't fight a normal
+   * scroll. Touch-only — gated on coarse pointer so a desktop click-drag
+   * text selection never triggers it.
+   */
+  private swipeStart: { x: number; y: number } | null = null;
+  private readonly SWIPE_MIN_DX = 60;
+
+  onVerseListPointerDown(e: PointerEvent): void {
+    if (!this.layout.coarsePointer()) return;
+    this.swipeStart = { x: e.clientX, y: e.clientY };
+  }
+
+  onVerseListPointerUp(e: PointerEvent): void {
+    const start = this.swipeStart;
+    this.swipeStart = null;
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) < this.SWIPE_MIN_DX || Math.abs(dx) < Math.abs(dy) * 1.5) {
+      return;
+    }
+    if ((window.getSelection()?.toString() ?? "").length > 0) return;
+    if (dx < 0) {
+      this.navState.nextChapter();
+    } else {
+      this.navState.prevChapter();
+    }
+  }
+
   ngOnInit(): void {
     document.addEventListener("selectionchange", this.onSelectionChange);
 

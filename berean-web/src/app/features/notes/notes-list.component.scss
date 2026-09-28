@@ -20,7 +20,7 @@
 }
 
 .nl-title {
-  font-size: 13px;
+  font-size: var(--fs-md);
   font-weight: 700;
   color: #1C1917;
   font-family: Georgia, serif;
@@ -46,7 +46,7 @@
   border: none;
   outline: none;
   background: transparent;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: #1C1917;
   padding: 6px 0;
   font-family: inherit;
@@ -54,7 +54,7 @@
 }
 
 .nl-count {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #A09890;
   white-space: nowrap;
 }
@@ -89,7 +89,7 @@
 }
 
 .nl-empty {
-  font-size: 12px;
+  font-size: var(--fs-base);
   color: #A09890;
   font-style: italic;
   text-align: center;
@@ -136,20 +136,20 @@
 
 .nl-ref {
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   font-weight: bold;
   color: #C8922A;
 }
 
 .nl-date {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #C0B8B0;
   white-space: nowrap;
 }
 
 .nl-snippet {
   font-family: Georgia, serif;
-  font-size: 11px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   color: #5C5650;
   margin: 0;

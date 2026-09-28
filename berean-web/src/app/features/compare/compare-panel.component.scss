@@ -26,7 +26,7 @@
 }
 
 .bar-label {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -44,7 +44,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 10px;
@@ -67,7 +67,7 @@
 }
 
 .add-btn {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   padding: 2px 9px;
   border-radius: 10px;
   border: 0.5px solid #DDD8CE;
@@ -106,7 +106,7 @@
 }
 
 .mod-id {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: #C8922A;
   flex-shrink: 0;
@@ -114,7 +114,7 @@
 }
 
 .mod-title {
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #A09890;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -147,7 +147,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 10px;
+  font-size: var(--fs-xs);
   color: #A09890;
   cursor: pointer;
   user-select: none;
@@ -183,14 +183,14 @@
 }
 
 .col-label {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: #C8922A;
   letter-spacing: 0.3px;
 }
 
 .col-title {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   color: #A09890;
   white-space: nowrap;
   overflow: hidden;
@@ -213,7 +213,7 @@
 }
 
 .col-error {
-  font-size: 11px;
+  font-size: var(--fs-sm);
   color: #A09890;
   font-style: italic;
   text-align: center;
@@ -259,7 +259,7 @@
 }
 
 .vn {
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 700;
   color: #C8922A;
   min-width: 14px;
@@ -271,7 +271,7 @@
 
 .vt {
   font-family: Georgia, serif;
-  font-size: 12px;
+  font-size: var(--fs-base);
   line-height: 1.72;
   color: #2C2825;
 }

@@ -28,10 +28,7 @@
     </div>
 
     @if (perspectiveService.perspectives().length > 0) {
-      <span
-        class="model-select-wrap"
-        [title]="messages().length > 0 ? 'Start a new conversation to change perspective' : ''"
-      >
+      <span class="model-select-wrap">
         <select
           class="model-select"
           [ngModel]="perspectiveService.selectedId() ?? ''"
@@ -43,14 +40,15 @@
             <option [value]="p.id">{{ p.label }}</option>
           }
         </select>
+        <!-- Visible instead of only a title tooltip — can't hover on touch (MOBILE_PLAN.md §4.3) -->
+        @if (messages().length > 0) {
+          <small class="select-hint">New chat to change</small>
+        }
       </span>
     }
 
     @if (modelService.models().length > 0) {
-      <span
-        class="model-select-wrap"
-        [title]="messages().length > 0 ? 'Start a new conversation to switch models' : ''"
-      >
+      <span class="model-select-wrap">
         <select
           class="model-select"
           [ngModel]="modelService.selectedModelId()"
@@ -61,6 +59,9 @@
             <option [value]="m.id">{{ m.name }}</option>
           }
         </select>
+        @if (messages().length > 0) {
+          <small class="select-hint">New chat to change</small>
+        }
       </span>
     }
     <div class="head-actions">

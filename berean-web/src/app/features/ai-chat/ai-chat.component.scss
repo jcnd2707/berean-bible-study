@@ -94,8 +94,15 @@
 
 .model-select-wrap {
   display: inline-flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   cursor: default;
+}
+
+.select-hint {
+  font-size: var(--fs-2xs);
+  color: rgba(255, 255, 255, 0.35);
+  line-height: 1.2;
 }
 
 .model-select {

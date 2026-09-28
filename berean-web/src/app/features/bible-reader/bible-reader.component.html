@@ -94,6 +94,8 @@
         class="verse-list"
         #verseList
         (dblclick)="onVerseDoubleClick($event)"
+        (pointerdown)="onVerseListPointerDown($event)"
+        (pointerup)="onVerseListPointerUp($event)"
       >
         @for (v of passage()!.verses; track v.verse) {
           <div
