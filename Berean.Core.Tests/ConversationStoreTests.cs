@@ -59,6 +59,66 @@ public sealed class ConversationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ListAsync_SortsPinnedFirst_ThenMostRecentlyUsed()
+    {
+        var store = Store();
+        await store.CreateAsync(Info("a", updated: "2026-01-01T00:00:00Z"));
+        await store.CreateAsync(Info("b", updated: "2026-03-01T00:00:00Z"));
+        await store.CreateAsync(Info("c", updated: "2026-02-01T00:00:00Z"));
+
+        Assert.Equal(["b", "c", "a"], (await store.ListAsync("p1")).Select(x => x.Id));   // no pins: newest first
+
+        await store.SetPinnedAsync("a", "p1", true);
+        Assert.Equal(["a", "b", "c"], (await store.ListAsync("p1")).Select(x => x.Id));   // pinned jumps to the top
+
+        await store.SetPinnedAsync("a", "p1", false);
+        Assert.Equal(["b", "c", "a"], (await store.ListAsync("p1")).Select(x => x.Id));   // unpinning drops it back
+    }
+
+    [Fact]
+    public async Task ListAsync_SearchesTitleAndTheProfilesOwnQuestions()
+    {
+        var store = Store();
+        await store.CreateAsync(Info("a", "Grace and the law"));
+        await store.CreateAsync(Info("b", "Something else entirely"));
+        await store.AppendAsync("b", [Msg(new ChatMessage(ChatRole.User, "what about hesed and covenant love?"))], null);
+
+        Assert.Equal(["a"], (await store.ListAsync("p1", query: "grace")).Select(x => x.Id));       // matches the title
+        Assert.Equal(["b"], (await store.ListAsync("p1", query: "hesed")).Select(x => x.Id));       // matches a question
+        Assert.Equal(["b", "a"], (await store.ListAsync("p1", query: null)).Select(x => x.Id));     // no query: everything
+        Assert.Empty(await store.ListAsync("p1", query: "nothing matches this"));
+    }
+
+    [Fact]
+    public async Task LastLocation_RoundTrips_AndAMissingOneKeepsWhatWasThere()
+    {
+        var store = Store();
+        await store.CreateAsync(Info("a"));
+
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q1"))], null, """{"book":"Jhn","chapter":3,"verse":16}""");
+        Assert.Equal("""{"book":"Jhn","chapter":3,"verse":16}""", (await store.GetAsync("a", "p1"))!.LastLocation);
+
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q2"))], null, lastLocationJson: null);
+        Assert.Equal("""{"book":"Jhn","chapter":3,"verse":16}""", (await store.GetAsync("a", "p1"))!.LastLocation);
+
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q3"))], null, """{"book":"Rom","chapter":8,"verse":28}""");
+        Assert.Equal("""{"book":"Rom","chapter":8,"verse":28}""", (await store.GetAsync("a", "p1"))!.LastLocation);
+    }
+
+    [Fact]
+    public async Task RenameAsync_IsScopedToOneProfile()
+    {
+        var store = Store();
+        await store.CreateAsync(Info("a", profileId: "alice"));
+
+        await store.RenameAsync("a", "bob", "Hijacked title");
+        Assert.Equal("A question", (await store.GetAsync("a", "alice"))!.Title);   // foreign rename: no-op
+
+        await store.RenameAsync("a", "alice", "Renamed");
+        Assert.Equal("Renamed", (await store.GetAsync("a", "alice"))!.Title);
+    }
+
+    [Fact]
     public async Task Adopt_MovesOnlyUnownedConversations()
     {
         var store = Store();

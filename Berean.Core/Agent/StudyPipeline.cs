@@ -43,6 +43,13 @@ public class StudyPipeline
     /// <summary>Called after each turn with what it added and what was retrieved for it.</summary>
     public Func<TurnRecord, Task>? TurnCompleted { get; set; }
 
+    /// <summary>
+    /// Where the reader was when the most recent message was sent, as opaque JSON — set by the
+    /// caller (ChatHub) before each turn and persisted as the conversation's "last location" so
+    /// reopening it can return there. The model never sees this; it's just carried along.
+    /// </summary>
+    public string? LastLocationJson { get; set; }
+
     /// <summary>Continues a stored conversation from its messages.</summary>
     public void LoadHistory(IEnumerable<ChatMessage> messages) => _diagnostic.LoadHistory(messages);
 

@@ -192,10 +192,17 @@ public partial class StudySessionService
         return new ResumedConversation(info, pipeline, ConversationStore.ToDisplay(stored));
     }
 
-    public Task<List<ConversationInfo>> ListConversationsAsync(string connectionId) => _store.ListAsync(GetProfile(connectionId));
+    public Task<List<ConversationInfo>> ListConversationsAsync(string connectionId, string? query = null) =>
+        _store.ListAsync(GetProfile(connectionId), query);
 
     public Task<bool> DeleteConversationAsync(string connectionId, string conversationId) =>
         _store.DeleteAsync(conversationId, GetProfile(connectionId));
+
+    public Task RenameConversationAsync(string connectionId, string conversationId, string title) =>
+        _store.RenameAsync(conversationId, GetProfile(connectionId), title);
+
+    public Task SetPinnedAsync(string connectionId, string conversationId, bool pinned) =>
+        _store.SetPinnedAsync(conversationId, GetProfile(connectionId), pinned);
 
     public Task<int> CountUnownedConversationsAsync() => _store.CountUnownedAsync();
 
@@ -246,7 +253,7 @@ public partial class StudySessionService
                 i == lastAnswer ? sourcesJson : null,
                 now));
 
-            await _store.AppendAsync(id, stored, pipeline.ClaudeCode?.SessionIdFor(id));
+            await _store.AppendAsync(id, stored, pipeline.ClaudeCode?.SessionIdFor(id), pipeline.LastLocationJson);
         }
         catch (Exception ex)
         {
