@@ -28,6 +28,7 @@ public sealed class StudyAgentTests
             var updates = _responses.Count > 0 ? _responses.Dequeue() : [];
             foreach (var u in updates)
             {
+                ct.ThrowIfCancellationRequested();
                 yield return u;
                 await Task.Yield();
             }
@@ -108,5 +109,34 @@ public sealed class StudyAgentTests
 
         var secondTurnUserMessage = fake.Requests[1].Last(m => m.Role == ChatRole.User);
         Assert.DoesNotContain("Recap of the earlier part", secondTurnUserMessage.Text);
+    }
+
+    /// <summary>D11 (PR1_QUICK_WINS_PLAN.md): a stopped answer must never be half-saved — the
+    /// dangling user message is rolled back and the turn never counts toward the question limit.</summary>
+    [Fact]
+    public async Task ACancelledTurn_LeavesHistoryUnchanged_AndDoesNotRaiseTurnCompleted()
+    {
+        var fake = new FakeChatClient();
+        fake.Enqueue([Text("ok")]);
+
+        var agent = MakeAgent(fake);
+        var completedCalls = 0;
+        agent.TurnCompleted = _ => { completedCalls++; return Task.CompletedTask; };
+
+        await foreach (var _ in agent.ChatStreamAsync("first question")) { }
+        var countAfterFirstTurn = agent.MessageCount;
+        Assert.Equal(1, completedCalls);
+
+        fake.Enqueue([Text("part1"), Text("part2")]);
+        using var cts = new CancellationTokenSource();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in agent.ChatStreamAsync("second question", ct: cts.Token))
+                cts.Cancel(); // cancel once the first chunk has arrived, before the next one
+        });
+
+        Assert.Equal(countAfterFirstTurn, agent.MessageCount); // no dangling user message left behind
+        Assert.Equal(1, completedCalls);                       // TurnCompleted never fired for the stopped turn
     }
 }

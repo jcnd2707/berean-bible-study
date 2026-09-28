@@ -216,6 +216,10 @@ public partial class StudySessionService
     public string? CurrentConversationId(string connectionId) =>
         _sessions.TryGetValue(connectionId, out var p) ? p.ConversationId : null;
 
+    /// <summary>After a stopped turn (D11) — see <see cref="ConversationStore.ClearClaudeSessionAsync"/>.</summary>
+    public Task ClearClaudeSessionAsync(string connectionId, string conversationId) =>
+        _store.ClearClaudeSessionAsync(conversationId, GetProfile(connectionId));
+
     // ── Session length limit (Phase 5) ────────────────────────────────────────
 
     /// <summary>

@@ -225,6 +225,30 @@ public sealed class ConversationStoreTests : IDisposable
         Assert.True(string.CompareOrdinal(info.UpdatedAt, "2026-01-01T00:00:00Z") > 0);
     }
 
+    /// <summary>D11: after a stopped turn, a reload must not --resume a possibly-poisoned CLI session.</summary>
+    [Fact]
+    public async Task ClearClaudeSessionAsync_ClearsIt_AndALaterAppendSetsItAgain()
+    {
+        var store = Store();
+        await store.CreateAsync(Info("a"));
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q1"))], "session-1");
+        Assert.Equal("session-1", (await store.GetAsync("a", "p1"))!.ClaudeSessionId);
+
+        await store.ClearClaudeSessionAsync("a", "p1");
+        Assert.Null((await store.GetAsync("a", "p1"))!.ClaudeSessionId);
+
+        await store.AppendAsync("a", [Msg(new ChatMessage(ChatRole.User, "q2"))], "session-2");
+        Assert.Equal("session-2", (await store.GetAsync("a", "p1"))!.ClaudeSessionId);
+    }
+
+    /// <summary>A no-op for a conversation not yet in chat.db — the first question was the one stopped.</summary>
+    [Fact]
+    public async Task ClearClaudeSessionAsync_OnAnUnsavedConversation_IsANoOp()
+    {
+        var store = Store();
+        await store.ClearClaudeSessionAsync("never-created", "p1"); // must not throw
+    }
+
     [Fact]
     public async Task ToolCallsAndResults_SurviveTheRoundTrip_ForReplayToAModel()
     {

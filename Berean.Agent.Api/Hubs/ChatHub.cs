@@ -19,7 +19,9 @@ namespace Berean.Agent.Api.Hubs;
 ///   RenameConversation(id, title)
 ///   SetPinned(id, pinned)
 ///   SendMessage(text, mode, location?)   location is {moduleId,book,chapter,verse} or null;
-///                                         refused once the session is full (Phase 5)
+///                                         refused once the session is full (Phase 5), or if an
+///                                         answer is already running on this connection
+///   CancelMessage()                 stops the answer currently streaming on this connection, if any
 ///   ContinueConversation()         ends a full session and starts the next part of the same study
 ///   SetLanguage(language)
 ///   GetRagStatus()
@@ -35,6 +37,8 @@ namespace Berean.Agent.Api.Hubs;
 ///   ToolActivity(name, text)     the model is using a tool ("Looking up hesed…")
 ///   TokenReceived(chunk)         answer text, as it is generated
 ///   MessageComplete(fullText)
+///   MessageStopped()             the answer was stopped (CancelMessage, or a conversation switch
+///                                 while one was streaming) — never sent for a dropped connection
 ///
 /// Other events:
 ///   SessionStarted(ragChunks)
@@ -54,13 +58,20 @@ public partial class ChatHub : Hub
 {
     private readonly StudySessionService _sessions;
     private readonly SessionLimits _limits;
+    private readonly ActiveAnswers _activeAnswers;
     private readonly IHubContext<ChatHub> _hubContext;
     private readonly ILogger<ChatHub> _log;
 
-    public ChatHub(StudySessionService sessions, SessionLimits limits, IHubContext<ChatHub> hubContext, ILogger<ChatHub> log)
+    /// <summary>How long a conversation switch waits for a running answer to stop before proceeding anyway.</summary>
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
+
+    public ChatHub(
+        StudySessionService sessions, SessionLimits limits, ActiveAnswers activeAnswers,
+        IHubContext<ChatHub> hubContext, ILogger<ChatHub> log)
     {
         _sessions = sessions;
         _limits = limits;
+        _activeAnswers = activeAnswers;
         _hubContext = hubContext;
         _log = log;
     }
@@ -95,9 +106,21 @@ public partial class ChatHub : Hub
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
+        _activeAnswers.Cancel(Context.ConnectionId);
         _sessions.RemoveSession(Context.ConnectionId);
         _log.LogInformation("[Hub] Disconnected: {Id}", Context.ConnectionId);
         return base.OnDisconnectedAsync(exception);
+    }
+
+    /// <summary>
+    /// Cancels the running answer, if any, and waits for it to finish sending — see
+    /// ActiveAnswers.WaitForIdleAsync for why. Called first by every hub method that changes what
+    /// conversation this connection is on, so the conversation can never change under a running answer.
+    /// </summary>
+    private async Task StopActiveAnswerAsync()
+    {
+        if (_activeAnswers.Cancel(Context.ConnectionId))
+            await _activeAnswers.WaitForIdleAsync(Context.ConnectionId, StopTimeout);
     }
 
     // ── Conversations ──────────────────────────────────────────────────────
@@ -110,6 +133,7 @@ public partial class ChatHub : Hub
     /// </summary>
     public async Task StartConversation(string? modelId = null, string[]? perspectives = null)
     {
+        await StopActiveAnswerAsync();
         try
         {
             var pipeline = await _sessions.StartConversationAsync(Context.ConnectionId, modelId, perspectives);
@@ -134,6 +158,7 @@ public partial class ChatHub : Hub
     /// <summary>Reopens a saved conversation and sends its messages back for display.</summary>
     public async Task ResumeConversation(string conversationId)
     {
+        await StopActiveAnswerAsync();
         try
         {
             var resumed = await _sessions.ResumeConversationAsync(Context.ConnectionId, conversationId);
@@ -165,6 +190,8 @@ public partial class ChatHub : Hub
 
     public async Task DeleteConversation(string conversationId)
     {
+        if (_sessions.CurrentConversationId(Context.ConnectionId) == conversationId)
+            await StopActiveAnswerAsync();
         await _sessions.DeleteConversationAsync(Context.ConnectionId, conversationId);
         await Clients.Caller.SendAsync("ConversationDeleted", conversationId);
     }
@@ -223,6 +250,13 @@ public partial class ChatHub : Hub
             ? parsed
             : QueryMode.Deep;
 
+        var token = _activeAnswers.TryBegin(Context.ConnectionId, Context.ConnectionAborted);
+        if (token is null)
+        {
+            await Clients.Caller.SendAsync("Error", "An answer is already in progress.");
+            return;
+        }
+
         _log.LogInformation("[Hub] {Id} mode={Mode} perspectives={Perspectives} → {Preview}",
             Context.ConnectionId, queryMode, pipeline.Perspectives.Count == 0 ? "-" : string.Join(",", pipeline.Perspectives.Select(p => p.Id)),
             text.Length > 60 ? text[..60] + "…" : text);
@@ -233,7 +267,7 @@ public partial class ChatHub : Hub
             await Clients.Caller.SendAsync("TokenReceived", "");
 
             var reply = new StringBuilder();
-            await foreach (var ev in pipeline.ChatEventsAsync(text, queryMode, Context.ConnectionAborted))
+            await foreach (var ev in pipeline.ChatEventsAsync(text, queryMode, token.Value))
             {
                 switch (ev)
                 {
@@ -255,11 +289,46 @@ public partial class ChatHub : Hub
             await Clients.Caller.SendAsync("MessageComplete", reply.Length > 0 ? reply.ToString() : "(no response)");
             await SendLimitStateAsync();
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException)
+        {
+            // The turn already rolled back cleanly inside the agent (StudyAgent's finally) — never
+            // saved, never counted toward the question limit. The one remaining leak is Claude
+            // Code's own CLI session, which may already have the stopped question written into it;
+            // clear the stored session so a reload can't --resume it (ClaudeCodeChatClient's
+            // in-memory cache is fixed by its own try/finally for the rest of this process's life).
+            await ClearClaudeSessionAfterStopAsync(pipeline.ConversationId);
+
+            // Nothing to send to a connection that's already gone — and a dropped-connection
+            // cancellation was never "stopped" from the user's point of view.
+            if (!Context.ConnectionAborted.IsCancellationRequested)
+                await Clients.Caller.SendAsync("MessageStopped");
+        }
         catch (Exception ex)
         {
             _log.LogError(ex, "[Hub] SendMessage failed");
             await Clients.Caller.SendAsync("Error", $"Error: {ex.Message}");
+        }
+        finally
+        {
+            _activeAnswers.End(Context.ConnectionId);
+        }
+    }
+
+    /// <summary>Stops the answer currently streaming on this connection, if any (D11).</summary>
+    public void CancelMessage()
+    {
+        _activeAnswers.Cancel(Context.ConnectionId);
+    }
+
+    private async Task ClearClaudeSessionAfterStopAsync(string conversationId)
+    {
+        try
+        {
+            await _sessions.ClearClaudeSessionAsync(Context.ConnectionId, conversationId);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "[Hub] Could not clear the Claude Code session after a stop");
         }
     }
 
@@ -268,6 +337,7 @@ public partial class ChatHub : Hub
     /// <summary>Ends a full session and starts the next part of the same study, recap carried over (Phase 5).</summary>
     public async Task ContinueConversation()
     {
+        await StopActiveAnswerAsync();
         try
         {
             var result = await _sessions.ContinueConversationAsync(Context.ConnectionId);
