@@ -1,6 +1,7 @@
 import { Injectable, inject, signal, computed } from "@angular/core";
-import { BibleLocation, Verse, CommentaryEntry, BookEntry } from "../models";
+import { BibleLocation, Verse, CommentaryEntry, BookEntry, ReadChapter } from "../models";
 import { BackStackService } from "./back-stack.service";
+import { chapterKey } from "./reading-progress";
 
 export type RightTab = "commentary" | "notes" | "xrefs" | "dictionary" | "ask";
 
@@ -49,6 +50,8 @@ export class NavigationStateService {
   private readonly _showSearch = signal<boolean>(false);
   private readonly _showCompare = signal<boolean>(false);
   private readonly _notedReferences = signal<Set<string>>(new Set());
+  // "book.chapter" (canonical book number) -> when it was marked read.
+  private readonly _readChapters = signal<ReadonlyMap<string, string>>(new Map());
   private readonly _showNotesList = signal<boolean>(false);
   private readonly _showBooks = signal<boolean>(false);
   // Tablet/phone book+chapter navigation drawer (desktop shows BookSidebar inline instead).
@@ -71,6 +74,7 @@ export class NavigationStateService {
   readonly showSearch = this._showSearch.asReadonly();
   readonly showCompare = this._showCompare.asReadonly();
   readonly notedReferences = this._notedReferences.asReadonly();
+  readonly readChapters = this._readChapters.asReadonly();
   readonly showNotesList = this._showNotesList.asReadonly();
   readonly showBooks = this._showBooks.asReadonly();
   readonly showBookDrawer = this._showBookDrawer.asReadonly();
@@ -271,6 +275,27 @@ export class NavigationStateService {
       if (r === prefix || r.startsWith(prefix + ".")) return true;
     }
     return false;
+  }
+
+  setReadChapters(chapters: ReadChapter[]): void {
+    this._readChapters.set(new Map(chapters.map((c) => [chapterKey(c.book, c.chapter), c.readAt])));
+  }
+
+  /** Marks a chapter read (with the time it was marked) or, given null, unmarks it. */
+  setChapterRead(book: number, chapter: number, readAt: string | null): void {
+    const next = new Map(this._readChapters());
+    if (readAt === null) next.delete(chapterKey(book, chapter));
+    else next.set(chapterKey(book, chapter), readAt);
+    this._readChapters.set(next);
+  }
+
+  /** When the chapter was marked read, or null if it isn't. Takes the canonical book number. */
+  readAtForChapter(book: number, chapter: number): string | null {
+    return this._readChapters().get(chapterKey(book, chapter)) ?? null;
+  }
+
+  hasReadChapter(book: number, chapter: number): boolean {
+    return this._readChapters().has(chapterKey(book, chapter));
   }
 
   setBooks(books: BookEntry[]): void {

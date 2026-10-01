@@ -127,6 +127,12 @@ export interface Note {
   updatedAt?: string;
 }
 
+export interface ReadChapter {
+  book: number; // canonical 1-66, not a module's abbreviation
+  chapter: number;
+  readAt: string;
+}
+
 export interface UpsertNoteRequest {
   text: string;
 }
