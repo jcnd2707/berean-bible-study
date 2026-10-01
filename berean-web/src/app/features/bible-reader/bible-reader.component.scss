@@ -148,6 +148,67 @@
   }
 }
 
+// "Mark this chapter as read" at the end of the verse list.
+.chapter-done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 0.5px solid #ddd8ce;
+}
+
+.done-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap-min);
+  padding: var(--pad-btn);
+  border-radius: 9px;
+  background: transparent;
+  border: 0.5px solid #cfc9bd;
+  color: #6b6457;
+  font-family: system-ui, sans-serif;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: rgba(95, 163, 122, 0.1);
+    border-color: rgba(95, 163, 122, 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  &.on {
+    background: rgba(95, 163, 122, 0.14);
+    border-color: rgba(95, 163, 122, 0.55);
+    color: #2f6b49;
+  }
+}
+
+.done-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.done-error {
+  font-family: system-ui, sans-serif;
+  font-size: var(--fs-xs);
+  color: #b3402e;
+}
+
 .v-row {
   display: flex;
   gap: 10px;
@@ -320,6 +381,22 @@
 
   .verse-list {
     scrollbar-color: #2e2b27 transparent;
+  }
+
+  .chapter-done {
+    border-top-color: #2e2b27;
+  }
+  .done-btn {
+    border-color: #3a362f;
+    color: #9c9186;
+    &.on {
+      color: #7cc79b;
+      border-color: rgba(124, 199, 155, 0.5);
+      background: rgba(124, 199, 155, 0.12);
+    }
+  }
+  .done-error {
+    color: #e08a7a;
   }
 
   .v-row {

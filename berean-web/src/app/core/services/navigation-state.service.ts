@@ -1,6 +1,7 @@
 import { Injectable, inject, signal, computed } from "@angular/core";
-import { BibleLocation, Verse, CommentaryEntry, BookEntry } from "../models";
+import { BibleLocation, Verse, CommentaryEntry, BookEntry, ReadChapter } from "../models";
 import { BackStackService } from "./back-stack.service";
+import { chapterKey, computeProgress } from "./reading-progress";
 
 export type RightTab = "commentary" | "notes" | "xrefs" | "dictionary" | "ask";
 
@@ -37,6 +38,7 @@ export class NavigationStateService {
   private readonly closeBookDrawerFn = () => this.closeBookDrawer();
   private readonly closeProfileSwitcherFn = () => this.closeProfileSwitcher();
   private readonly closeSessionsFn = () => this.closeSessions();
+  private readonly closeProgressFn = () => this.closeProgress();
 
   private readonly _location = signal<BibleLocation | null>(null);
   private readonly _maxChapter = signal<number>(1);
@@ -49,12 +51,15 @@ export class NavigationStateService {
   private readonly _showSearch = signal<boolean>(false);
   private readonly _showCompare = signal<boolean>(false);
   private readonly _notedReferences = signal<Set<string>>(new Set());
+  // "book.chapter" (canonical book number) -> when it was marked read.
+  private readonly _readChapters = signal<ReadonlyMap<string, string>>(new Map());
   private readonly _showNotesList = signal<boolean>(false);
   private readonly _showBooks = signal<boolean>(false);
   // Tablet/phone book+chapter navigation drawer (desktop shows BookSidebar inline instead).
   private readonly _showBookDrawer = signal<boolean>(false);
   private readonly _showProfileSwitcher = signal<boolean>(false);
   private readonly _showSessions = signal<boolean>(false);
+  private readonly _showProgress = signal<boolean>(false);
   private readonly _continuingBanner = signal<ContinuingSessionInfo | null>(null);
   private readonly _requestedRightTab = signal<RightTab | null>(null);
   private readonly _requestedCommentaryModule = signal<string | null>(null);
@@ -71,11 +76,13 @@ export class NavigationStateService {
   readonly showSearch = this._showSearch.asReadonly();
   readonly showCompare = this._showCompare.asReadonly();
   readonly notedReferences = this._notedReferences.asReadonly();
+  readonly readChapters = this._readChapters.asReadonly();
   readonly showNotesList = this._showNotesList.asReadonly();
   readonly showBooks = this._showBooks.asReadonly();
   readonly showBookDrawer = this._showBookDrawer.asReadonly();
   readonly showProfileSwitcher = this._showProfileSwitcher.asReadonly();
   readonly showSessions = this._showSessions.asReadonly();
+  readonly showProgress = this._showProgress.asReadonly();
   readonly continuingBanner = this._continuingBanner.asReadonly();
 
   // One-shot requests the panels consume (used when a chat citation is clicked).
@@ -87,6 +94,9 @@ export class NavigationStateService {
   readonly book = computed(() => this._location()?.book ?? null);
   readonly chapter = computed(() => this._location()?.chapter ?? null);
   readonly verse = computed(() => this._location()?.verse ?? null);
+
+  /** Whole-Bible reading progress, from the read chapters and the loaded book list. */
+  readonly readingProgress = computed(() => computeProgress(this._readChapters(), this._books()));
 
   readonly activeVerseText = computed(() => {
     const v = this._location()?.verse;
@@ -112,6 +122,7 @@ export class NavigationStateService {
     }
     this._showCompare.set(false); // mutual exclusion only — doesn't touch the back stack, open() below replaces it in place
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showSearch.set(true);
     this.backStack.open(this.closeSearchFn);
   }
@@ -127,6 +138,7 @@ export class NavigationStateService {
     }
     this._showSearch.set(false);
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showCompare.set(true);
     this.backStack.open(this.closeCompareFn);
   }
@@ -142,6 +154,7 @@ export class NavigationStateService {
     }
     this._showBooks.set(false);
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showNotesList.set(true);
     this.backStack.open(this.closeNotesListFn);
   }
@@ -159,6 +172,7 @@ export class NavigationStateService {
     this._showNotesList.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);
+    this._showProgress.set(false);
     this._showSessions.set(true);
     this.backStack.open(this.closeSessionsFn);
   }
@@ -167,6 +181,24 @@ export class NavigationStateService {
     this._showSessions.set(false);
     this.backStack.close(this.closeSessionsFn);
   }
+  toggleProgress(): void {
+    if (this._showProgress()) {
+      this.closeProgress();
+      return;
+    }
+    this._showBooks.set(false);
+    this._showNotesList.set(false);
+    this._showSessions.set(false);
+    this._showSearch.set(false);
+    this._showCompare.set(false);
+    this._showProgress.set(true);
+    this.backStack.open(this.closeProgressFn);
+  }
+  closeProgress(): void {
+    if (!this._showProgress()) return;
+    this._showProgress.set(false);
+    this.backStack.close(this.closeProgressFn);
+  }
   toggleBooks(): void {
     if (this._showBooks()) {
       this.closeBooks();
@@ -174,6 +206,7 @@ export class NavigationStateService {
     }
     this._showNotesList.set(false);
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);
     this._showBooks.set(true);
@@ -231,6 +264,7 @@ export class NavigationStateService {
 
   /** Opens the book reader on a chapter of a prose book. */
   openBookChapter(moduleId: string, chapterIndex: number): void {
+    this._showProgress.set(false);
     this._showNotesList.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);
@@ -271,6 +305,27 @@ export class NavigationStateService {
       if (r === prefix || r.startsWith(prefix + ".")) return true;
     }
     return false;
+  }
+
+  setReadChapters(chapters: ReadChapter[]): void {
+    this._readChapters.set(new Map(chapters.map((c) => [chapterKey(c.book, c.chapter), c.readAt])));
+  }
+
+  /** Marks a chapter read (with the time it was marked) or, given null, unmarks it. */
+  setChapterRead(book: number, chapter: number, readAt: string | null): void {
+    const next = new Map(this._readChapters());
+    if (readAt === null) next.delete(chapterKey(book, chapter));
+    else next.set(chapterKey(book, chapter), readAt);
+    this._readChapters.set(next);
+  }
+
+  /** When the chapter was marked read, or null if it isn't. Takes the canonical book number. */
+  readAtForChapter(book: number, chapter: number): string | null {
+    return this._readChapters().get(chapterKey(book, chapter)) ?? null;
+  }
+
+  hasReadChapter(book: number, chapter: number): boolean {
+    return this._readChapters().has(chapterKey(book, chapter));
   }
 
   setBooks(books: BookEntry[]): void {

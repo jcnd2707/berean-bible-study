@@ -33,6 +33,7 @@ public class Program
         builder.Services.AddSingleton<DictionaryService>();
         builder.Services.AddSingleton<NotesService>();
         builder.Services.AddSingleton<ProfileService>();
+        builder.Services.AddSingleton<ReadingProgressService>();
         builder.Services.AddSingleton<CrossReferenceService>();
         builder.Services.AddSingleton<BookService>();
         builder.Services.AddSingleton<ModuleProfileService>();
@@ -72,6 +73,7 @@ public class Program
         // Ensure the profiles and notes tables exist (and any pre-profiles notes.db is migrated) before accepting requests
         app.Services.GetRequiredService<ProfileService>().EnsureCreated();
         app.Services.GetRequiredService<NotesService>().EnsureCreated();
+        app.Services.GetRequiredService<ReadingProgressService>().EnsureCreated();
 
         if (app.Environment.IsDevelopment())
         {

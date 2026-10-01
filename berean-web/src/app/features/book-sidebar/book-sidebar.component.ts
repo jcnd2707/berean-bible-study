@@ -4,6 +4,7 @@ import { BibleService } from "../../core/services/bible.service";
 import { ResourcesService } from "../../core/services/resources.service";
 import { NavigationStateService } from "../../core/services/navigation-state.service";
 import { BookEntry } from "../../core/models";
+import { isBookComplete } from "../../core/services/reading-progress";
 
 @Component({
   selector: "app-book-sidebar",
@@ -76,6 +77,16 @@ export class BookSidebarComponent implements OnInit {
 
   isActiveChapter(ch: number): boolean {
     return this.nav.chapter() === ch;
+  }
+
+  hasRead(ch: number): boolean {
+    const book = this.selectedBook();
+    if (!book) return false;
+    return this.nav.hasReadChapter(book.number, ch);
+  }
+
+  isBookRead(book: BookEntry): boolean {
+    return isBookComplete(this.nav.readChapters(), book.number, book.chapterCount);
   }
 
   hasNote(ch: number): boolean {

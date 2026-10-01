@@ -62,6 +62,19 @@
     </div>
   }
 
+  <!-- Reading progress overlay -->
+  @if (
+    navState.showProgress() &&
+    !navState.showSearch() &&
+    !navState.showCompare() &&
+    !navState.showNotesList() &&
+    !navState.showSessions()
+  ) {
+    <div class="search-overlay">
+      <app-progress-panel />
+    </div>
+  }
+
   <!-- Books overlay -->
   @if (navState.showBooks()) {
     <div class="search-overlay">
@@ -75,7 +88,8 @@
     !navState.showCompare() &&
     !navState.showNotesList() &&
     !navState.showBooks() &&
-    !navState.showSessions()
+    !navState.showSessions() &&
+    !navState.showProgress()
   ) {
     <!-- Passage heading -->
     @if (passageTitle() && !loading()) {
@@ -136,6 +150,46 @@
               </span>
             } @else {
               <span class="vt" [innerHTML]="v.text"></span>
+            }
+          </div>
+        }
+
+        <!-- Mark the chapter read. Lives inside the scrolling list so it sits at the end of the
+             chapter; the stopPropagation()s keep a long-press or double-tap on the button from
+             being read as a word lookup by the list's handlers. -->
+        @if (chapterBook()) {
+          <div
+            class="chapter-done"
+            (pointerdown)="$event.stopPropagation()"
+            (dblclick)="$event.stopPropagation()"
+            (contextmenu)="$event.stopPropagation()"
+          >
+            <button
+              type="button"
+              class="done-btn"
+              [class.on]="chapterRead()"
+              [disabled]="markingRead()"
+              [attr.aria-pressed]="chapterRead()"
+              [title]="chapterRead() ? 'Click to unmark this chapter' : 'Mark this chapter as read'"
+              (click)="toggleChapterRead()"
+            >
+              <span class="done-box" aria-hidden="true">
+                @if (chapterRead()) {
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path
+                      d="M2 6.5l2.5 2.5L10 3.5"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                }
+              </span>
+              {{ chapterRead() ? "Read" + (readDate() ? " " + readDate() : "") : "Mark this chapter as read" }}
+            </button>
+            @if (readError()) {
+              <span class="done-error" role="alert">{{ readError() }}</span>
             }
           </div>
         }

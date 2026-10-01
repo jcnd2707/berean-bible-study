@@ -24,6 +24,8 @@ import { WordSelectionService } from "../../core/services/word-selection.service
 import { BackStackService } from "../../core/services/back-stack.service";
 import { SpeechService } from "../../core/services/speech.service";
 import { ClipboardService } from "../../core/services/clipboard";
+import { ReadingProgressService } from "../../core/services/reading-progress.service";
+import { formatReadDate } from "../../core/services/reading-progress";
 import {
   BibleModuleDetails,
   ChapterResponse,
@@ -37,6 +39,7 @@ import { ComparePanelComponent } from "../compare/compare-panel.component";
 import { NotesListComponent } from "../notes/notes-list.component";
 import { BookReaderComponent } from "../books/book-reader.component";
 import { SessionsListComponent } from "../sessions/sessions-list.component";
+import { ProgressPanelComponent } from "../progress/progress-panel.component";
 import { wordForSpeech, overrideKey } from "./speech-word";
 import { formatVerseCitation } from "./verse-citation";
 
@@ -67,6 +70,7 @@ interface WordMenuEntry {
     NotesListComponent,
     BookReaderComponent,
     SessionsListComponent,
+    ProgressPanelComponent,
   ],
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",
@@ -79,6 +83,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
   private readonly backStack = inject(BackStackService);
   private readonly speech = inject(SpeechService);
   private readonly clipboard = inject(ClipboardService);
+  private readonly readingProgress = inject(ReadingProgressService);
   readonly prefs = inject(PreferencesService);
   readonly layout = inject(LayoutService);
 
@@ -108,6 +113,38 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
     if (!loc) return "";
     return `${loc.book} ${loc.chapter}`;
   });
+
+  /** The book being read, for its canonical number — progress isn't tied to a translation's abbreviation. */
+  readonly chapterBook = computed(() => {
+    const abbr = this.navState.book();
+    return this.navState.books().find((b) => b.abbreviation === abbr) ?? null;
+  });
+
+  readonly chapterReadAt = computed(() => {
+    const book = this.chapterBook();
+    const chapter = this.navState.chapter();
+    if (!book || chapter === null) return null;
+    return this.navState.readAtForChapter(book.number, chapter);
+  });
+  readonly chapterRead = computed(() => this.chapterReadAt() !== null);
+  readonly readDate = computed(() => {
+    const at = this.chapterReadAt();
+    return at ? formatReadDate(at) : "";
+  });
+  readonly markingRead = signal(false);
+  readonly readError = signal<string | null>(null);
+
+  async toggleChapterRead(): Promise<void> {
+    const book = this.chapterBook();
+    const chapter = this.navState.chapter();
+    if (!book || chapter === null || this.markingRead()) return;
+
+    this.markingRead.set(true);
+    this.readError.set(null);
+    const ok = await this.readingProgress.setRead(book.number, chapter, !this.chapterRead());
+    this.markingRead.set(false);
+    if (!ok) this.readError.set("Couldn't save — try again.");
+  }
 
   readonly activeTab = computed(
     () =>
@@ -331,6 +368,7 @@ export class BibleReaderComponent implements OnInit, OnDestroy {
           this.loading.set(true);
           this.error.set(null);
           this.activeVerse.set(null);
+          this.readError.set(null);
           return this.bibleService
             .getChapter(loc.moduleId, loc.book, loc.chapter)
             .pipe(

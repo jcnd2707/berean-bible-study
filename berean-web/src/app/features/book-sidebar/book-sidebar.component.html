@@ -8,6 +8,9 @@
         (click)="selectBook(book)"
       >
         {{ book.name }}
+        @if (isBookRead(book)) {
+          <span class="book-done" title="Every chapter read">✓</span>
+        }
         <span class="ch-count">{{ book.chapterCount }}</span>
       </div>
     }
@@ -22,6 +25,9 @@
         (click)="selectBook(book)"
       >
         {{ book.name }}
+        @if (isBookRead(book)) {
+          <span class="book-done" title="Every chapter read">✓</span>
+        }
         <span class="ch-count">{{ book.chapterCount }}</span>
       </div>
     }
@@ -38,6 +44,9 @@
           (click)="selectChapter(ch)"
         >
           {{ ch }}
+          @if (hasRead(ch)) {
+            <span class="read-dot" title="Read"></span>
+          }
           @if (hasNote(ch)) {
             <span class="note-dot" title="Has notes"></span>
           }

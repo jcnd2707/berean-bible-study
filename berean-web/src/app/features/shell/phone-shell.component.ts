@@ -93,6 +93,9 @@ type PhoneView = "read" | "study" | "ask" | "more";
             <button class="more-item" (click)="nav.toggleSessions()">
               🕘 Study sessions
             </button>
+            <button class="more-item" (click)="nav.toggleProgress()">
+              ✓ Reading progress@if (nav.readingProgress().totalChapters > 0) { · {{ nav.readingProgress().percent }}%}
+            </button>
             <button class="more-item" (click)="nav.toggleBooks()">
               📚 Books
             </button>
@@ -459,7 +462,8 @@ export class PhoneShellComponent {
       this.nav.showCompare() ||
       this.nav.showNotesList() ||
       this.nav.showBooks() ||
-      this.nav.showSessions()
+      this.nav.showSessions() ||
+      this.nav.showProgress()
     ) {
       this.setView("read");
     }
