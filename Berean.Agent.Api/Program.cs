@@ -1,3 +1,4 @@
+using System.Reflection;
 using Berean.Agent.Api.Hubs;
 using Berean.Agent.Api.Services;
 
@@ -71,8 +72,20 @@ namespace Berean.Agent.Api
 
             app.UseCors();
 
-            // Health check
+            // Health check and build version (both probed by the HomeOps deploy module after every deploy)
             app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
+            app.MapGet("/version", () =>
+            {
+                // MinVer + SourceLink produce "<version>+<commit>"
+                var info = typeof(Program).Assembly
+                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+                var plus = info.IndexOf('+');
+                return Results.Ok(new
+                {
+                    version = plus < 0 ? info : info[..plus],
+                    commit = plus < 0 ? null : info[(plus + 1)..],
+                });
+            });
 
             // Models the UI can choose between: the configured hosted models plus tool-capable Ollama models
             app.MapGet("/api/models", async (ModelRegistryService registry, CancellationToken ct) =>

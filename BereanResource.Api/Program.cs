@@ -88,5 +88,9 @@ public class Program
         app.UseHttpsRedirection();
         app.UseCors();
         app.MapControllers();
+
+        // Probed by the HomeOps deploy module after every deploy.
+        app.MapGet("/health", () => Results.Ok(new { status = "ok", time = DateTime.UtcNow }));
+        app.MapGet("/version", () => Results.Ok(BuildInfo.Current));
     }
 }
