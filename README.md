@@ -161,12 +161,23 @@ Berean does support more than one person: a "Who's studying?" **profile** picker
 
 ## Deployment
 
-For running the three apps continuously on a Windows machine, instead of `dotnet run`/`npm start` in a terminal:
+Deployed with HomeOps (`%USERPROFILE%\source\repos\home-ops`). What runs where, and how it is built and hosted, lives in [homeops.json](homeops.json).
 
-- **`BereanResource.Api` and the built `berean-web`**: host both in IIS as ordinary sites (in-process ASP.NET Core hosting for the API; static files + URL Rewrite fallback to `index.html` for the web app — see [deploy/web/web.config](deploy/web/web.config)). [deploy/finish-iis-setup.ps1](deploy/finish-iis-setup.ps1) creates/starts the sites and app pools and checks that each one answers. Run it elevated.
-- **`Berean.Agent.Api`**: **not** IIS. With the default `ClaudeCode` provider, the agent shells out to the `claude` CLI, which reads your Claude login from your Windows user profile. An IIS app pool's worker process — even set to run as your account — is a *batch logon*, and the CLI's stored login isn't visible there ("Not logged in" at runtime even though the account is right). A Windows Service running as your account gets a normal profile environment, so the CLI sees the login. [Program.cs](Berean.Agent.Api/Program.cs) calls `UseWindowsService` (a no-op under `dotnet run` or IIS); [deploy/install-agent-service.ps1](deploy/install-agent-service.ps1) retires the IIS site if one exists, copies a new build in, grants your account "Log on as a service", and installs/starts the `BereanAgent` service (`appsettings.json`'s `Urls` controls the port; default `http://*:5050`). Run it elevated, with the account you use for Claude Code.
-- Redeploying the Agent after a code change: `dotnet publish Berean.Agent.Api -c Release -o <folder>`, then re-run `install-agent-service.ps1 -PublishDir <folder>` elevated (it stops the service first, copies files, restarts it).
-- If you switch the Agent to the `Anthropic` or `OpenAI` provider instead, this constraint goes away — those authenticate with `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` regardless of logon type, so IIS works fine for the Agent too.
+| Component | Type | URL |
+|---|---|
+| berean-resource-api | IIS site | http://localhost:5121 |
+| berean-agent | Windows Service | http://localhost:5050 |
+| berean-web | IIS static site | http://localhost:4200 |
+
+- Deploy: `Deploy-HomeOpsApp berean-bible-study` (add `-Component berean-web` for one part)
+- Roll back: `Undo-HomeOpsDeploy <component>`, for example `Undo-HomeOpsDeploy berean-web`
+- Status: `Get-HomeOpsStatus berean-bible-study`
+
+Secrets (environment variables, set with `Set-HomeOpsSecret`): none. If the Agent is switched to the `Anthropic` or `OpenAI` provider, add `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` to `secrets` in `homeops.json` and set it with `Set-HomeOpsSecret`.
+
+The machine-specific `appsettings.json` of the Resource API and the Agent is declared as a shared file in `homeops.json`: HomeOps keeps the live copy outside the release folders and copies it into every new release, so edit that copy (not a file inside a release) and restart the component.
+
+**Why the Agent is a Windows Service and not an IIS site.** With the default `ClaudeCode` provider, the agent shells out to the `claude` CLI, which reads your Claude login from your Windows user profile. An IIS app pool's worker process, even set to run as your account, gets a *batch logon*, and the CLI's stored login isn't visible there ("Not logged in" at runtime even though the account is right). A Windows Service running as your account gets a normal profile environment, so the CLI sees the login. [Program.cs](Berean.Agent.Api/Program.cs) calls `UseWindowsService` (a no-op under `dotnet run` or IIS). With the `Anthropic` or `OpenAI` provider this constraint goes away, because those authenticate with an API key regardless of logon type, and IIS would work for the Agent too.
 
 ## Evaluating changes
 
