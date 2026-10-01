@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "name": "berean-bible-study",
+  "description": "Bible study assistant: resource API, agent API, and the Angular web app.",
+  "repo": { "url": "https://github.com/jcnd2707/berean-bible-study", "defaultBranch": "main" },
+  "components": [
+    {
+      "id": "berean-resource-api",
+      "type": "iis-site",
+      "description": "Serves Bible modules, notes, and profiles.",
+      "runtime": { "dotnet": "net8.0" },
+      "build": { "project": "BereanResource.Api/BereanResource.Api.csproj" },
+      "install": { "keepReleases": 5, "shared": { "files": [ "appsettings.json" ] } },
+      "iis": {
+        "site": "Resource API",
+        "appPool": { "name": "Resource API", "managedRuntime": "", "idleTimeoutMinutes": 0, "startMode": "AlwaysRunning" },
+        "bindings": [ { "protocol": "http", "address": "*", "port": 5121 } ],
+        "hostingModel": "inprocess",
+        "preload": true
+      },
+      "endpoints": {
+        "baseUrl": "http://localhost:5121",
+        "health": "/health",
+        "version": "/version",
+        "checks": [ { "name": "profiles", "path": "/api/resources/profiles/unclassified" } ]
+      }
+    },
+    {
+      "id": "berean-agent",
+      "type": "windows-service",
+      "description": "Study agent (SignalR hub). Runs as the user logged in to Claude Code so the claude CLI can read that login.",
+      "runtime": { "dotnet": "net8.0" },
+      "build": { "project": "Berean.Agent.Api/Berean.Agent.Api.csproj" },
+      "install": { "keepReleases": 5, "shared": { "files": [ "appsettings.json" ] } },
+      "service": {
+        "name": "BereanAgent",
+        "displayName": "Berean Agent API",
+        "description": "Berean study agent (SignalR hub on port 5050). Runs as the user logged in to Claude Code.",
+        "startMode": "Automatic",
+        "account": "CurrentUser"
+      },
+      "endpoints": {
+        "baseUrl": "http://localhost:5050",
+        "health": "/health",
+        "version": "/version",
+        "checks": [ { "name": "models", "path": "/api/models" } ]
+      },
+      "dependsOn": [ "berean-resource-api" ],
+      "requires": [ { "name": "ollama", "kind": "http", "url": "http://localhost:11434", "note": "Local embedding and chat models." } ]
+    },
+    {
+      "id": "berean-web",
+      "type": "iis-static",
+      "description": "Angular single-page app.",
+      "runtime": { "node": ">=20" },
+      "build": { "command": "npm run build", "workingDirectory": "berean-web", "output": "berean-web/dist/berean-web/browser" },
+      "iis": {
+        "site": "Berean Web",
+        "appPool": { "name": "Berean Web", "managedRuntime": "" },
+        "bindings": [ { "protocol": "http", "address": "*", "port": 4200 } ],
+        "spaFallback": true
+      },
+      "endpoints": {
+        "baseUrl": "http://localhost:4200",
+        "health": "/",
+        "version": "/version.json",
+        "checks": [ { "name": "deep link falls back to index.html", "path": "/some/deep/link" } ]
+      },
+      "dependsOn": [ "berean-resource-api", "berean-agent" ]
+    }
+  ]
+}

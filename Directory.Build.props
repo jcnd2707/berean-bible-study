@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    Versions come from git tags (HomeOps standard, MinVer). Tag vMAJOR.MINOR.PATCH to release; commits after
+    a tag get a prerelease version such as 1.0.1-alpha.0.3. All projects in this repo share one version.
+    Needs full git history: CI checkouts must use fetch-depth: 0.
+  -->
+  <PropertyGroup>
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+</Project>
