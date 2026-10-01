@@ -161,12 +161,52 @@ Berean does support more than one person: a "Who's studying?" **profile** picker
 
 ## Deployment
 
-For running the three apps continuously on a Windows machine, instead of `dotnet run`/`npm start` in a terminal:
+To run the three apps continuously on a Windows machine, instead of `dotnet run` / `npm start` in a terminal:
 
-- **`BereanResource.Api` and the built `berean-web`**: host both in IIS as ordinary sites (in-process ASP.NET Core hosting for the API; static files + URL Rewrite fallback to `index.html` for the web app — see [deploy/web/web.config](deploy/web/web.config)). [deploy/finish-iis-setup.ps1](deploy/finish-iis-setup.ps1) creates/starts the sites and app pools and checks that each one answers. Run it elevated.
-- **`Berean.Agent.Api`**: **not** IIS. With the default `ClaudeCode` provider, the agent shells out to the `claude` CLI, which reads your Claude login from your Windows user profile. An IIS app pool's worker process — even set to run as your account — is a *batch logon*, and the CLI's stored login isn't visible there ("Not logged in" at runtime even though the account is right). A Windows Service running as your account gets a normal profile environment, so the CLI sees the login. [Program.cs](Berean.Agent.Api/Program.cs) calls `UseWindowsService` (a no-op under `dotnet run` or IIS); [deploy/install-agent-service.ps1](deploy/install-agent-service.ps1) retires the IIS site if one exists, copies a new build in, grants your account "Log on as a service", and installs/starts the `BereanAgent` service (`appsettings.json`'s `Urls` controls the port; default `http://*:5050`). Run it elevated, with the account you use for Claude Code.
-- Redeploying the Agent after a code change: `dotnet publish Berean.Agent.Api -c Release -o <folder>`, then re-run `install-agent-service.ps1 -PublishDir <folder>` elevated (it stops the service first, copies files, restarts it).
-- If you switch the Agent to the `Anthropic` or `OpenAI` provider instead, this constraint goes away — those authenticate with `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` regardless of logon type, so IIS works fine for the Agent too.
+| Component | Hosting | URL |
+|---|---|---|
+| `BereanResource.Api` | IIS site, in-process ASP.NET Core hosting (app pool with "No Managed Code", always running, preload on) | http://localhost:5121 |
+| `Berean.Agent.Api` | Windows Service running as your own Windows account | http://localhost:5050 |
+| `berean-web` (built) | IIS static site with a fallback to `index.html` | http://localhost:4200 |
+
+[homeops.json](homeops.json) is a machine-readable description of exactly this: the hosting type, ports, build commands, health and smoke-check endpoints, and which config file is kept outside the build. It is the manifest for the author's own deployment tooling, which is not public, but it is plain JSON and works as documentation of how the parts are hosted.
+
+**Build**
+
+```bash
+dotnet publish BereanResource.Api -c Release -o <folder>
+dotnet publish Berean.Agent.Api -c Release -o <folder>
+cd berean-web && npm run build        # output: berean-web/dist/berean-web/browser
+```
+
+**Health and version.** Both APIs answer `GET /health` and `GET /version` (the version comes from git tags through MinVer; tags look like `v1.2.3`). The web app answers `/` and `/version.json` once deployed.
+
+**The web app on IIS** needs the IIS URL Rewrite module and a rule that sends any address that is not a real file or folder to `index.html` (Angular handles the route in the browser). A minimal `web.config` next to the built files:
+
+```xml
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <rule name="SPA routes" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAll">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+          </conditions>
+          <action type="Rewrite" url="/index.html" />
+        </rule>
+      </rules>
+    </rewrite>
+  </system.webServer>
+</configuration>
+```
+
+Also make sure IIS serves `.json` as `application/json` and `.woff2` as `font/woff2`, and do not let `index.html` be cached, so a new build is picked up.
+
+**Configuration.** Keep each API's machine-specific `appsettings.json` (see [Configuration](#configuration)) outside the published folder and copy it in after every publish, because a publish overwrites it. The committed `appsettings.json` files hold placeholders only.
+
+**Why the Agent is a Windows Service and not an IIS site.** With the default `ClaudeCode` provider, the agent shells out to the `claude` CLI, which reads your Claude login from your Windows user profile. An IIS app pool's worker process, even set to run as your account, gets a *batch logon*, and the CLI's stored login isn't visible there ("Not logged in" at runtime even though the account is right). A Windows Service running as your account gets a normal profile environment, so the CLI sees the login. [Program.cs](Berean.Agent.Api/Program.cs) calls `UseWindowsService` (a no-op under `dotnet run` or IIS), and the port comes from `Urls` in `appsettings.json` (default `http://*:5050`). With the `Anthropic` or `OpenAI` provider this constraint goes away, because those authenticate with `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` from the environment regardless of logon type, and IIS works for the Agent too. API keys are only ever read from environment variables.
 
 ## Evaluating changes
 
