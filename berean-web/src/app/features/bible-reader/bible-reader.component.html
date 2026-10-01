@@ -62,6 +62,19 @@
     </div>
   }
 
+  <!-- Reading progress overlay -->
+  @if (
+    navState.showProgress() &&
+    !navState.showSearch() &&
+    !navState.showCompare() &&
+    !navState.showNotesList() &&
+    !navState.showSessions()
+  ) {
+    <div class="search-overlay">
+      <app-progress-panel />
+    </div>
+  }
+
   <!-- Books overlay -->
   @if (navState.showBooks()) {
     <div class="search-overlay">
@@ -75,7 +88,8 @@
     !navState.showCompare() &&
     !navState.showNotesList() &&
     !navState.showBooks() &&
-    !navState.showSessions()
+    !navState.showSessions() &&
+    !navState.showProgress()
   ) {
     <!-- Passage heading -->
     @if (passageTitle() && !loading()) {

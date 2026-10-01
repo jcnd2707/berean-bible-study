@@ -1,0 +1,106 @@
+<div class="pp-shell">
+
+  <div class="pp-header">
+    <span class="pp-title">Reading progress</span>
+    <button class="panel-close-btn" title="Close" (click)="nav.closeProgress()">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="pp-body">
+
+    @if (progress().totalChapters === 0) {
+      <div class="pp-state">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+      </div>
+    } @else {
+
+      <!-- Whole Bible -->
+      <section class="pp-overall">
+        <div class="pp-big">
+          <span class="pp-big-pct">{{ progress().percent }}%</span>
+          <span class="pp-big-of">{{ progress().totalRead }} of {{ progress().totalChapters }} chapters read</span>
+        </div>
+        <div class="pp-bar pp-bar--lg" role="progressbar" aria-label="Bible read"
+             aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="progress().percent">
+          <div class="pp-fill" [style.width.%]="(progress().totalRead / progress().totalChapters) * 100"></div>
+        </div>
+
+        @if (progress().totalRead === 0) {
+          <p class="pp-note">
+            Nothing marked yet. Press <strong>Mark this chapter as read</strong> at the end of a chapter
+            and it shows up here.
+          </p>
+        } @else if (next(); as n) {
+          <p class="pp-note">
+            {{ n.chaptersToGo }} {{ n.chaptersToGo === 1 ? "chapter" : "chapters" }} to
+            {{ n.percent === 100 ? "finishing the Bible" : n.percent + "% of the Bible" }}.
+          </p>
+        } @else {
+          <p class="pp-note">You've read the whole Bible.</p>
+        }
+      </section>
+
+      <!-- Testaments -->
+      <section class="pp-testaments">
+        <div class="pp-testament">
+          <div class="pp-testament-head">
+            <span>Old Testament</span>
+            <span class="pp-muted">{{ progress().ot.read }}/{{ progress().ot.total }} · {{ progress().ot.percent }}%</span>
+          </div>
+          <div class="pp-bar"><div class="pp-fill" [style.width.%]="progress().ot.total ? (progress().ot.read / progress().ot.total) * 100 : 0"></div></div>
+          <div class="pp-muted pp-small">
+            {{ progress().ot.booksComplete }} of {{ progress().ot.bookCount }} books finished
+            @if (progress().ot.read === progress().ot.total) { · <strong>Finished the Old Testament</strong> }
+          </div>
+        </div>
+        <div class="pp-testament">
+          <div class="pp-testament-head">
+            <span>New Testament</span>
+            <span class="pp-muted">{{ progress().nt.read }}/{{ progress().nt.total }} · {{ progress().nt.percent }}%</span>
+          </div>
+          <div class="pp-bar"><div class="pp-fill" [style.width.%]="progress().nt.total ? (progress().nt.read / progress().nt.total) * 100 : 0"></div></div>
+          <div class="pp-muted pp-small">
+            {{ progress().nt.booksComplete }} of {{ progress().nt.bookCount }} books finished
+            @if (progress().nt.read === progress().nt.total) { · <strong>Finished the New Testament</strong> }
+          </div>
+        </div>
+      </section>
+
+      <!-- Every book -->
+      <div class="pp-section-label">Old Testament</div>
+      @for (book of otBooks(); track book.number) {
+        <ng-container *ngTemplateOutlet="bookRow; context: { $implicit: book }" />
+      }
+      <div class="pp-section-label">New Testament</div>
+      @for (book of ntBooks(); track book.number) {
+        <ng-container *ngTemplateOutlet="bookRow; context: { $implicit: book }" />
+      }
+    }
+  </div>
+</div>
+
+<ng-template #bookRow let-book>
+  <div class="pp-book" [class.pp-book--open]="expandedBook() === book.number">
+    <button type="button" class="pp-book-head" [attr.aria-expanded]="expandedBook() === book.number" (click)="toggleBook(book)">
+      <span class="pp-book-name">
+        {{ book.name }}
+        @if (book.complete) { <span class="pp-done" title="Every chapter read">✓</span> }
+      </span>
+      <span class="pp-bar pp-bar--sm"><span class="pp-fill" [style.width.%]="book.chapterCount ? (book.read / book.chapterCount) * 100 : 0"></span></span>
+      <span class="pp-book-count">{{ book.read }}/{{ book.chapterCount }}</span>
+    </button>
+
+    @if (expandedBook() === book.number) {
+      <div class="pp-chapters">
+        @for (c of chapterCells(book); track c.chapter) {
+          <button type="button" class="pp-ch" [class.pp-ch--read]="c.read" [title]="c.title" (click)="openChapter(book, c.chapter)">
+            {{ c.chapter }}
+          </button>
+        }
+      </div>
+    }
+  </div>
+</ng-template>

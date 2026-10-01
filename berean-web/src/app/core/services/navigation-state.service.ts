@@ -1,7 +1,7 @@
 import { Injectable, inject, signal, computed } from "@angular/core";
 import { BibleLocation, Verse, CommentaryEntry, BookEntry, ReadChapter } from "../models";
 import { BackStackService } from "./back-stack.service";
-import { chapterKey } from "./reading-progress";
+import { chapterKey, computeProgress } from "./reading-progress";
 
 export type RightTab = "commentary" | "notes" | "xrefs" | "dictionary" | "ask";
 
@@ -38,6 +38,7 @@ export class NavigationStateService {
   private readonly closeBookDrawerFn = () => this.closeBookDrawer();
   private readonly closeProfileSwitcherFn = () => this.closeProfileSwitcher();
   private readonly closeSessionsFn = () => this.closeSessions();
+  private readonly closeProgressFn = () => this.closeProgress();
 
   private readonly _location = signal<BibleLocation | null>(null);
   private readonly _maxChapter = signal<number>(1);
@@ -58,6 +59,7 @@ export class NavigationStateService {
   private readonly _showBookDrawer = signal<boolean>(false);
   private readonly _showProfileSwitcher = signal<boolean>(false);
   private readonly _showSessions = signal<boolean>(false);
+  private readonly _showProgress = signal<boolean>(false);
   private readonly _continuingBanner = signal<ContinuingSessionInfo | null>(null);
   private readonly _requestedRightTab = signal<RightTab | null>(null);
   private readonly _requestedCommentaryModule = signal<string | null>(null);
@@ -80,6 +82,7 @@ export class NavigationStateService {
   readonly showBookDrawer = this._showBookDrawer.asReadonly();
   readonly showProfileSwitcher = this._showProfileSwitcher.asReadonly();
   readonly showSessions = this._showSessions.asReadonly();
+  readonly showProgress = this._showProgress.asReadonly();
   readonly continuingBanner = this._continuingBanner.asReadonly();
 
   // One-shot requests the panels consume (used when a chat citation is clicked).
@@ -91,6 +94,9 @@ export class NavigationStateService {
   readonly book = computed(() => this._location()?.book ?? null);
   readonly chapter = computed(() => this._location()?.chapter ?? null);
   readonly verse = computed(() => this._location()?.verse ?? null);
+
+  /** Whole-Bible reading progress, from the read chapters and the loaded book list. */
+  readonly readingProgress = computed(() => computeProgress(this._readChapters(), this._books()));
 
   readonly activeVerseText = computed(() => {
     const v = this._location()?.verse;
@@ -116,6 +122,7 @@ export class NavigationStateService {
     }
     this._showCompare.set(false); // mutual exclusion only — doesn't touch the back stack, open() below replaces it in place
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showSearch.set(true);
     this.backStack.open(this.closeSearchFn);
   }
@@ -131,6 +138,7 @@ export class NavigationStateService {
     }
     this._showSearch.set(false);
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showCompare.set(true);
     this.backStack.open(this.closeCompareFn);
   }
@@ -146,6 +154,7 @@ export class NavigationStateService {
     }
     this._showBooks.set(false);
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showNotesList.set(true);
     this.backStack.open(this.closeNotesListFn);
   }
@@ -163,6 +172,7 @@ export class NavigationStateService {
     this._showNotesList.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);
+    this._showProgress.set(false);
     this._showSessions.set(true);
     this.backStack.open(this.closeSessionsFn);
   }
@@ -171,6 +181,24 @@ export class NavigationStateService {
     this._showSessions.set(false);
     this.backStack.close(this.closeSessionsFn);
   }
+  toggleProgress(): void {
+    if (this._showProgress()) {
+      this.closeProgress();
+      return;
+    }
+    this._showBooks.set(false);
+    this._showNotesList.set(false);
+    this._showSessions.set(false);
+    this._showSearch.set(false);
+    this._showCompare.set(false);
+    this._showProgress.set(true);
+    this.backStack.open(this.closeProgressFn);
+  }
+  closeProgress(): void {
+    if (!this._showProgress()) return;
+    this._showProgress.set(false);
+    this.backStack.close(this.closeProgressFn);
+  }
   toggleBooks(): void {
     if (this._showBooks()) {
       this.closeBooks();
@@ -178,6 +206,7 @@ export class NavigationStateService {
     }
     this._showNotesList.set(false);
     this._showSessions.set(false);
+    this._showProgress.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);
     this._showBooks.set(true);
@@ -235,6 +264,7 @@ export class NavigationStateService {
 
   /** Opens the book reader on a chapter of a prose book. */
   openBookChapter(moduleId: string, chapterIndex: number): void {
+    this._showProgress.set(false);
     this._showNotesList.set(false);
     this._showSearch.set(false);
     this._showCompare.set(false);

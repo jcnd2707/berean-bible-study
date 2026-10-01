@@ -39,6 +39,7 @@ import { ComparePanelComponent } from "../compare/compare-panel.component";
 import { NotesListComponent } from "../notes/notes-list.component";
 import { BookReaderComponent } from "../books/book-reader.component";
 import { SessionsListComponent } from "../sessions/sessions-list.component";
+import { ProgressPanelComponent } from "../progress/progress-panel.component";
 import { wordForSpeech, overrideKey } from "./speech-word";
 import { formatVerseCitation } from "./verse-citation";
 
@@ -69,6 +70,7 @@ interface WordMenuEntry {
     NotesListComponent,
     BookReaderComponent,
     SessionsListComponent,
+    ProgressPanelComponent,
   ],
   templateUrl: "./bible-reader.component.html",
   styleUrl: "./bible-reader.component.scss",

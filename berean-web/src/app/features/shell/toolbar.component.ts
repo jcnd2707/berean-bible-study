@@ -88,6 +88,14 @@ import { LayoutService } from "../../core/services/layout.service";
       </button>
       <button
         class="tb-btn"
+        [class.tb-btn--active]="nav.showProgress()"
+        (click)="nav.toggleProgress()"
+        title="See which chapters you've read"
+      >
+        Progress@if (nav.readingProgress().totalChapters > 0) { · {{ nav.readingProgress().percent }}%}
+      </button>
+      <button
+        class="tb-btn"
         [class.tb-btn--active]="nav.showBooks()"
         (click)="nav.toggleBooks()"
         title="Read books"

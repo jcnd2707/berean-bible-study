@@ -1,0 +1,199 @@
+:host { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.pp-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: #FAF8F3;
+  color: #2C2825;
+}
+
+.pp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  background: #F0EDE6;
+  border-bottom: 0.5px solid #DDD8CE;
+  flex-shrink: 0;
+}
+
+.pp-title {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: #1C1917;
+  font-family: Georgia, serif;
+}
+
+.panel-close-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: none;
+  background: transparent;
+  color: #A09890;
+  cursor: pointer;
+  border-radius: 6px;
+  &:hover { background: rgba(160,152,144,0.12); color: #5C5650; }
+}
+
+.pp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: #DDD8CE transparent;
+}
+
+.pp-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+}
+
+.loading-dots {
+  display: flex; gap: 6px;
+  span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #C8922A; opacity: 0.6;
+    animation: dot-pulse 1.2s ease-in-out infinite;
+    &:nth-child(2) { animation-delay: 0.2s; }
+    &:nth-child(3) { animation-delay: 0.4s; }
+  }
+}
+@keyframes dot-pulse {
+  0%,80%,100% { transform: scale(0.7); opacity: 0.4; }
+  40%         { transform: scale(1); opacity: 1; }
+}
+
+// ── Whole Bible ────────────────────────────────────────────────────────────
+.pp-overall { padding: 18px 16px 6px; }
+
+.pp-big {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.pp-big-pct {
+  font-family: Georgia, serif;
+  font-size: 2.2em;
+  font-weight: 700;
+  color: #1C1917;
+  line-height: 1;
+}
+.pp-big-of { font-size: var(--fs-sm); color: #6B6457; }
+
+.pp-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-sm);
+  color: #6B6457;
+  line-height: 1.5;
+}
+
+// ── Bars ───────────────────────────────────────────────────────────────────
+.pp-bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: #E6E1D6;
+  overflow: hidden;
+}
+.pp-bar--lg { height: 10px; border-radius: 5px; }
+.pp-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #5FA37A;
+  transition: width 0.25s ease;
+}
+
+// ── Testaments ─────────────────────────────────────────────────────────────
+.pp-testaments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 14px 16px 6px;
+}
+.pp-testament-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.pp-muted { color: #8A8378; font-weight: 400; }
+.pp-small { font-size: var(--fs-xs); margin-top: 4px; }
+
+// ── Book list ──────────────────────────────────────────────────────────────
+.pp-section-label {
+  padding: 16px 16px 4px;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #A09890;
+}
+
+.pp-book { border-bottom: 0.5px solid #EAE6DE; }
+.pp-book--open { background: rgba(200,146,42,0.04); }
+
+.pp-book-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: 6px 16px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  &:hover { background: rgba(200,146,42,0.05); }
+}
+.pp-book-name { flex: 0 0 9.5em; font-weight: 600; }
+.pp-book-head .pp-bar { flex: 1; min-width: 40px; }
+.pp-book-count {
+  flex: 0 0 4.5em;
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: #8A8378;
+  font-variant-numeric: tabular-nums;
+}
+.pp-done { color: #5FA37A; margin-left: 4px; }
+
+// ── Chapter grid ───────────────────────────────────────────────────────────
+.pp-chapters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 4px;
+  padding: 4px 16px 14px;
+}
+.pp-ch {
+  min-height: var(--tap-min);
+  border-radius: 5px;
+  border: 0.5px solid #D6D0C4;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  color: #8A8378;
+  cursor: pointer;
+  &:hover { border-color: #C8922A; color: #7A5A1A; }
+}
+.pp-ch--read {
+  background: rgba(95,163,122,0.2);
+  border-color: rgba(95,163,122,0.6);
+  color: #2F6B49;
+  font-weight: 700;
+}
