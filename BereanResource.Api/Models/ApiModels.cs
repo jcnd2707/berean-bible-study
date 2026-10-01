@@ -80,6 +80,14 @@ public record UpsertNoteRequest(
     string Text
 );
 
+// ── Reading progress ──────────────────────────────────────────────────────────
+
+public record ReadChapterRecord(
+    int Book,               // canonical 1-66, not a module-specific abbreviation
+    int Chapter,
+    DateTime ReadAt
+);
+
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
 public record ProfileRecord(
